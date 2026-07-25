@@ -8,3 +8,4 @@ dist/
 *.spec
 recordings/
 logs/
+.pytest_cache/

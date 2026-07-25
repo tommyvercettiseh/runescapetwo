@@ -7,7 +7,14 @@ from pynput.keyboard import Controller, Key
 
 from .profile import get_section
 
-_controller = Controller()
+_controller: Controller | None = None
+
+
+def _get_controller() -> Controller:
+    global _controller
+    if _controller is None:
+        _controller = Controller()
+    return _controller
 
 _SPECIAL_KEYS = {
     "alt": Key.alt,
@@ -40,21 +47,22 @@ def _resolve(key: str):
 
 
 def key_down(key: str) -> None:
-    _controller.press(_resolve(key))
+    _get_controller().press(_resolve(key))
 
 
 def key_up(key: str) -> None:
-    _controller.release(_resolve(key))
+    _get_controller().release(_resolve(key))
 
 
 def press(key: str) -> None:
     """Press and release one key using the active profile."""
     settings = get_section("keyboard")
     resolved = _resolve(key)
+    controller = _get_controller()
 
-    _controller.press(resolved)
+    controller.press(resolved)
     time.sleep(_between(settings, "press_hold_min_s", "press_hold_max_s"))
-    _controller.release(resolved)
+    controller.release(resolved)
 
 
 def hold(key: str, duration_s: float | None = None) -> None:
@@ -65,18 +73,22 @@ def hold(key: str, duration_s: float | None = None) -> None:
 
     if duration is None:
         duration = _between(settings, "press_hold_min_s", "press_hold_max_s")
+    if float(duration) < 0:
+        raise ValueError("Hold duration cannot be negative")
 
-    _controller.press(resolved)
+    controller = _get_controller()
+    controller.press(resolved)
     time.sleep(float(duration))
-    _controller.release(resolved)
+    controller.release(resolved)
 
 
 def type_text(text: str, enter: bool = False) -> None:
     """Type text using profile-driven intervals and optional pauses."""
     settings = get_section("keyboard")
+    controller = _get_controller()
 
     for character in str(text):
-        _controller.type(character)
+        controller.type(character)
         time.sleep(_between(settings, "type_delay_min_s", "type_delay_max_s"))
 
         if random.random() < float(settings["pause_chance"]):
@@ -88,10 +100,13 @@ def type_text(text: str, enter: bool = False) -> None:
 
 def hotkey(*keys: str) -> None:
     """Press a key combination and release it in reverse order."""
+    if not keys:
+        raise ValueError("hotkey requires at least one key")
     resolved = [_resolve(key) for key in keys]
+    controller = _get_controller()
 
     for key in resolved:
-        _controller.press(key)
+        controller.press(key)
 
     for key in reversed(resolved):
-        _controller.release(key)
+        controller.release(key)

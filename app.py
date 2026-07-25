@@ -8,7 +8,6 @@ def main() -> None:
 
     print(f"Active profile: {active_profile_name()}")
     print(f"Mouse method: {profile['mouse']['movement_method']}")
-    print(f"Vision confidence: {profile['vision']['confidence']}")
     print(f"Game area: {vision.get_area('game')}")
     print("Foundation loaded successfully.")
 

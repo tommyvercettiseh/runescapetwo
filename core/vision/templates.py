@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import tempfile
 
 import cv2
 import numpy as np
 
 from .models import TemplateSettings
+from .areas import get_area
 from .template_matching import available_methods
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -28,7 +30,17 @@ def normalize_name(image_name: str) -> str:
     name = str(image_name).strip()
     if not name:
         raise ValueError("Image name cannot be empty")
-    return name if name.lower().endswith(".png") else f"{name}.png"
+    if Path(name).name != name or "/" in name or "\\" in name:
+        raise ValueError("Image name must not contain a path")
+
+    path = Path(name)
+    if path.suffix and path.suffix.lower() != ".png":
+        raise ValueError("Template images must use the .png extension")
+
+    stem = name[:-4] if name.lower().endswith(".png") else name
+    if not stem:
+        raise ValueError("Image name cannot be empty")
+    return f"{stem}.png"
 
 
 def template_path(image_name: str) -> Path:
@@ -62,8 +74,7 @@ def load_metadata() -> dict:
     if not METADATA_FILE.exists():
         return {"_defaults": DEFAULTS.__dict__}
     data = json.loads(METADATA_FILE.read_text(encoding="utf-8-sig"))
-    if not isinstance(data, dict):
-        raise ValueError("templates_meta.json must contain an object")
+    validate_metadata(data)
     return data
 
 
@@ -84,12 +95,38 @@ def load_settings(image_name: str) -> TemplateSettings:
 
 
 def validate_settings(settings: TemplateSettings) -> None:
-    if settings.method != "ALL" and settings.method not in available_methods():
+    if settings.method == "ALL":
+        raise ValueError("ALL is only available in the image tester")
+    if settings.method not in available_methods():
         raise ValueError(f"Unknown template method: {settings.method}")
     if not 0.0 <= settings.min_shape <= 100.0:
         raise ValueError("min_shape must be between 0 and 100")
     if not 0.0 <= settings.min_color <= 100.0:
         raise ValueError("min_color must be between 0 and 100")
+    if settings.area is not None:
+        try:
+            get_area(settings.area)
+        except KeyError as exc:
+            raise ValueError(f"Unknown template area: {settings.area}") from exc
+
+
+def validate_metadata(data: object) -> None:
+    if not isinstance(data, dict):
+        raise ValueError("templates_meta.json must contain an object")
+
+    for name, values in data.items():
+        if name != "_defaults" and normalize_name(name) != name:
+            raise ValueError(f"Template metadata key must be an exact PNG name: {name}")
+        if not isinstance(values, dict):
+            raise ValueError(f"Template metadata for '{name}' must be an object")
+
+        settings = TemplateSettings(
+            method=str(values.get("method", DEFAULTS.method)),
+            min_shape=float(values.get("min_shape", DEFAULTS.min_shape)),
+            min_color=float(values.get("min_color", DEFAULTS.min_color)),
+            area=values.get("area"),
+        )
+        validate_settings(settings)
 
 
 def save_settings(image_name: str, settings: TemplateSettings) -> None:
@@ -104,6 +141,22 @@ def save_settings(image_name: str, settings: TemplateSettings) -> None:
     }
 
     METADATA_FILE.parent.mkdir(parents=True, exist_ok=True)
-    temporary = METADATA_FILE.with_suffix(".tmp")
-    temporary.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-    os.replace(temporary, METADATA_FILE)
+    content = json.dumps(data, indent=2, ensure_ascii=False)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            dir=METADATA_FILE.parent,
+            prefix=f"{METADATA_FILE.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary:
+            temporary.write(content)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+            temporary_path = Path(temporary.name)
+        os.replace(temporary_path, METADATA_FILE)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)

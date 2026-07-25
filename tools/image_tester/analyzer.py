@@ -30,4 +30,4 @@ def analyze_template(image_name: str, area: str | None = None) -> list[dict]:
             }
         )
 
-    return sorted(rows, key=lambda row: row["shape_score"], reverse=True)
+    return rows

@@ -102,6 +102,14 @@ Analyseer en sla de beste methode met veilige marges op:
 python -m tools.image_tester.app bank --area game --save
 ```
 
+`--save` gebruikt de methode die al voor de template is ingesteld. Kies een
+andere methode bewust met `--method`, omdat scores van verschillende OpenCV-
+methodes niet altijd rechtstreeks vergelijkbaar zijn:
+
+```bash
+python -m tools.image_tester.app bank --area game --method TM_CCORR_NORMED --save
+```
+
 De instellingen worden atomisch opgeslagen in `config/templates_meta.json`.
 
 ## Profielen

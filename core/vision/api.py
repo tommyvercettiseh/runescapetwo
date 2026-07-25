@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import time
 
-from core import mouse
 from core.profile import get_section
 
 from .areas import get_area
@@ -73,6 +72,8 @@ def wait_for_image(
 ) -> Hit | None:
     settings = get_section("vision")
     timeout = float(timeout_s if timeout_s is not None else settings["timeout_s"])
+    if timeout < 0:
+        raise ValueError("timeout_s cannot be negative")
     interval = float(settings["poll_interval_s"])
     deadline = time.monotonic() + timeout
 
@@ -92,6 +93,8 @@ def wait_until_gone(
 ) -> bool:
     settings = get_section("vision")
     timeout = float(timeout_s if timeout_s is not None else settings["timeout_s"])
+    if timeout < 0:
+        raise ValueError("timeout_s cannot be negative")
     interval = float(settings["poll_interval_s"])
     deadline = time.monotonic() + timeout
 
@@ -109,6 +112,8 @@ def click_image(
     button: str = "left",
     wait: bool = False,
 ) -> bool:
+    from core import mouse
+
     profile = get_section("vision")
     hit = wait_for_image(image_name, area=area) if wait else find_image(image_name, area=area)
     if hit is None:

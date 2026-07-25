@@ -8,7 +8,14 @@ from pynput.mouse import Button, Controller
 from .movements import create_path
 from .profile import get_section
 
-_controller = Controller()
+_controller: Controller | None = None
+
+
+def _get_controller() -> Controller:
+    global _controller
+    if _controller is None:
+        _controller = Controller()
+    return _controller
 
 
 def _between(settings: dict, minimum: str, maximum: str) -> float:
@@ -18,7 +25,8 @@ def _between(settings: dict, minimum: str, maximum: str) -> float:
 def move_to(x: int, y: int, method: str | None = None) -> None:
     """Move to a point using the active profile."""
     settings = get_section("mouse")
-    start = tuple(map(int, _controller.position))
+    controller = _get_controller()
+    start = tuple(map(int, controller.position))
     target = (int(x), int(y))
 
     movement_method = method or str(settings["movement_method"])
@@ -35,19 +43,24 @@ def move_to(x: int, y: int, method: str | None = None) -> None:
 
     step_delay = duration / max(1, len(path))
     for point in path:
-        _controller.position = point
+        controller.position = point
         time.sleep(step_delay)
 
 
 def click(button: str = "left") -> None:
     """Click using the delays from the active profile."""
     settings = get_section("mouse")
-    selected = Button.left if button == "left" else Button.right
+    buttons = {"left": Button.left, "right": Button.right, "middle": Button.middle}
+    try:
+        selected = buttons[str(button).strip().lower()]
+    except KeyError as exc:
+        raise ValueError(f"Unknown mouse button: {button}") from exc
 
     time.sleep(_between(settings, "pre_click_min_s", "pre_click_max_s"))
-    _controller.press(selected)
+    controller = _get_controller()
+    controller.press(selected)
     time.sleep(_between(settings, "click_hold_min_s", "click_hold_max_s"))
-    _controller.release(selected)
+    controller.release(selected)
     time.sleep(_between(settings, "post_click_min_s", "post_click_max_s"))
 
 
@@ -59,11 +72,12 @@ def move_and_click(x: int, y: int, button: str = "left") -> None:
 def scroll(amount: int) -> None:
     settings = get_section("mouse")
     direction = 1 if amount > 0 else -1
+    controller = _get_controller()
 
     for _ in range(abs(int(amount))):
-        _controller.scroll(0, direction)
+        controller.scroll(0, direction)
         time.sleep(_between(settings, "scroll_delay_min_s", "scroll_delay_max_s"))
 
 
 def position() -> tuple[int, int]:
-    return tuple(map(int, _controller.position))
+    return tuple(map(int, _get_controller().position))
