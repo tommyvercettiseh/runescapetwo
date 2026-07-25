@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 from .linear import create_path as linear_path
 
 MovementFunction = Callable[
-    [tuple[int, int], tuple[int, int], int],
+    [tuple[int, int], tuple[int, int], int, dict[str, Any]],
     list[tuple[int, int]],
 ]
 
@@ -27,6 +28,7 @@ def create_path(
     start: tuple[int, int],
     target: tuple[int, int],
     steps: int,
+    settings: dict[str, Any] | None = None,
 ) -> list[tuple[int, int]]:
     clean_method = method.strip().lower()
     try:
@@ -37,7 +39,7 @@ def create_path(
             f"Unknown movement method '{method}'. Available: {available}"
         ) from exc
 
-    return movement(start, target, steps)
+    return movement(start, target, steps, settings or {})
 
 
 def available_movements() -> tuple[str, ...]:
