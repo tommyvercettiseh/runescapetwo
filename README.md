@@ -85,6 +85,14 @@ vision.click_image("bank", bot_id=2, padding=6)
 De gevonden coördinaten zijn al absolute schermcoördinaten inclusief de
 bot-offset. Mouse past daarom geen tweede offset toe.
 
+Directe coördinaten zijn standaard absoluut. Geef alleen bij bot-lokale
+coördinaten expliciet een `bot_id` mee:
+
+```python
+mouse.move_to(100, 200, bot_id=2)
+mouse.click_at(100, 200, bot_id=2)
+```
+
 ```json
 {
   "_defaults": {
@@ -146,9 +154,13 @@ set_bot(2)
 ```
 
 Alle area-gebaseerde visionfuncties gebruiken daarna automatisch de offset uit
-`config/bots.json`. Voor bot 2 is dat standaard `(958, 0)`.
+`config/bots.json`. Het scherm van `1920×1080` is verdeeld in vier vakken van
+`960×540`. Voor bot 2 is de offset daarom `(960, 0)`.
 Ook `screen` is een normale basisarea in `config/areas.json` en wordt op
 dezelfde manier verschoven.
+
+Areas zijn altijd relatief aan één botvenster. Vision zet gevonden hits om naar
+absolute schermcoördinaten. Daardoor wordt een offset nooit dubbel toegepast.
 
 Een proces kan de bot ook via de omgevingsvariabele `BOT_ID` selecteren.
 Een expliciete `bot_id` of `offset` op een visionfunctie overschrijft de actieve

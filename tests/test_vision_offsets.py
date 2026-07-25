@@ -19,17 +19,17 @@ def reset_active_bot(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_named_area_uses_bot_two_offset() -> None:
     region = offsets.apply_offset((10, 20, 100, 50), bot_id=2)
 
-    assert region == (968, 20, 100, 50)
+    assert region == (970, 20, 100, 50)
 
 
 def test_screen_area_becomes_selected_bot_window() -> None:
     region = api.get_area("screen", bot_id=2)
 
-    assert region == (958, 0, 1280, 720)
+    assert region == (960, 0, 960, 540)
 
 
 def test_public_get_area_is_bot_aware() -> None:
-    assert api.get_area("game", bot_id=2) == (958, 0, 1280, 720)
+    assert api.get_area("game", bot_id=2) == (1042, 29, 519, 339)
 
 
 def test_explicit_offset_overrides_active_bot() -> None:
@@ -48,7 +48,7 @@ def test_active_bot_is_used_without_repeating_bot_id() -> None:
 
     region = offsets.apply_offset((10, 20, 100, 50))
 
-    assert region == (968, 20, 100, 50)
+    assert region == (970, 20, 100, 50)
 
 
 def test_bot_id_and_manual_offset_cannot_conflict() -> None:
@@ -83,8 +83,13 @@ def test_capture_uses_offset_and_returns_absolute_origin(
 
     *_, origin = api._capture_for("bank", None, 2, None)
 
-    assert captured == [(968, 20, 100, 50)]
-    assert origin == (968, 20)
+    assert captured == [(970, 20, 100, 50)]
+    assert origin == (970, 20)
+
+
+def test_offset_area_cannot_leave_screen() -> None:
+    with pytest.raises(ValueError, match="outside"):
+        offsets.apply_offset((900, 0, 100, 100), bot_id=2)
 
 
 def test_image_exists_forwards_bot_selection(

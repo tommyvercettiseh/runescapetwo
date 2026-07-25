@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 from pathlib import Path
 import tempfile
@@ -86,12 +87,27 @@ def load_settings(image_name: str) -> TemplateSettings:
 
     settings = TemplateSettings(
         method=str(item.get("method", defaults.get("method", DEFAULTS.method))),
-        min_shape=float(item.get("min_shape", defaults.get("min_shape", DEFAULTS.min_shape))),
-        min_color=float(item.get("min_color", defaults.get("min_color", DEFAULTS.min_color))),
+        min_shape=_percentage(
+            item.get("min_shape", defaults.get("min_shape", DEFAULTS.min_shape)),
+            "min_shape",
+        ),
+        min_color=_percentage(
+            item.get("min_color", defaults.get("min_color", DEFAULTS.min_color)),
+            "min_color",
+        ),
         area=item.get("area", defaults.get("area")),
     )
     validate_settings(settings)
     return settings
+
+
+def _percentage(value: object, name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{name} must be a number between 0 and 100")
+    number = float(value)
+    if not math.isfinite(number) or not 0.0 <= number <= 100.0:
+        raise ValueError(f"{name} must be between 0 and 100")
+    return number
 
 
 def validate_settings(settings: TemplateSettings) -> None:
@@ -99,11 +115,11 @@ def validate_settings(settings: TemplateSettings) -> None:
         raise ValueError("ALL is only available in the image tester")
     if settings.method not in available_methods():
         raise ValueError(f"Unknown template method: {settings.method}")
-    if not 0.0 <= settings.min_shape <= 100.0:
-        raise ValueError("min_shape must be between 0 and 100")
-    if not 0.0 <= settings.min_color <= 100.0:
-        raise ValueError("min_color must be between 0 and 100")
+    _percentage(settings.min_shape, "min_shape")
+    _percentage(settings.min_color, "min_color")
     if settings.area is not None:
+        if not isinstance(settings.area, str) or not settings.area:
+            raise ValueError("Template area must be a non-empty string")
         try:
             get_area(settings.area)
         except KeyError as exc:
@@ -122,8 +138,14 @@ def validate_metadata(data: object) -> None:
 
         settings = TemplateSettings(
             method=str(values.get("method", DEFAULTS.method)),
-            min_shape=float(values.get("min_shape", DEFAULTS.min_shape)),
-            min_color=float(values.get("min_color", DEFAULTS.min_color)),
+            min_shape=_percentage(
+                values.get("min_shape", DEFAULTS.min_shape),
+                "min_shape",
+            ),
+            min_color=_percentage(
+                values.get("min_color", DEFAULTS.min_color),
+                "min_color",
+            ),
             area=values.get("area"),
         )
         validate_settings(settings)

@@ -48,3 +48,14 @@ def test_hit_rejects_unknown_anchor_and_negative_padding(hit: Hit) -> None:
         hit.point("bottom")
     with pytest.raises(ValueError, match="padding"):
         hit.random_point(-1)
+
+
+@pytest.mark.parametrize("padding", (True, 1.5, "2"))
+def test_hit_rejects_non_integer_padding(hit: Hit, padding: object) -> None:
+    with pytest.raises(ValueError, match="padding"):
+        hit.point("random", padding)  # type: ignore[arg-type]
+
+
+def test_center_anchor_also_validates_padding(hit: Hit) -> None:
+    with pytest.raises(ValueError, match="padding"):
+        hit.point("center", -1)

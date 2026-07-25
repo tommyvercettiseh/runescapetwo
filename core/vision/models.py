@@ -34,6 +34,7 @@ class Hit(MatchResult):
         anchor: str = "random",
         padding: int = 0,
     ) -> tuple[int, int]:
+        self._validate_padding(padding)
         if anchor == "center":
             return self.center
         if anchor == "topleft":
@@ -45,9 +46,7 @@ class Hit(MatchResult):
         )
 
     def random_point(self, padding: int = 0) -> tuple[int, int]:
-        padding = int(padding)
-        if padding < 0:
-            raise ValueError("padding cannot be negative")
+        self._validate_padding(padding)
         left = self.x + padding
         top = self.y + padding
         right = self.x + self.width - padding - 1
@@ -57,3 +56,12 @@ class Hit(MatchResult):
             return self.center
 
         return random.randint(left, right), random.randint(top, bottom)
+
+    @staticmethod
+    def _validate_padding(padding: int) -> None:
+        if (
+            isinstance(padding, bool)
+            or not isinstance(padding, int)
+            or padding < 0
+        ):
+            raise ValueError("padding must be a non-negative integer")

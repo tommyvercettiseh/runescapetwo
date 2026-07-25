@@ -35,6 +35,14 @@ def test_shape_threshold_must_be_a_percentage(threshold: float) -> None:
         )
 
 
+@pytest.mark.parametrize("threshold", (True, float("nan"), float("inf")))
+def test_shape_threshold_rejects_invalid_numbers(threshold: object) -> None:
+    with pytest.raises(ValueError, match="min_shape"):
+        templates.validate_settings(
+            TemplateSettings("TM_CCOEFF_NORMED", threshold, 60)  # type: ignore[arg-type]
+        )
+
+
 def test_all_is_rejected_for_runtime_settings() -> None:
     with pytest.raises(ValueError, match="image tester"):
         templates.validate_settings(TemplateSettings("ALL", 85, 60))
@@ -57,6 +65,21 @@ def test_unknown_metadata_area_is_rejected(
         templates.validate_settings(
             TemplateSettings("TM_CCOEFF_NORMED", 85, 60, "inventory")
         )
+
+
+def test_area_must_fit_inside_bot_window(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    areas_file = tmp_path / "areas.json"
+    areas_file.write_text(
+        '{"outside": {"x": 900, "y": 0, "width": 100, "height": 100}}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(areas, "AREAS_FILE", areas_file)
+
+    with pytest.raises(ValueError, match="outside"):
+        areas.load_areas()
 
 
 def test_metadata_requires_exact_png_keys() -> None:

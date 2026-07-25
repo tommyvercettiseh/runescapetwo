@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.bots import get_bot_offset
+from core.bots import get_bot_offset, get_screen_size
 
 
 def apply_offset(
@@ -26,4 +26,13 @@ def apply_offset(
         ox, oy = get_bot_offset(bot_id)
 
     x, y, width, height = area
-    return x + int(ox), y + int(oy), width, height
+    shifted = x + int(ox), y + int(oy), width, height
+    screen_width, screen_height = get_screen_size()
+    if (
+        shifted[0] < 0
+        or shifted[1] < 0
+        or shifted[0] + width > screen_width
+        or shifted[1] + height > screen_height
+    ):
+        raise ValueError("Offset area falls outside the configured screen")
+    return shifted

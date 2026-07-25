@@ -12,6 +12,12 @@ from .screenshots import capture_rgb
 from .templates import load_settings, load_template
 
 
+def _integer(value: int, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{name} must be an integer")
+    return value
+
+
 def get_area(
     name: str | None,
     *,
@@ -170,6 +176,8 @@ def move_to_image(
     from core import mouse
 
     profile = get_section("vision")
+    if not isinstance(wait, bool):
+        raise ValueError("wait must be a boolean")
     hit = (
         wait_for_image(
             image_name,
@@ -189,12 +197,12 @@ def move_to_image(
         return None
 
     selected_padding = (
-        int(profile["click_padding_px"])
+        _integer(profile["click_padding_px"], "padding")
         if padding is None
-        else int(padding)
+        else _integer(padding, "padding")
     )
     x, y = hit.point(anchor=anchor, padding=selected_padding)
-    point = x + int(dx), y + int(dy)
+    point = x + _integer(dx, "dx"), y + _integer(dy, "dy")
     mouse.move_to(*point)
     return point
 
