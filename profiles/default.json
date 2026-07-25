@@ -1,0 +1,26 @@
+{
+  "mouse": {
+    "movement_method": "linear",
+    "duration_min_s": 0.18,
+    "duration_max_s": 0.45,
+    "steps_min": 25,
+    "steps_max": 70,
+    "pre_click_min_s": 0.04,
+    "pre_click_max_s": 0.12,
+    "click_hold_min_s": 0.02,
+    "click_hold_max_s": 0.07,
+    "post_click_min_s": 0.03,
+    "post_click_max_s": 0.10,
+    "scroll_delay_min_s": 0.04,
+    "scroll_delay_max_s": 0.12
+  },
+  "keyboard": {
+    "press_hold_min_s": 0.03,
+    "press_hold_max_s": 0.10,
+    "type_delay_min_s": 0.04,
+    "type_delay_max_s": 0.14,
+    "pause_chance": 0.03,
+    "pause_min_s": 0.15,
+    "pause_max_s": 0.45
+  }
+}
