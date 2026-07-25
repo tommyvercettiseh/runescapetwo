@@ -1,0 +1,15 @@
+{
+  "screen": null,
+  "game": {
+    "x": 0,
+    "y": 0,
+    "width": 1280,
+    "height": 720
+  },
+  "inventory": {
+    "x": 1000,
+    "y": 200,
+    "width": 250,
+    "height": 420
+  }
+}
