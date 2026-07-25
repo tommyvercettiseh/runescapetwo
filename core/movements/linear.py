@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from typing import Any
+
 
 def create_path(
     start: tuple[int, int],
     target: tuple[int, int],
     steps: int,
+    settings: dict[str, Any] | None = None,
 ) -> list[tuple[int, int]]:
     """Create a simple straight path between two points."""
     start_x, start_y = start
