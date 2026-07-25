@@ -6,7 +6,7 @@ import numpy as np
 from .color_matching import calculate_color_score
 from .models import Hit, TemplateSettings
 from .nms import find_candidates
-from .template_matching import best_location, compare_methods, match_template
+from .template_matching import match_template
 
 
 def _build_hit(
@@ -51,22 +51,29 @@ def find_best_match(
     method = settings.method
 
     if method == "ALL":
-        results = compare_methods(screenshot_gray, template_gray)
-        method, (x, y, shape_score) = max(results.items(), key=lambda item: item[1][2])
-    else:
-        x, y, shape_score = best_location(match_template(screenshot_gray, template_gray, method))
+        raise ValueError("ALL is only available in the image tester")
+    score_map = match_template(screenshot_gray, template_gray, method)
+    minimum_score = settings.min_shape / 100.0
+    ys, xs = np.where(score_map >= minimum_score)
+    if len(xs) == 0:
+        return None
 
-    return _build_hit(
-        screenshot_rgb,
-        template_rgb,
-        x,
-        y,
-        shape_score,
-        method,
-        offset[0],
-        offset[1],
-        settings,
-    )
+    scores = score_map[ys, xs]
+    for index in np.argsort(scores)[::-1]:
+        hit = _build_hit(
+            screenshot_rgb,
+            template_rgb,
+            int(xs[index]),
+            int(ys[index]),
+            float(scores[index]) * 100.0,
+            method,
+            offset[0],
+            offset[1],
+            settings,
+        )
+        if hit is not None:
+            return hit
+    return None
 
 
 def find_all_matches(
@@ -80,10 +87,7 @@ def find_all_matches(
     screenshot_gray = cv2.cvtColor(screenshot_rgb, cv2.COLOR_RGB2GRAY)
     method = settings.method
     if method == "ALL":
-        method = max(
-            compare_methods(screenshot_gray, template_gray).items(),
-            key=lambda item: item[1][2],
-        )[0]
+        raise ValueError("ALL is only available in the image tester")
 
     score_map = match_template(screenshot_gray, template_gray, method)
     height, width = template_gray.shape[:2]

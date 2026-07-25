@@ -33,8 +33,6 @@
     "pause_max_s": 0.45
   },
   "vision": {
-    "confidence": 0.88,
-    "grayscale": false,
     "poll_interval_s": 0.15,
     "timeout_s": 5.0,
     "click_padding_px": 4

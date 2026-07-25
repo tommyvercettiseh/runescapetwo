@@ -1,15 +1,20 @@
 {
-  "screen": null,
-  "game": {
+  "screen": {
     "x": 0,
     "y": 0,
-    "width": 1280,
-    "height": 720
+    "width": 960,
+    "height": 540
+  },
+  "game": {
+    "x": 82,
+    "y": 29,
+    "width": 519,
+    "height": 339
   },
   "inventory": {
-    "x": 1000,
-    "y": 200,
-    "width": 250,
-    "height": 420
+    "x": 637,
+    "y": 237,
+    "width": 174,
+    "height": 254
   }
 }

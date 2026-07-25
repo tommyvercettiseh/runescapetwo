@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import random
 
+import numpy as np
+
 
 @dataclass(frozen=True)
 class TemplateSettings:
@@ -28,9 +30,43 @@ class MatchResult:
 
 
 @dataclass(frozen=True)
+class ColourBlob:
+    x: int
+    y: int
+    width: int
+    height: int
+    pixel_count: int
+    clickable_points: np.ndarray
+
+    @property
+    def center(self) -> tuple[int, int]:
+        return self.x + self.width // 2, self.y + self.height // 2
+
+    @property
+    def clickable_pixel_count(self) -> int:
+        return int(len(self.clickable_points))
+
+
+@dataclass(frozen=True)
 class Hit(MatchResult):
+    def point(
+        self,
+        anchor: str = "random",
+        padding: int = 0,
+    ) -> tuple[int, int]:
+        self._validate_padding(padding)
+        if anchor == "center":
+            return self.center
+        if anchor == "topleft":
+            return self.x, self.y
+        if anchor == "random":
+            return self.random_point(padding)
+        raise ValueError(
+            "anchor must be 'random', 'center', or 'topleft'"
+        )
+
     def random_point(self, padding: int = 0) -> tuple[int, int]:
-        padding = max(0, int(padding))
+        self._validate_padding(padding)
         left = self.x + padding
         top = self.y + padding
         right = self.x + self.width - padding - 1
@@ -40,3 +76,12 @@ class Hit(MatchResult):
             return self.center
 
         return random.randint(left, right), random.randint(top, bottom)
+
+    @staticmethod
+    def _validate_padding(padding: int) -> None:
+        if (
+            isinstance(padding, bool)
+            or not isinstance(padding, int)
+            or padding < 0
+        ):
+            raise ValueError("padding must be a non-negative integer")

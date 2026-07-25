@@ -26,6 +26,8 @@ runescapetwo/
 │   └── images/
 ├── config/
 │   ├── areas.json
+│   ├── bots.json
+│   ├── colours.json
 │   └── templates_meta.json
 ├── core/
 │   ├── mouse.py
@@ -38,6 +40,8 @@ runescapetwo/
 │       ├── detection.py
 │       ├── template_matching.py
 │       ├── color_matching.py
+│       ├── colour_detection.py
+│       ├── colours.py
 │       ├── templates.py
 │       ├── screenshots.py
 │       ├── areas.py
@@ -66,11 +70,53 @@ hit = vision.find_image("bank")
 hits = vision.find_all_images("tree", area="game")
 visible = vision.image_exists("inventory_full", area="inventory")
 hit = vision.wait_for_image("bank_open", area="game")
+vision.move_to_image("bank", bot_id=2)
 vision.click_image("bank_button", area="game", wait=True)
 vision.wait_until_gone("loading", area="game")
 ```
 
 `find_image("bank")` gebruikt automatisch `bank.png` en leest methode, vormdrempel, kleurdrempel en optionele area uit `config/templates_meta.json`.
+
+`move_to_image` en `click_image` kiezen standaard een willekeurig punt binnen
+de gevonden afbeelding. De padding vanaf de randen komt uit het actieve profiel
+en kan per actie worden overschreven:
+
+```python
+vision.move_to_image("bank", bot_id=2)
+vision.click_image("bank", bot_id=2, padding=6)
+```
+
+De gevonden coördinaten zijn al absolute schermcoördinaten inclusief de
+bot-offset. Mouse past daarom geen tweede offset toe.
+
+Directe coördinaten zijn standaard absoluut. Geef alleen bij bot-lokale
+coördinaten expliciet een `bot_id` mee:
+
+```python
+mouse.move_to(100, 200, bot_id=2)
+mouse.click_at(100, 200, bot_id=2)
+```
+
+Colour detection retourneert alleen blobs die groot genoeg zijn en na de
+ingestelde padding nog veilige gekleurde pixels bevatten. Mouse klikt
+uitsluitend binnen de blobs die je zelf meegeeft:
+
+```python
+from core import mouse, vision
+
+blobs = vision.find_colour_blobs(
+    "cyaan",
+    area="game",
+    bot_id=2,
+    min_blob_px=400,
+    padding_px=4,
+)
+mouse.click_colour(blobs)
+```
+
+Je kunt de lijst eerst filteren of inkorten. `mouse.click_colour()` kan daardoor
+nooit per ongeluk een andere gedetecteerde blob kiezen. HSV-bereiken en
+standaardwaarden staan centraal in `config/colours.json`.
 
 ```json
 {
@@ -102,6 +148,14 @@ Analyseer en sla de beste methode met veilige marges op:
 python -m tools.image_tester.app bank --area game --save
 ```
 
+`--save` gebruikt de methode die al voor de template is ingesteld. Kies een
+andere methode bewust met `--method`, omdat scores van verschillende OpenCV-
+methodes niet altijd rechtstreeks vergelijkbaar zijn:
+
+```bash
+python -m tools.image_tester.app bank --area game --method TM_CCORR_NORMED --save
+```
+
 De instellingen worden atomisch opgeslagen in `config/templates_meta.json`.
 
 ## Profielen
@@ -113,6 +167,29 @@ from core import load_profile
 
 load_profile("personal")
 ```
+
+## Bots en offsets
+
+Selecteer de bot één keer voordat het script begint:
+
+```python
+from core import set_bot
+
+set_bot(2)
+```
+
+Alle area-gebaseerde visionfuncties gebruiken daarna automatisch de offset uit
+`config/bots.json`. Het scherm van `1920×1080` is verdeeld in vier vakken van
+`960×540`. Voor bot 2 is de offset daarom `(960, 0)`.
+Ook `screen` is een normale basisarea in `config/areas.json` en wordt op
+dezelfde manier verschoven.
+
+Areas zijn altijd relatief aan één botvenster. Vision zet gevonden hits om naar
+absolute schermcoördinaten. Daardoor wordt een offset nooit dubbel toegepast.
+
+Een proces kan de bot ook via de omgevingsvariabele `BOT_ID` selecteren.
+Een expliciete `bot_id` of `offset` op een visionfunctie overschrijft de actieve
+bot alleen voor die aanroep.
 
 ## Installeren en controleren
 
