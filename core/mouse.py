@@ -24,7 +24,14 @@ def move_to(x: int, y: int, method: str | None = None) -> None:
     movement_method = method or str(settings["movement_method"])
     steps = random.randint(int(settings["steps_min"]), int(settings["steps_max"]))
     duration = _between(settings, "duration_min_s", "duration_max_s")
-    path = create_path(movement_method, start, target, steps)
+    movement_settings = settings.get("movement_settings", {}).get(movement_method, {})
+    path = create_path(
+        movement_method,
+        start,
+        target,
+        steps,
+        movement_settings,
+    )
 
     step_delay = duration / max(1, len(path))
     for point in path:
