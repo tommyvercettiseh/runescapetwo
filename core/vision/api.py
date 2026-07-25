@@ -155,15 +155,18 @@ def wait_until_gone(
         time.sleep(min(interval, remaining))
 
 
-def click_image(
+def move_to_image(
     image_name: str,
     *,
     area: str | None = None,
     bot_id: int | None = None,
     offset: tuple[int, int] | None = None,
-    button: str = "left",
     wait: bool = False,
-) -> bool:
+    anchor: str = "random",
+    padding: int | None = None,
+    dx: int = 0,
+    dy: int = 0,
+) -> tuple[int, int] | None:
     from core import mouse
 
     profile = get_section("vision")
@@ -183,9 +186,47 @@ def click_image(
         )
     )
     if hit is None:
+        return None
+
+    selected_padding = (
+        int(profile["click_padding_px"])
+        if padding is None
+        else int(padding)
+    )
+    x, y = hit.point(anchor=anchor, padding=selected_padding)
+    point = x + int(dx), y + int(dy)
+    mouse.move_to(*point)
+    return point
+
+
+def click_image(
+    image_name: str,
+    *,
+    area: str | None = None,
+    bot_id: int | None = None,
+    offset: tuple[int, int] | None = None,
+    button: str = "left",
+    wait: bool = False,
+    anchor: str = "random",
+    padding: int | None = None,
+    dx: int = 0,
+    dy: int = 0,
+) -> bool:
+    from core import mouse
+
+    point = move_to_image(
+        image_name,
+        area=area,
+        bot_id=bot_id,
+        offset=offset,
+        wait=wait,
+        anchor=anchor,
+        padding=padding,
+        dx=dx,
+        dy=dy,
+    )
+    if point is None:
         return False
 
-    point = hit.random_point(int(profile["click_padding_px"]))
-    mouse.move_to(*point)
     mouse.click(button)
     return True

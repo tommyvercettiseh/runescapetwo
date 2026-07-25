@@ -66,11 +66,24 @@ hit = vision.find_image("bank")
 hits = vision.find_all_images("tree", area="game")
 visible = vision.image_exists("inventory_full", area="inventory")
 hit = vision.wait_for_image("bank_open", area="game")
+vision.move_to_image("bank", bot_id=2)
 vision.click_image("bank_button", area="game", wait=True)
 vision.wait_until_gone("loading", area="game")
 ```
 
 `find_image("bank")` gebruikt automatisch `bank.png` en leest methode, vormdrempel, kleurdrempel en optionele area uit `config/templates_meta.json`.
+
+`move_to_image` en `click_image` kiezen standaard een willekeurig punt binnen
+de gevonden afbeelding. De padding vanaf de randen komt uit het actieve profiel
+en kan per actie worden overschreven:
+
+```python
+vision.move_to_image("bank", bot_id=2)
+vision.click_image("bank", bot_id=2, padding=6)
+```
+
+De gevonden coördinaten zijn al absolute schermcoördinaten inclusief de
+bot-offset. Mouse past daarom geen tweede offset toe.
 
 ```json
 {

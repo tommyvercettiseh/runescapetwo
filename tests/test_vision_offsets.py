@@ -145,12 +145,17 @@ def test_wait_until_gone_forwards_bot_selection(
     assert received == [{"area": None, "bot_id": 2, "offset": None}]
 
 
-def test_click_image_forwards_bot_and_uses_absolute_hit(
+def test_move_to_image_forwards_bot_and_uses_absolute_hit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     received: list[dict] = []
     actions: list[tuple] = []
-    hit = SimpleNamespace(random_point=lambda padding: (1000, 200))
+    selected: list[tuple[str, int]] = []
+    hit = SimpleNamespace(
+        point=lambda *, anchor, padding: (
+            selected.append((anchor, padding)) or (1000, 200)
+        )
+    )
     fake_mouse = SimpleNamespace(
         move_to=lambda x, y: actions.append(("move", x, y)),
         click=lambda button: actions.append(("click", button)),
@@ -167,7 +172,7 @@ def test_click_image_forwards_bot_and_uses_absolute_hit(
         lambda _name, **kwargs: received.append(kwargs) or hit,
     )
 
-    assert api.click_image("bank", area="game", bot_id=2)
+    assert api.move_to_image("bank", area="game", bot_id=2) == (1000, 200)
     assert received == [
         {
             "area": "game",
@@ -175,4 +180,46 @@ def test_click_image_forwards_bot_and_uses_absolute_hit(
             "offset": None,
         }
     ]
-    assert actions == [("move", 1000, 200), ("click", "left")]
+    assert selected == [("random", 4)]
+    assert actions == [("move", 1000, 200)]
+
+
+def test_click_image_moves_then_clicks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    received: list[dict] = []
+    actions: list[tuple] = []
+    fake_mouse = SimpleNamespace(
+        click=lambda button: actions.append(("click", button)),
+    )
+    monkeypatch.setattr(core, "mouse", fake_mouse, raising=False)
+    monkeypatch.setattr(
+        api,
+        "move_to_image",
+        lambda image_name, **kwargs: (
+            received.append({"image_name": image_name, **kwargs})
+            or (1000, 200)
+        ),
+    )
+
+    assert api.click_image(
+        "bank",
+        area="game",
+        bot_id=2,
+        button="right",
+        padding=6,
+    )
+    assert received == [
+        {
+            "image_name": "bank",
+            "area": "game",
+            "bot_id": 2,
+            "offset": None,
+            "wait": False,
+            "anchor": "random",
+            "padding": 6,
+            "dx": 0,
+            "dy": 0,
+        }
+    ]
+    assert actions == [("click", "right")]

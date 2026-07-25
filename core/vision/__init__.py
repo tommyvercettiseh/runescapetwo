@@ -4,6 +4,7 @@ from .api import (
     find_image,
     get_area,
     image_exists,
+    move_to_image,
     wait_for_image,
     wait_until_gone,
 )
@@ -15,6 +16,7 @@ __all__ = [
     "image_exists",
     "wait_for_image",
     "wait_until_gone",
+    "move_to_image",
     "click_image",
     "get_area",
     "Hit",
