@@ -1,19 +1,16 @@
 from __future__ import annotations
 
-import time
-
-from core import keyboard, load_profile, mouse
+from core import active_profile_name, load_profile, vision
 
 
 def main() -> None:
-    load_profile("default")
+    profile = load_profile("default")
 
-    print("Test starts in 3 seconds...")
-    time.sleep(3)
-
-    mouse.move_to(800, 500)
-    mouse.click()
-    keyboard.type_text("Test completed")
+    print(f"Active profile: {active_profile_name()}")
+    print(f"Mouse method: {profile['mouse']['movement_method']}")
+    print(f"Vision confidence: {profile['vision']['confidence']}")
+    print(f"Game area: {vision.get_area('game')}")
+    print("Foundation loaded successfully.")
 
 
 if __name__ == "__main__":
