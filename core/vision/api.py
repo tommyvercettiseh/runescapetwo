@@ -5,8 +5,10 @@ import time
 from core.profile import get_section
 
 from .areas import get_area as get_base_area
+from .colour_detection import find_blobs
+from .colours import load_colour
 from .detection import find_all_matches, find_best_match
-from .models import Hit
+from .models import ColourBlob, Hit
 from .offsets import apply_offset
 from .screenshots import capture_rgb
 from .templates import load_settings, load_template
@@ -84,6 +86,28 @@ def find_all_images(
         settings,
         origin,
         maximum_hits,
+    )
+
+
+def find_colour_blobs(
+    colour: str,
+    *,
+    area: str | None = None,
+    bot_id: int | None = None,
+    offset: tuple[int, int] | None = None,
+    min_blob_px: int | None = None,
+    padding_px: int | None = None,
+) -> list[ColourBlob]:
+    """Find clickable colour blobs using bot-aware absolute coordinates."""
+    region = get_area(area, bot_id=bot_id, offset=offset)
+    screenshot = capture_rgb(region)
+    settings = load_colour(colour)
+    return find_blobs(
+        screenshot,
+        settings,
+        origin=(region[0], region[1]),
+        min_blob_px=min_blob_px,
+        padding_px=padding_px,
     )
 
 

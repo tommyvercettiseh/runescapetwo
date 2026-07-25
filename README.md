@@ -26,6 +26,8 @@ runescapetwo/
 │   └── images/
 ├── config/
 │   ├── areas.json
+│   ├── bots.json
+│   ├── colours.json
 │   └── templates_meta.json
 ├── core/
 │   ├── mouse.py
@@ -38,6 +40,8 @@ runescapetwo/
 │       ├── detection.py
 │       ├── template_matching.py
 │       ├── color_matching.py
+│       ├── colour_detection.py
+│       ├── colours.py
 │       ├── templates.py
 │       ├── screenshots.py
 │       ├── areas.py
@@ -92,6 +96,27 @@ coördinaten expliciet een `bot_id` mee:
 mouse.move_to(100, 200, bot_id=2)
 mouse.click_at(100, 200, bot_id=2)
 ```
+
+Colour detection retourneert alleen blobs die groot genoeg zijn en na de
+ingestelde padding nog veilige gekleurde pixels bevatten. Mouse klikt
+uitsluitend binnen de blobs die je zelf meegeeft:
+
+```python
+from core import mouse, vision
+
+blobs = vision.find_colour_blobs(
+    "cyaan",
+    area="game",
+    bot_id=2,
+    min_blob_px=400,
+    padding_px=4,
+)
+mouse.click_colour(blobs)
+```
+
+Je kunt de lijst eerst filteren of inkorten. `mouse.click_colour()` kan daardoor
+nooit per ongeluk een andere gedetecteerde blob kiezen. HSV-bereiken en
+standaardwaarden staan centraal in `config/colours.json`.
 
 ```json
 {

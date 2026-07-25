@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import random
 import time
-from typing import Any
+from typing import Any, Sequence
 
 from .bots import to_screen_point, validate_screen_point
 from .movements import create_path
 from .profile import get_section
+from .vision.models import ColourBlob
 from .windows import enable_dpi_awareness
 
 _controller: Any | None = None
@@ -107,6 +108,35 @@ def click_at(
     bot_id: int | None = None,
 ) -> None:
     move_and_click(x, y, button, bot_id=bot_id)
+
+
+def click_colour(
+    blobs: Sequence[ColourBlob],
+    button: str = "left",
+) -> tuple[int, int] | None:
+    """Click one random valid pixel from only the supplied colour blobs."""
+    if not isinstance(blobs, Sequence) or isinstance(blobs, (str, bytes)):
+        raise ValueError("blobs must be a sequence of ColourBlob objects")
+    if any(not isinstance(blob, ColourBlob) for blob in blobs):
+        raise ValueError("blobs must contain only ColourBlob objects")
+
+    total_points = sum(blob.clickable_pixel_count for blob in blobs)
+    if total_points == 0:
+        return None
+
+    selected = random.randrange(total_points)
+    point: tuple[int, int] | None = None
+    for blob in blobs:
+        if selected < blob.clickable_pixel_count:
+            x, y = blob.clickable_points[selected]
+            point = int(x), int(y)
+            break
+        selected -= blob.clickable_pixel_count
+
+    assert point is not None
+    move_to(*point)
+    click(button)
+    return point
 
 
 def scroll(amount: int) -> None:

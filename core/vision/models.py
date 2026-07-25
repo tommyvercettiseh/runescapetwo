@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import random
 
+import numpy as np
+
 
 @dataclass(frozen=True)
 class TemplateSettings:
@@ -25,6 +27,24 @@ class MatchResult:
     @property
     def center(self) -> tuple[int, int]:
         return self.x + self.width // 2, self.y + self.height // 2
+
+
+@dataclass(frozen=True)
+class ColourBlob:
+    x: int
+    y: int
+    width: int
+    height: int
+    pixel_count: int
+    clickable_points: np.ndarray
+
+    @property
+    def center(self) -> tuple[int, int]:
+        return self.x + self.width // 2, self.y + self.height // 2
+
+    @property
+    def clickable_pixel_count(self) -> int:
+        return int(len(self.clickable_points))
 
 
 @dataclass(frozen=True)
