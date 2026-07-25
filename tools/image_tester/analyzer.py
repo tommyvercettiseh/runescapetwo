@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import cv2
 
-from core.vision.areas import get_area
+from core.vision.api import get_area
 from core.vision.color_matching import calculate_color_score
 from core.vision.screenshots import capture_rgb
 from core.vision.template_matching import compare_methods
 from core.vision.templates import load_template
 
 
-def analyze_template(image_name: str, area: str | None = None) -> list[dict]:
-    region = get_area(area)
+def analyze_template(
+    image_name: str,
+    area: str | None = None,
+    bot_id: int | None = None,
+) -> list[dict]:
+    region = get_area(area, bot_id=bot_id)
     screenshot_rgb = capture_rgb(region)
     template_rgb, template_gray = load_template(image_name)
     screenshot_gray = cv2.cvtColor(screenshot_rgb, cv2.COLOR_RGB2GRAY)

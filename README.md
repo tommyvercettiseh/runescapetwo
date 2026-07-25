@@ -122,6 +122,25 @@ from core import load_profile
 load_profile("personal")
 ```
 
+## Bots en offsets
+
+Selecteer de bot één keer voordat het script begint:
+
+```python
+from core import set_bot
+
+set_bot(2)
+```
+
+Alle area-gebaseerde visionfuncties gebruiken daarna automatisch de offset uit
+`config/bots.json`. Voor bot 2 is dat standaard `(958, 0)`.
+Ook `screen` is een normale basisarea in `config/areas.json` en wordt op
+dezelfde manier verschoven.
+
+Een proces kan de bot ook via de omgevingsvariabele `BOT_ID` selecteren.
+Een expliciete `bot_id` of `offset` op een visionfunctie overschrijft de actieve
+bot alleen voor die aanroep.
+
 ## Installeren en controleren
 
 ```bash

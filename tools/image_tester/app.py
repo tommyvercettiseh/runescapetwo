@@ -11,11 +11,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Analyze and save template settings")
     parser.add_argument("image")
     parser.add_argument("--area")
+    parser.add_argument("--bot-id", type=int)
     parser.add_argument("--method", choices=available_methods())
     parser.add_argument("--save", action="store_true")
     args = parser.parse_args()
 
-    results = analyze_template(args.image, args.area)
+    results = analyze_template(args.image, args.area, args.bot_id)
     for row in results:
         print(
             f"{row['method']:<20} "

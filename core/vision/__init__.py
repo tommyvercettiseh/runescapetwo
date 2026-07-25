@@ -2,12 +2,12 @@ from .api import (
     click_image,
     find_all_images,
     find_image,
+    get_area,
     image_exists,
     wait_for_image,
     wait_until_gone,
 )
 from .models import Hit, MatchResult, TemplateSettings
-from .areas import get_area
 
 __all__ = [
     "find_image",

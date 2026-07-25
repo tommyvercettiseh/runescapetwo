@@ -8,8 +8,6 @@ AREAS_FILE = ROOT / "config" / "areas.json"
 
 
 def _validate_area(name: str, area: object) -> None:
-    if name == "screen" and area is None:
-        return
     if not isinstance(area, dict):
         raise ValueError(f"Area '{name}' must be an object")
 
@@ -36,12 +34,10 @@ def load_areas() -> dict[str, dict]:
 
 
 def get_area(name: str | None) -> tuple[int, int, int, int] | None:
-    if name is None or name == "screen":
-        return None
-
-    area = load_areas().get(name)
+    selected_name = "screen" if name is None else name
+    area = load_areas().get(selected_name)
     if area is None:
-        raise KeyError(f"Unknown area: {name}")
+        raise KeyError(f"Unknown area: {selected_name}")
 
     return (
         int(area["x"]),

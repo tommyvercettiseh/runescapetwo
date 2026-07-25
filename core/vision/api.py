@@ -4,7 +4,7 @@ import time
 
 from core.profile import get_section
 
-from .areas import get_area
+from .areas import get_area as get_base_area
 from .detection import find_all_matches, find_best_match
 from .models import Hit
 from .offsets import apply_offset
@@ -12,12 +12,31 @@ from .screenshots import capture_rgb
 from .templates import load_settings, load_template
 
 
-def _capture_for(image_name: str, area: str | None, offset: tuple[int, int]):
+def get_area(
+    name: str | None,
+    *,
+    bot_id: int | None = None,
+    offset: tuple[int, int] | None = None,
+) -> tuple[int, int, int, int]:
+    region = apply_offset(
+        get_base_area(name),
+        bot_id=bot_id,
+        offset=offset,
+    )
+    return region
+
+
+def _capture_for(
+    image_name: str,
+    area: str | None,
+    bot_id: int | None,
+    offset: tuple[int, int] | None,
+):
     settings = load_settings(image_name)
     selected_area = area if area is not None else settings.area
-    region = apply_offset(get_area(selected_area), offset)
+    region = get_area(selected_area, bot_id=bot_id, offset=offset)
     screenshot = capture_rgb(region)
-    origin = (0, 0) if region is None else (region[0], region[1])
+    origin = region[0], region[1]
     template_rgb, template_gray = load_template(image_name)
     return screenshot, template_rgb, template_gray, settings, origin
 
@@ -26,10 +45,11 @@ def find_image(
     image_name: str,
     *,
     area: str | None = None,
-    offset: tuple[int, int] = (0, 0),
+    bot_id: int | None = None,
+    offset: tuple[int, int] | None = None,
 ) -> Hit | None:
     screenshot, template_rgb, template_gray, settings, origin = _capture_for(
-        image_name, area, offset
+        image_name, area, bot_id, offset
     )
     return find_best_match(
         screenshot,
@@ -44,11 +64,12 @@ def find_all_images(
     image_name: str,
     *,
     area: str | None = None,
-    offset: tuple[int, int] = (0, 0),
+    bot_id: int | None = None,
+    offset: tuple[int, int] | None = None,
     maximum_hits: int = 50,
 ) -> list[Hit]:
     screenshot, template_rgb, template_gray, settings, origin = _capture_for(
-        image_name, area, offset
+        image_name, area, bot_id, offset
     )
     return find_all_matches(
         screenshot,
@@ -60,14 +81,27 @@ def find_all_images(
     )
 
 
-def image_exists(image_name: str, *, area: str | None = None) -> bool:
-    return find_image(image_name, area=area) is not None
+def image_exists(
+    image_name: str,
+    *,
+    area: str | None = None,
+    bot_id: int | None = None,
+    offset: tuple[int, int] | None = None,
+) -> bool:
+    return find_image(
+        image_name,
+        area=area,
+        bot_id=bot_id,
+        offset=offset,
+    ) is not None
 
 
 def wait_for_image(
     image_name: str,
     *,
     area: str | None = None,
+    bot_id: int | None = None,
+    offset: tuple[int, int] | None = None,
     timeout_s: float | None = None,
 ) -> Hit | None:
     settings = get_section("vision")
@@ -77,18 +111,27 @@ def wait_for_image(
     interval = float(settings["poll_interval_s"])
     deadline = time.monotonic() + timeout
 
-    while time.monotonic() <= deadline:
-        hit = find_image(image_name, area=area)
+    while True:
+        hit = find_image(
+            image_name,
+            area=area,
+            bot_id=bot_id,
+            offset=offset,
+        )
         if hit is not None:
             return hit
-        time.sleep(interval)
-    return None
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return None
+        time.sleep(min(interval, remaining))
 
 
 def wait_until_gone(
     image_name: str,
     *,
     area: str | None = None,
+    bot_id: int | None = None,
+    offset: tuple[int, int] | None = None,
     timeout_s: float | None = None,
 ) -> bool:
     settings = get_section("vision")
@@ -98,24 +141,47 @@ def wait_until_gone(
     interval = float(settings["poll_interval_s"])
     deadline = time.monotonic() + timeout
 
-    while time.monotonic() <= deadline:
-        if not image_exists(image_name, area=area):
+    while True:
+        if not image_exists(
+            image_name,
+            area=area,
+            bot_id=bot_id,
+            offset=offset,
+        ):
             return True
-        time.sleep(interval)
-    return False
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        time.sleep(min(interval, remaining))
 
 
 def click_image(
     image_name: str,
     *,
     area: str | None = None,
+    bot_id: int | None = None,
+    offset: tuple[int, int] | None = None,
     button: str = "left",
     wait: bool = False,
 ) -> bool:
     from core import mouse
 
     profile = get_section("vision")
-    hit = wait_for_image(image_name, area=area) if wait else find_image(image_name, area=area)
+    hit = (
+        wait_for_image(
+            image_name,
+            area=area,
+            bot_id=bot_id,
+            offset=offset,
+        )
+        if wait
+        else find_image(
+            image_name,
+            area=area,
+            bot_id=bot_id,
+            offset=offset,
+        )
+    )
     if hit is None:
         return False
 
