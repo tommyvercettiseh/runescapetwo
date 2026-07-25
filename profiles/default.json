@@ -12,7 +12,16 @@
     "post_click_min_s": 0.03,
     "post_click_max_s": 0.10,
     "scroll_delay_min_s": 0.04,
-    "scroll_delay_max_s": 0.12
+    "scroll_delay_max_s": 0.12,
+    "movement_settings": {
+      "linear": {},
+      "windmouse": {
+        "gravity": 9.0,
+        "wind": 3.0,
+        "max_step": 15.0,
+        "target_area": 12.0
+      }
+    }
   },
   "keyboard": {
     "press_hold_min_s": 0.03,
