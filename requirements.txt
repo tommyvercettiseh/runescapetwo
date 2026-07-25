@@ -1,1 +1,4 @@
 pynput>=1.7,<2.0
+pyautogui>=0.9,<1.0
+opencv-python>=4.10,<5.0
+pillow>=10.0,<12.0
