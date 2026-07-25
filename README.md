@@ -2,14 +2,14 @@
 
 Eenvoudige en uitbreidbare basis voor mouse, keyboard en image recognition.
 
-## Ontwerpregel
+## Hoofdregel
 
-Scripts beschrijven alleen wat er moet gebeuren. De core bepaalt hoe het gebeurt.
+Elke `.py` heeft één duidelijk doel. Scripts beschrijven alleen wat er moet gebeuren. De core bepaalt hoe het gebeurt.
 
 ```python
 from core import keyboard, mouse, vision
 
-hit = vision.find_image("bank_button", area="game")
+hit = vision.find_image("bank")
 if hit:
     mouse.move_to(*hit.center)
     mouse.click()
@@ -25,39 +25,34 @@ runescapetwo/
 ├── assets/
 │   └── images/
 ├── config/
-│   └── areas.json
+│   ├── areas.json
+│   └── templates_meta.json
 ├── core/
-│   ├── __init__.py
-│   ├── profile.py
 │   ├── mouse.py
 │   ├── keyboard.py
-│   ├── vision.py
-│   └── movements/
+│   ├── profile.py
+│   ├── movements/
+│   └── vision/
 │       ├── __init__.py
-│       └── linear.py
+│       ├── api.py
+│       ├── detection.py
+│       ├── template_matching.py
+│       ├── color_matching.py
+│       ├── templates.py
+│       ├── screenshots.py
+│       ├── areas.py
+│       ├── offsets.py
+│       ├── models.py
+│       └── nms.py
+├── tools/
+│   └── image_tester/
+│       ├── app.py
+│       ├── analyzer.py
+│       └── storage.py
 ├── profiles/
 │   └── default.json
+├── tests/
 └── requirements.txt
-```
-
-## Profielen
-
-Alle timings en gedragsinstellingen staan centraal in `profiles/default.json`.
-
-Daar pas je onder andere aan:
-
-• mouse movement-methode en duur
-• click delays en click holds
-• keyboard delays en holds
-• vision confidence en timeout
-• instellingen voor toekomstige movement-methodes
-
-Een ander profiel laden:
-
-```python
-from core import load_profile
-
-load_profile("personal")
 ```
 
 ## Vision
@@ -67,7 +62,7 @@ Plaats PNG-bestanden in `assets/images/`.
 ```python
 from core import vision
 
-hit = vision.find_image("bank_button", area="game")
+hit = vision.find_image("bank")
 hits = vision.find_all_images("tree", area="game")
 visible = vision.image_exists("inventory_full", area="inventory")
 hit = vision.wait_for_image("bank_open", area="game")
@@ -75,30 +70,48 @@ vision.click_image("bank_button", area="game", wait=True)
 vision.wait_until_gone("loading", area="game")
 ```
 
-Gebieden pas je aan in `config/areas.json`.
+`find_image("bank")` gebruikt automatisch `bank.png` en leest methode, vormdrempel, kleurdrempel en optionele area uit `config/templates_meta.json`.
 
-## Mouse
-
-```python
-from core import mouse
-
-mouse.move_to(800, 500)
-mouse.click()
-mouse.click("right")
-mouse.scroll(-3)
+```json
+{
+  "_defaults": {
+    "method": "TM_CCOEFF_NORMED",
+    "min_shape": 85.0,
+    "min_color": 60.0
+  },
+  "bank.png": {
+    "method": "TM_CCOEFF_NORMED",
+    "min_shape": 90.0,
+    "min_color": 72.0,
+    "area": "game"
+  }
+}
 ```
 
-Nieuwe movement-methodes kunnen worden geregistreerd zonder bestaande scripts te wijzigen.
+## Image tester
 
-## Keyboard
+Analyseer alle zes OpenCV-methodes:
+
+```bash
+python -m tools.image_tester.app bank --area game
+```
+
+Analyseer en sla de beste methode met veilige marges op:
+
+```bash
+python -m tools.image_tester.app bank --area game --save
+```
+
+De instellingen worden atomisch opgeslagen in `config/templates_meta.json`.
+
+## Profielen
+
+Alle mouse-, keyboard- en algemene visiontimings staan centraal in `profiles/default.json`.
 
 ```python
-from core import keyboard
+from core import load_profile
 
-keyboard.press("space")
-keyboard.hold("shift", 0.5)
-keyboard.type_text("Hallo")
-keyboard.hotkey("ctrl", "a")
+load_profile("personal")
 ```
 
 ## Installeren en controleren
@@ -106,6 +119,7 @@ keyboard.hotkey("ctrl", "a")
 ```bash
 pip install -r requirements.txt
 python app.py
+pytest
 ```
 
-`app.py` voert geen clicks of toetsen uit. Het controleert alleen of profiel en configuratie correct laden.
+`app.py` voert geen clicks of toetsen uit. Het controleert alleen de basisconfiguratie.
