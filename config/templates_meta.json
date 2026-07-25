@@ -1,0 +1,8 @@
+{
+  "_defaults": {
+    "method": "TM_CCOEFF_NORMED",
+    "min_shape": 85.0,
+    "min_color": 60.0,
+    "area": "screen"
+  }
+}
