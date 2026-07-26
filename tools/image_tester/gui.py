@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
@@ -22,11 +23,12 @@ class ImageTesterApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         root.title("RuneScape Two - Image Tester")
-        root.geometry("820x620")
+        root.geometry("880x640")
         root.configure(bg=BG)
 
         self.image = tk.StringVar()
         self.area = tk.StringVar(value="game")
+        self.bot_id = tk.IntVar(value=int(os.getenv("BOT_ID", "1")))
         self.results: list[dict] = []
         self._build()
 
@@ -43,13 +45,15 @@ class ImageTesterApp:
         self.image_box.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 12))
         tk.Label(controls, text="Area", bg=PANEL, fg=MUTED).grid(row=0, column=1, sticky="w", padx=12, pady=(12, 4))
         ttk.Combobox(controls, textvariable=self.area, values=self._areas(), state="readonly").grid(row=1, column=1, sticky="ew", padx=12, pady=(0, 12))
-        tk.Button(controls, text="Analyseer", command=self.analyze, bg=BLUE, fg=TEXT, relief="flat", padx=20, pady=8).grid(row=1, column=2, padx=12, pady=(0, 12))
+        tk.Label(controls, text="Bot", bg=PANEL, fg=MUTED).grid(row=0, column=2, sticky="w", padx=12, pady=(12, 4))
+        ttk.Combobox(controls, textvariable=self.bot_id, values=(1, 2, 3, 4), state="readonly", width=6).grid(row=1, column=2, sticky="ew", padx=12, pady=(0, 12))
+        tk.Button(controls, text="Analyseer", command=self.analyze, bg=BLUE, fg=TEXT, relief="flat", padx=20, pady=8).grid(row=1, column=3, padx=12, pady=(0, 12))
         controls.grid_columnconfigure(0, weight=1)
         controls.grid_columnconfigure(1, weight=1)
 
         columns = ("method", "shape", "color", "x", "y")
         self.tree = ttk.Treeview(shell, columns=columns, show="headings", height=15)
-        for key, title, width in (("method", "Methode", 190), ("shape", "Vorm", 90), ("color", "Kleur", 90), ("x", "X", 70), ("y", "Y", 70)):
+        for key, title, width in (("method", "Methode", 190), ("shape", "Vorm", 90), ("color", "Kleur", 90), ("x", "Abs. X", 80), ("y", "Abs. Y", 80)):
             self.tree.heading(key, text=title)
             self.tree.column(key, width=width, anchor="center")
         self.tree.pack(fill="both", expand=True, pady=14)
@@ -71,14 +75,15 @@ class ImageTesterApp:
             messagebox.showerror("Image Tester", "Kies eerst een template.")
             return
         try:
-            self.results = analyze_template(self.image.get(), self.area.get() or None)
+            self.results = analyze_template(self.image.get(), self.area.get() or None, bot_id=self.bot_id.get())
         except Exception as exc:
             messagebox.showerror("Image Tester", str(exc))
             return
         self.tree.delete(*self.tree.get_children())
         for row in self.results:
             self.tree.insert("", "end", values=(row["method"], f'{row["shape_score"]:.2f}', f'{row["color_score"]:.2f}', row["x"], row["y"]))
-        self.status.config(text=f"{len(self.results)} methodes getest")
+        region = self.results[0]["region"] if self.results else None
+        self.status.config(text=f"{len(self.results)} methodes getest | bot {self.bot_id.get()} | region {region}")
 
     def save_best(self) -> None:
         if not self.results:
