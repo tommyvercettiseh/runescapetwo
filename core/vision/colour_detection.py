@@ -3,10 +3,8 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from .areas import get_area
 from .models import ColourBlob
-from .offsets import apply_offset, resolve_offset
-from .screenshots import capture_rgb
+from .screenshots import capture_area
 
 HSVRange = tuple[tuple[int, int, int], tuple[int, int, int]]
 
@@ -124,19 +122,15 @@ def blobs_from_mask(
 def find_colour_blobs(
     colour: str,
     *,
-    area: str | None = None,
+    area: str | None = "game",
     bot_id: int | None = None,
-    offset: tuple[int, int] | None = None,
     minimum_area_px: float = 20.0,
     maximum_area_px: float | None = None,
     erode_px: int = 0,
     dilate_px: int = 0,
 ) -> list[ColourBlob]:
     """Find colour blobs inside one local area for the selected bot."""
-    resolved_offset = resolve_offset(bot_id=bot_id, offset=offset)
-    region = apply_offset(get_area(area), resolved_offset)
-    screenshot = capture_rgb(region)
-    origin = (0, 0) if region is None else (region[0], region[1])
+    screenshot, region = capture_area(area, bot_id=bot_id)
     mask = build_colour_mask(
         screenshot,
         colour,
@@ -145,16 +139,13 @@ def find_colour_blobs(
     )
     return blobs_from_mask(
         mask,
-        origin=origin,
+        origin=(region[0], region[1]),
         minimum_area_px=minimum_area_px,
         maximum_area_px=maximum_area_px,
     )
 
 
-def find_colour(
-    colour: str,
-    **kwargs,
-) -> ColourBlob | None:
+def find_colour(colour: str, **kwargs) -> ColourBlob | None:
     """Return the largest valid colour blob, or None."""
     blobs = find_colour_blobs(colour, **kwargs)
     return blobs[0] if blobs else None
