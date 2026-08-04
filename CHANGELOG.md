@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.1
+
+### Added
+- Live debug panel with the five dominant quantized HSV colour groups in the selected area.
+- Exact pixel counts and percentages for the selected colour mask.
+- An isolated-colour preview that keeps matching pixels in their original colour and turns everything else black.
+- Tests for dominant-colour grouping and isolated masks.
+
 ## 0.7.0
 
 ### Added
