@@ -66,13 +66,20 @@ def _safe_point(
     origin_x: int,
     origin_y: int,
 ) -> tuple[int, int, float]:
-    distance = cv2.distanceTransform(component_mask, cv2.DIST_L2, 5)
-    _, radius, _, location = cv2.minMaxLoc(distance)
-    return (
-        origin_x + int(location[0]),
-        origin_y + int(location[1]),
-        float(radius),
+    padded = cv2.copyMakeBorder(
+        component_mask,
+        1,
+        1,
+        1,
+        1,
+        cv2.BORDER_CONSTANT,
+        value=0,
     )
+    distance = cv2.distanceTransform(padded, cv2.DIST_L2, 5)
+    _, radius, _, location = cv2.minMaxLoc(distance)
+    local_x = min(max(int(location[0]) - 1, 0), component_mask.shape[1] - 1)
+    local_y = min(max(int(location[1]) - 1, 0), component_mask.shape[0] - 1)
+    return origin_x + local_x, origin_y + local_y, float(radius)
 
 
 def blobs_from_mask(
