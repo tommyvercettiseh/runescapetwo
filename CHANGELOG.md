@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.7.0
+
+### Added
+- Unified Vision Tester with separate Colour testing, Image testing and Sensor checker tabs.
+- Multi-template image testing on one shared area screenshot per frame.
+- Configurable live sensor checks for colour presence, colour blobs and image presence.
+- `config/sensor_checks.json` as editable storage for named checks such as `low_hp`, `in_combat` and `blue_target_found`.
+- Tests for sensor configuration roundtrips and routing to the correct vision API.
+
+### Architecture
+- Colour, image and sensor pages remain separate modules and reuse the production vision engines.
+- Existing standalone colour and image testers remain available.
+
 ## 0.6.1
 
 ### Changed
