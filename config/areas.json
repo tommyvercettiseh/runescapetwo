@@ -34,13 +34,6 @@
     "height": 115,
     "group": "Basic"
   },
-  "Inventory_Area": {
-    "x": 631,
-    "y": 238,
-    "width": 190,
-    "height": 255,
-    "group": "Inventory"
-  },
   "Bot_Area": {
     "x": 82,
     "y": 29,
