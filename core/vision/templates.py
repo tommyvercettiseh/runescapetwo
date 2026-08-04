@@ -7,6 +7,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from .color_matching import clear_color_cache
 from .models import TemplateSettings
 from .template_matching import available_methods
 
@@ -14,7 +15,10 @@ ROOT = Path(__file__).resolve().parents[2]
 IMAGES_DIR = ROOT / "assets" / "images"
 METADATA_FILE = ROOT / "config" / "templates_meta.json"
 
-_TEMPLATE_CACHE: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+_TEMPLATE_CACHE: dict[str, tuple[int, tuple[np.ndarray, np.ndarray]]] = {}
+_METADATA_CACHE: dict | None = None
+_METADATA_STAMP: int | None = None
+_SETTINGS_CACHE: dict[str, TemplateSettings] = {}
 
 DEFAULTS = TemplateSettings(
     method="TM_CCOEFF_NORMED",
@@ -39,10 +43,13 @@ def template_path(image_name: str) -> Path:
 
 
 def load_template(image_name: str) -> tuple[np.ndarray, np.ndarray]:
+    """Load RGB and grayscale once, then reuse them until the file changes."""
     path = template_path(image_name)
     key = str(path.resolve())
-    if key in _TEMPLATE_CACHE:
-        return _TEMPLATE_CACHE[key]
+    stamp = path.stat().st_mtime_ns
+    cached = _TEMPLATE_CACHE.get(key)
+    if cached is not None and cached[0] == stamp:
+        return cached[1]
 
     bgr = cv2.imread(str(path), cv2.IMREAD_COLOR)
     if bgr is None:
@@ -50,29 +57,52 @@ def load_template(image_name: str) -> tuple[np.ndarray, np.ndarray]:
 
     rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
     gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-    _TEMPLATE_CACHE[key] = (rgb, gray)
-    return rgb, gray
+    loaded = (rgb, gray)
+    _TEMPLATE_CACHE[key] = (stamp, loaded)
+    return loaded
 
 
 def clear_template_cache() -> None:
     _TEMPLATE_CACHE.clear()
+    clear_color_cache()
+
+
+def clear_metadata_cache() -> None:
+    global _METADATA_CACHE, _METADATA_STAMP
+    _METADATA_CACHE = None
+    _METADATA_STAMP = None
+    _SETTINGS_CACHE.clear()
 
 
 def load_metadata() -> dict:
+    global _METADATA_CACHE, _METADATA_STAMP
+
+    stamp = METADATA_FILE.stat().st_mtime_ns if METADATA_FILE.exists() else -1
+    if _METADATA_CACHE is not None and _METADATA_STAMP == stamp:
+        return _METADATA_CACHE
+
     if not METADATA_FILE.exists():
-        return {"_defaults": DEFAULTS.__dict__}
-    data = json.loads(METADATA_FILE.read_text(encoding="utf-8-sig"))
-    if not isinstance(data, dict):
-        raise ValueError("templates_meta.json must contain an object")
+        data = {"_defaults": DEFAULTS.__dict__}
+    else:
+        data = json.loads(METADATA_FILE.read_text(encoding="utf-8-sig"))
+        if not isinstance(data, dict):
+            raise ValueError("templates_meta.json must contain an object")
+
+    _METADATA_CACHE = data
+    _METADATA_STAMP = stamp
+    _SETTINGS_CACHE.clear()
     return data
 
 
 def load_settings(image_name: str) -> TemplateSettings:
     name = normalize_name(image_name)
     metadata = load_metadata()
+    cached = _SETTINGS_CACHE.get(name)
+    if cached is not None:
+        return cached
+
     defaults = metadata.get("_defaults", {})
     item = metadata.get(name, {})
-
     settings = TemplateSettings(
         method=str(item.get("method", defaults.get("method", DEFAULTS.method))),
         min_shape=float(item.get("min_shape", defaults.get("min_shape", DEFAULTS.min_shape))),
@@ -80,12 +110,15 @@ def load_settings(image_name: str) -> TemplateSettings:
         area=item.get("area", defaults.get("area")),
     )
     validate_settings(settings)
+    _SETTINGS_CACHE[name] = settings
     return settings
 
 
 def validate_settings(settings: TemplateSettings) -> None:
-    if settings.method != "ALL" and settings.method not in available_methods():
-        raise ValueError(f"Unknown template method: {settings.method}")
+    if settings.method not in available_methods():
+        raise ValueError(
+            "A template must use one fixed OpenCV method; compare methods in the image tester"
+        )
     if not 0.0 <= settings.min_shape <= 100.0:
         raise ValueError("min_shape must be between 0 and 100")
     if not 0.0 <= settings.min_color <= 100.0:
@@ -95,11 +128,11 @@ def validate_settings(settings: TemplateSettings) -> None:
 def save_settings(image_name: str, settings: TemplateSettings) -> None:
     validate_settings(settings)
     name = normalize_name(image_name)
-    data = load_metadata()
+    data = dict(load_metadata())
     data[name] = {
         "method": settings.method,
-        "min_shape": settings.min_shape,
-        "min_color": settings.min_color,
+        "min_shape": float(settings.min_shape),
+        "min_color": float(settings.min_color),
         **({"area": settings.area} if settings.area else {}),
     }
 
@@ -107,3 +140,4 @@ def save_settings(image_name: str, settings: TemplateSettings) -> None:
     temporary = METADATA_FILE.with_suffix(".tmp")
     temporary.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
     os.replace(temporary, METADATA_FILE)
+    clear_metadata_cache()
