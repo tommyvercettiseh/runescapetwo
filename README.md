@@ -206,6 +206,8 @@ De tester en productie gebruiken dezelfde mask-, pixeltelling- en blobfuncties. 
 python -m tools.vision_tester.app
 ```
 
+Op Windows kun je ook dubbelklikken op `Start Unified Vision Tester.bat`, of de tester openen vanuit `Start Tester Hub.bat`.
+
 De Unified Vision Tester heeft drie subpagina's:
 
 - **Colour testing** voor areas, pipetpresets, maskers en exacte blobpixels.
