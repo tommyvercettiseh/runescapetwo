@@ -1,4 +1,6 @@
-from .analyzer import analyze_template
-from .storage import load_template_settings, save_template_settings
+"""Standalone image tester package.
 
-__all__ = ["analyze_template", "load_template_settings", "save_template_settings"]
+The current tester uses the shared production modules under ``core.vision``.
+Keep package import side-effect free so ``python -m tools.image_tester.app``
+can start without legacy helper modules.
+"""
