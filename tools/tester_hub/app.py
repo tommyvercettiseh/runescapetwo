@@ -22,7 +22,7 @@ BORDER = "#29354c"
 
 TOOLS = (
     ("Unified Vision Tester", "Test kleuren, templates en sensoren in een werkruimte.", "tools.vision_tester.app", GREEN),
-    ("Image Tester", "Test template matching en vergelijk OpenCV-methodes.", "tools.image_tester.gui", BLUE),
+    ("Image Tester", "Test template matching en vergelijk OpenCV-methodes.", "tools.image_tester.app", BLUE),
     ("Colour Tester", "Kalibreer HSV-ranges, areas, blobs en klikpadding live.", "tools.colour_tester.app", PURPLE),
 )
 
