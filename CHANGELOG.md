@@ -8,6 +8,7 @@
 - Live capture is now a persistent, visibly selected on/off toggle on every tester page.
 - The colour pipette remains active across repeated samples until explicitly switched off.
 - Dominant colours are now displayed as colour swatches alongside their RGB, HSV and percentage values.
+- Colour presets now have explicit add, edit and delete actions with a live editable HSV swatch.
 
 ## 0.7.1
 
