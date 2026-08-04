@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- Redesigned the Unified Vision Tester with a modern dark workspace layout and consistent controls.
+- Area, preset, template and sensor selectors now filter immediately on partial, case-insensitive search.
+- Live capture is now a persistent, visibly selected on/off toggle on every tester page.
+- The colour pipette remains active across repeated samples until explicitly switched off.
+- Dominant colours are now displayed as colour swatches alongside their RGB, HSV and percentage values.
+
 ## 0.7.1
 
 ### Added
