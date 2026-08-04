@@ -15,16 +15,25 @@ def build_mask_from_ranges(
     erode_px: int = 0,
     dilate_px: int = 0,
 ) -> np.ndarray:
-    """Build a binary mask from one or more HSV ranges."""
+    """Build one binary mask from one or more HSV ranges."""
     hsv = cv2.cvtColor(screenshot_rgb, cv2.COLOR_RGB2HSV)
-    mask = np.zeros(hsv.shape[:2], dtype=np.uint8)
 
-    for lower, upper in ranges:
-        mask |= cv2.inRange(
+    if not ranges:
+        mask = np.zeros(hsv.shape[:2], dtype=np.uint8)
+    else:
+        first_lower, first_upper = ranges[0]
+        mask = cv2.inRange(
             hsv,
-            np.array(lower, dtype=np.uint8),
-            np.array(upper, dtype=np.uint8),
+            np.asarray(first_lower, dtype=np.uint8),
+            np.asarray(first_upper, dtype=np.uint8),
         )
+        for lower, upper in ranges[1:]:
+            extra = cv2.inRange(
+                hsv,
+                np.asarray(lower, dtype=np.uint8),
+                np.asarray(upper, dtype=np.uint8),
+            )
+            cv2.bitwise_or(mask, extra, dst=mask)
 
     if erode_px > 0:
         size = int(erode_px) * 2 + 1
@@ -55,8 +64,14 @@ def count_mask_pixels(mask: np.ndarray) -> int:
     return int(cv2.countNonZero(mask))
 
 
+def _binary_mask(mask: np.ndarray) -> np.ndarray:
+    if mask.dtype == np.uint8:
+        return mask
+    return (mask > 0).astype(np.uint8)
+
+
 def count_mask_components(mask: np.ndarray) -> int:
-    count, _ = cv2.connectedComponents((mask > 0).astype(np.uint8), connectivity=8)
+    count, _ = cv2.connectedComponents(_binary_mask(mask), connectivity=8)
     return max(0, int(count) - 1)
 
 
@@ -93,7 +108,7 @@ def blobs_from_mask(
     minimum = max(1, int(minimum_area_px))
     maximum = None if maximum_area_px is None else max(1, int(maximum_area_px))
     count, labels, stats, centroids = cv2.connectedComponentsWithStats(
-        (mask > 0).astype(np.uint8),
+        _binary_mask(mask),
         connectivity=8,
     )
 
