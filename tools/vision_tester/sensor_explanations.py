@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from core import vision
+from core.vision.colour_detection import build_mask_from_ranges, count_mask_pixels
+from core.vision.colour_presets import load_colour_preset
+from core.vision.screenshots import capture_area
 
 from .sensor_checks import SensorCheck
 
@@ -15,13 +18,16 @@ class SensorExplanation:
     details: tuple[tuple[str, str], ...]
 
 
+def _count_colour_pixels(colour: str, *, area: str, bot_id: int) -> int:
+    preset = load_colour_preset(colour)
+    screenshot, _ = capture_area(area, bot_id=bot_id)
+    mask = build_mask_from_ranges(screenshot, preset.ranges)
+    return count_mask_pixels(mask)
+
+
 def explain_sensor(check: SensorCheck, *, bot_id: int) -> SensorExplanation:
     if check.kind == "colour_exists":
-        pixels = vision.count_colour_pixels(
-            check.value,
-            area=check.area,
-            bot_id=bot_id,
-        )
+        pixels = _count_colour_pixels(check.value, area=check.area, bot_id=bot_id)
         result = pixels >= check.threshold
         return SensorExplanation(
             result=result,
