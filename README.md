@@ -28,8 +28,6 @@ absolute_inventory = vision.get_region("Inventory_Area", bot_id=bot_id)
 image, region = vision.capture_area("Inventory_Area", bot_id=bot_id)
 ```
 
-De area-loader accepteert zowel korte namen zoals `inventory` als de bestaande RuneScape-stijl `Inventory_Area`.
-
 De standaard offsets staan in `config/bot_offsets.json`:
 
 ```json
@@ -50,12 +48,7 @@ from core import keyboard, mouse, vision
 
 bot_id = 2
 
-hit = vision.find_image(
-    "bank",
-    area="game",
-    bot_id=bot_id,
-)
-
+hit = vision.find_image("bank", area="game", bot_id=bot_id)
 if hit:
     mouse.move_to(*hit.center)
     mouse.click()
@@ -79,7 +72,7 @@ get_area
 → absoluut resultaat
 ```
 
-Er is geen publieke `offset=(x, y)` parameter meer in de vision-API. Daardoor kan een script de offset niet per ongeluk dubbel toepassen.
+Er is geen publieke `offset=(x, y)` parameter meer in de vision-API.
 
 ## Structuur
 
@@ -91,6 +84,7 @@ runescapetwo/
 ├── config/
 │   ├── areas.json
 │   ├── bot_offsets.json
+│   ├── colour_presets.json
 │   └── templates_meta.json
 ├── core/
 │   ├── mouse.py
@@ -98,13 +92,13 @@ runescapetwo/
 │   ├── profile.py
 │   ├── movements/
 │   └── vision/
-│       ├── __init__.py
 │       ├── api.py
 │       ├── areas.py
 │       ├── offsets.py
 │       ├── screenshots.py
 │       ├── image_detection.py
 │       ├── colour_detection.py
+│       ├── colour_presets.py
 │       ├── template_matching.py
 │       ├── color_matching.py
 │       ├── templates.py
@@ -112,7 +106,6 @@ runescapetwo/
 ├── tools/
 │   ├── image_tester/
 │   └── colour_tester/
-├── profiles/
 └── tests/
 ```
 
@@ -133,11 +126,7 @@ vision.click_image("bank_button", area="game", bot_id=bot_id, wait=True)
 vision.wait_until_gone("loading", area="game", bot_id=bot_id)
 ```
 
-Iedere template gebruikt in productie precies één opgeslagen OpenCV-methode. Daardoor probeert `find_image()` niet stilletjes alle methodes. Templates, metadata en de LAB-kleurweergave worden gecachet.
-
-`find_image()` controleert meerdere sterke vormkandidaten wanneer de beste kandidaat niet door de colour-threshold komt. Hierdoor kan een geldige tweede kandidaat alsnog worden gevonden.
-
-Wanneer geen area wordt meegegeven, gebruikt een template eerst zijn area uit `config/templates_meta.json` en anders `game`.
+Iedere template gebruikt in productie precies één opgeslagen OpenCV-methode. Templates, metadata en de LAB-kleurweergave worden gecachet.
 
 ## Live Image Tester
 
@@ -145,25 +134,69 @@ Wanneer geen area wordt meegegeven, gebruikt een template eerst zijn area uit `c
 python -m tools.image_tester.app
 ```
 
-De tester:
+De tester vergelijkt de OpenCV-methodes live, toont geldige en afgewezen matches en slaat de gekozen productiemethode op in `config/templates_meta.json`.
 
-- kiest bot 1 tot en met 4;
-- gebruikt alle opgeslagen areas;
-- maakt per frame één screenshot;
-- vergelijkt de aangevinkte OpenCV-methodes;
-- toont groene vakken voor geldige hits en rode vakken voor colour-afwijzingen;
-- toont verwerkingstijd en FPS;
-- slaat één vaste methode, shape-threshold, colour-threshold en area op in `config/templates_meta.json`.
+## Colour vision
 
-De tester gebruikt dezelfde matching-, candidate- en colourfuncties als de productiecode. Er bestaat dus geen tweede afwijkende debugger-engine.
+`config/colour_presets.json` begint leeg. Maak kleuren aan met het pipet in de live tester. Een preset bevat alleen de HSV-ranges van de kleur; area, bot en gebruiksregel staan in de functieaanroep.
 
-## Colour Tester
+Dezelfde kleur kan daardoor verschillende doelen hebben.
+
+Een klein aantal rode pixels in de HP-area:
+
+```python
+if vision.colour_exists(
+    "red",
+    area="HP_Area",
+    bot_id=bot_id,
+    minimum_pixels=8,
+):
+    print("Low HP")
+```
+
+Een groot rood gemarkeerd target in het speelveld:
+
+```python
+blobs = vision.find_colour_blobs(
+    "red",
+    area="game",
+    bot_id=bot_id,
+    minimum_area_px=500,
+)
+```
+
+`minimum_pixels` kijkt naar het totale aantal kleurpixels in de area. `minimum_area_px` kijkt naar het exacte aantal verbonden kleurpixels per blob.
+
+Een gevonden blob bevat absolute coördinaten, een centroid en een veilig punt diep binnen de gekleurde vorm:
+
+```python
+blob = vision.find_colour(
+    "purple",
+    area="game",
+    bot_id=bot_id,
+    minimum_area_px=200,
+)
+
+if blob:
+    mouse.move_to(*blob.random_point(padding=3))
+```
+
+## Live Colour Tester
 
 ```bash
 python -m tools.colour_tester.app
 ```
 
-De Colour Tester blijft een aparte fase voor live HSV- en blobkalibratie.
+Werkwijze:
+
+1. Kies bot en area.
+2. Typ een presetnaam, bijvoorbeeld `purple` of `red`.
+3. Activeer het pipet en klik op de opvallende kleur.
+4. Pas de HSV-tolerantie en minimum- of maximumblobgrootte live aan.
+5. Controleer het masker en de groene kaders met exacte pixelwaarde.
+6. Sla de kleurpreset op.
+
+De tester en productie gebruiken dezelfde mask-, pixeltelling- en blobfuncties. Rood dat rond het einde van de HSV-schaal ligt wordt automatisch als twee ranges opgeslagen.
 
 ## Installeren en controleren
 
