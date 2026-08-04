@@ -3,20 +3,17 @@ import numpy as np
 
 from core.vision.colour_detection import (
     blobs_from_mask,
-    build_colour_mask,
-    normalize_colour_name,
+    build_mask_from_ranges,
 )
 
 
-def test_dutch_colour_aliases_are_supported():
-    assert normalize_colour_name("paars") == "purple"
-    assert normalize_colour_name("cyaan") == "cyan"
-
-
-def test_build_colour_mask_detects_green_pixels():
+def test_build_mask_from_ranges_detects_green_pixels():
     image = np.zeros((20, 20, 3), dtype=np.uint8)
     image[5:15, 5:15] = (0, 255, 0)
-    mask = build_colour_mask(image, "green")
+    mask = build_mask_from_ranges(
+        image,
+        (((35, 200, 200), (85, 255, 255)),),
+    )
     assert int(mask[10, 10]) == 255
     assert int(mask[0, 0]) == 0
 
@@ -33,6 +30,7 @@ def test_blobs_are_returned_in_absolute_screen_coordinates():
     assert blob.y == 506
     assert blob.centroid_x >= 963
     assert blob.centroid_y >= 506
+    assert blob.area_px == 288
 
 
 def test_small_noise_is_filtered_out():
