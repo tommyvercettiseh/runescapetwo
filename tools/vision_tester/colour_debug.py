@@ -5,6 +5,8 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
+from core.vision.colour_presets import HSVRange
+
 
 @dataclass(frozen=True)
 class DominantColour:
@@ -12,6 +14,34 @@ class DominantColour:
     rgb: tuple[int, int, int]
     pixels: int
     percentage: float
+
+
+def editor_sample_from_ranges(ranges: tuple[HSVRange, ...]) -> tuple[int, int, int]:
+    """Return a useful editable HSV centre for one or more stored ranges."""
+    if not ranges:
+        raise ValueError("At least one HSV range is required")
+
+    saturation_low = min(lower[1] for lower, _upper in ranges)
+    saturation_high = max(upper[1] for _lower, upper in ranges)
+    value_low = min(lower[2] for lower, _upper in ranges)
+    value_high = max(upper[2] for _lower, upper in ranges)
+
+    low_wrap = next((item for item in ranges if item[0][0] == 0), None)
+    high_wrap = next((item for item in ranges if item[1][0] == 179), None)
+    if len(ranges) == 2 and low_wrap and high_wrap:
+        hue_start = high_wrap[0][0]
+        hue_end = low_wrap[1][0] + 180
+        hue = int(round((hue_start + hue_end) / 2.0)) % 180
+    else:
+        hue_low = min(lower[0] for lower, _upper in ranges)
+        hue_high = max(upper[0] for _lower, upper in ranges)
+        hue = int(round((hue_low + hue_high) / 2.0))
+
+    return (
+        hue,
+        int(round((saturation_low + saturation_high) / 2.0)),
+        int(round((value_low + value_high) / 2.0)),
+    )
 
 
 def isolate_colour(screenshot_rgb: np.ndarray, mask: np.ndarray) -> np.ndarray:
