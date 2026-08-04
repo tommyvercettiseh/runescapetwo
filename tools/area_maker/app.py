@@ -6,6 +6,7 @@ from tkinter import messagebox, simpledialog, ttk
 
 from core.vision.offsets import get_bot_offset
 
+from .preview import AreaPreview
 from .store import EditableArea, load_editable_areas, save_editable_areas
 
 HANDLE = 18
@@ -44,11 +45,12 @@ class AreaMaker(tk.Tk):
 
         self._build_panel()
         self._draw()
+        self.after(150, self._refresh_preview_source)
 
     def _build_panel(self) -> None:
         panel = tk.Toplevel(self)
         panel.title("Areas")
-        panel.geometry(f"420x650+{max(20, self.winfo_screenwidth() - 450)}+40")
+        panel.geometry(f"430x960+{max(20, self.winfo_screenwidth() - 460)}+20")
         panel.attributes("-topmost", True)
         panel.protocol("WM_DELETE_WINDOW", self.destroy)
         self.panel = panel
@@ -58,11 +60,11 @@ class AreaMaker(tk.Tk):
         ttk.Label(top, text="Bot").pack(side="left")
         bot_box = ttk.Combobox(top, textvariable=self.bot_id, values=(1, 2, 3, 4), state="readonly", width=5)
         bot_box.pack(side="left", padx=(6, 12))
-        bot_box.bind("<<ComboboxSelected>>", lambda _event: self._draw())
+        bot_box.bind("<<ComboboxSelected>>", self._bot_changed)
         ttk.Button(top, text="Nieuwe area", command=self._start_new).pack(side="left", padx=3)
         ttk.Button(top, text="Opslaan", command=self._save).pack(side="left", padx=3)
 
-        self.tree = ttk.Treeview(panel, columns=("group", "size"), show="tree headings", selectmode="browse")
+        self.tree = ttk.Treeview(panel, columns=("group", "size"), show="tree headings", selectmode="browse", height=15)
         self.tree.heading("#0", text="Naam")
         self.tree.heading("group", text="Groep")
         self.tree.heading("size", text="Formaat")
@@ -72,6 +74,12 @@ class AreaMaker(tk.Tk):
         self.tree.pack(fill="both", expand=True, padx=10, pady=(0, 8))
         self.tree.bind("<<TreeviewSelect>>", self._tree_select)
 
+        self.preview = AreaPreview(panel)
+        self.preview.pack(fill="x", padx=10, pady=(0, 6))
+        ttk.Button(panel, text="Preview verversen", command=self._refresh_preview_source).pack(
+            fill="x", padx=10, pady=(0, 8)
+        )
+
         buttons = ttk.Frame(panel, padding=(10, 0, 10, 8))
         buttons.pack(fill="x")
         ttk.Button(buttons, text="Hernoemen", command=self._rename).pack(side="left", fill="x", expand=True, padx=(0, 4))
@@ -79,13 +87,41 @@ class AreaMaker(tk.Tk):
         ttk.Button(buttons, text="Verwijderen", command=self._delete).pack(side="left", fill="x", expand=True, padx=(4, 0))
 
         help_text = (
-            "Klik in een area om te verplaatsen. Sleep een dikke rand om één zijde te resizen. "
-            "Sleep een groot hoekblok voor twee zijden tegelijk. Alleen de geselecteerde area toont handles."
+            "Selecteer een area en gebruik de uitvergrote preview voor pixelnauwkeurig resizen. "
+            "Binnen de area slepen verplaatst; dikke randen en grote hoeken resizen."
         )
-        ttk.Label(panel, text=help_text, wraplength=390, justify="left", padding=10).pack(fill="x")
+        ttk.Label(panel, text=help_text, wraplength=400, justify="left", padding=10).pack(fill="x")
         self.status = tk.StringVar(value="Kies een area of maak een nieuwe.")
         ttk.Label(panel, textvariable=self.status, padding=(10, 0, 10, 10)).pack(fill="x")
         self._refresh_tree()
+
+    def _bot_changed(self, _event=None) -> None:
+        self._draw()
+        self._refresh_preview_source()
+
+    def _refresh_preview_source(self) -> None:
+        self.withdraw()
+        self.panel.withdraw()
+        self.after(80, self._finish_preview_capture)
+
+    def _finish_preview_capture(self) -> None:
+        try:
+            self.preview.capture_desktop()
+        finally:
+            self.deiconify()
+            self.attributes("-fullscreen", True)
+            self.attributes("-topmost", True)
+            self.panel.deiconify()
+            self.panel.attributes("-topmost", True)
+            self.panel.lift()
+            self._draw()
+            self._update_preview()
+
+    def _update_preview(self) -> None:
+        if not self.selected or self.selected not in self.areas:
+            self.preview.clear()
+            return
+        self.preview.show_area(self.areas[self.selected], offset=self._offset())
 
     def _offset(self) -> tuple[int, int]:
         return get_bot_offset(self.bot_id.get())
@@ -127,20 +163,39 @@ class AreaMaker(tk.Tk):
                 continue
             near_left, near_right = abs(x - x1) <= HANDLE, abs(x - x2) <= HANDLE
             near_top, near_bottom = abs(y - y1) <= HANDLE, abs(y - y2) <= HANDLE
-            if near_left and near_top: return name, "nw"
-            if near_right and near_top: return name, "ne"
-            if near_left and near_bottom: return name, "sw"
-            if near_right and near_bottom: return name, "se"
-            if x1 <= x <= x2 and abs(y - y1) <= EDGE_HIT: return name, "n"
-            if x1 <= x <= x2 and abs(y - y2) <= EDGE_HIT: return name, "s"
-            if y1 <= y <= y2 and abs(x - x1) <= EDGE_HIT: return name, "w"
-            if y1 <= y <= y2 and abs(x - x2) <= EDGE_HIT: return name, "e"
-            if x1 < x < x2 and y1 < y < y2: return name, "move"
+            if near_left and near_top:
+                return name, "nw"
+            if near_right and near_top:
+                return name, "ne"
+            if near_left and near_bottom:
+                return name, "sw"
+            if near_right and near_bottom:
+                return name, "se"
+            if x1 <= x <= x2 and abs(y - y1) <= EDGE_HIT:
+                return name, "n"
+            if x1 <= x <= x2 and abs(y - y2) <= EDGE_HIT:
+                return name, "s"
+            if y1 <= y <= y2 and abs(x - x1) <= EDGE_HIT:
+                return name, "w"
+            if y1 <= y <= y2 and abs(x - x2) <= EDGE_HIT:
+                return name, "e"
+            if x1 < x < x2 and y1 < y < y2:
+                return name, "move"
         return None, None
 
     def _motion(self, event) -> None:
         _name, mode = self._hit(event.x, event.y)
-        cursors = {"move": "fleur", "n": "sb_v_double_arrow", "s": "sb_v_double_arrow", "e": "sb_h_double_arrow", "w": "sb_h_double_arrow", "nw": "top_left_corner", "se": "bottom_right_corner", "ne": "top_right_corner", "sw": "bottom_left_corner"}
+        cursors = {
+            "move": "fleur",
+            "n": "sb_v_double_arrow",
+            "s": "sb_v_double_arrow",
+            "e": "sb_h_double_arrow",
+            "w": "sb_h_double_arrow",
+            "nw": "top_left_corner",
+            "se": "bottom_right_corner",
+            "ne": "top_right_corner",
+            "sw": "bottom_left_corner",
+        }
         self.canvas.configure(cursor=cursors.get(mode, "crosshair"))
 
     def _down(self, event) -> None:
@@ -152,6 +207,7 @@ class AreaMaker(tk.Tk):
         if name is None:
             self.selected = None
             self._draw()
+            self._update_preview()
             return
         self.selected, self.mode = name, mode
         self.anchor = (event.x, event.y)
@@ -159,6 +215,7 @@ class AreaMaker(tk.Tk):
         self.tree.selection_set(name)
         self.tree.see(name)
         self._draw()
+        self._update_preview()
 
     def _drag(self, event) -> None:
         if self.mode == "new" and self.new_rect is not None:
@@ -169,15 +226,21 @@ class AreaMaker(tk.Tk):
         dx, dy = event.x - self.anchor[0], event.y - self.anchor[1]
         a = self.start_area
         x, y, width, height = a.x, a.y, a.width, a.height
-        if self.mode == "move": x, y = x + dx, y + dy
-        if "w" in self.mode: x, width = x + dx, width - dx
-        if "e" in self.mode: width = width + dx
-        if "n" in self.mode: y, height = y + dy, height - dy
-        if "s" in self.mode: height = height + dy
+        if self.mode == "move":
+            x, y = x + dx, y + dy
+        if "w" in self.mode:
+            x, width = x + dx, width - dx
+        if "e" in self.mode:
+            width = width + dx
+        if "n" in self.mode:
+            y, height = y + dy, height - dy
+        if "s" in self.mode:
+            height = height + dy
         if width < MIN_SIZE or height < MIN_SIZE:
             return
         self.areas[self.selected] = replace(a, x=x, y=y, width=width, height=height)
         self._draw()
+        self._update_preview()
 
     def _up(self, event) -> None:
         if self.mode == "new":
@@ -193,32 +256,40 @@ class AreaMaker(tk.Tk):
                 return
             name = simpledialog.askstring("Nieuwe area", "Naam:", parent=self.panel)
             if not name:
-                self._draw(); return
+                self._draw()
+                return
             name = name.strip()
             if name in self.areas:
                 messagebox.showerror("Area", "Deze naam bestaat al.", parent=self.panel)
-                self._draw(); return
+                self._draw()
+                return
             self.areas[name] = EditableArea(name, x1, y1, x2 - x1, y2 - y1)
             self.selected = name
-            self._refresh_tree(); self._draw(); self._save()
+            self._refresh_tree()
+            self._draw()
+            self._save()
+            self._refresh_preview_source()
             return
         if self.selected and self.mode:
             self._save()
         self.mode = None
         self.start_area = None
         self._refresh_tree()
+        self._update_preview()
 
     def _start_new(self) -> None:
         self.mode = "new"
         self.selected = None
         self.status.set("Sleep op het scherm om een nieuwe area te tekenen.")
         self._draw()
+        self._update_preview()
 
     def _tree_select(self, _event=None) -> None:
         selection = self.tree.selection()
         if selection:
             self.selected = selection[0]
             self._draw()
+            self._update_preview()
 
     def _refresh_tree(self) -> None:
         selected = self.selected
@@ -233,34 +304,50 @@ class AreaMaker(tk.Tk):
         self.status.set(f"{len(self.areas)} area(s) opgeslagen.")
 
     def _rename(self) -> None:
-        if not self.selected: return
+        if not self.selected:
+            return
         new = simpledialog.askstring("Hernoemen", "Nieuwe naam:", initialvalue=self.selected, parent=self.panel)
-        if not new or new.strip() == self.selected: return
+        if not new or new.strip() == self.selected:
+            return
         new = new.strip()
         if new in self.areas:
-            messagebox.showerror("Area", "Deze naam bestaat al.", parent=self.panel); return
+            messagebox.showerror("Area", "Deze naam bestaat al.", parent=self.panel)
+            return
         old = self.selected
         area = self.areas.pop(old)
         self.areas[new] = replace(area, name=new)
         self.selected = new
-        self._save(); self._refresh_tree(); self._draw()
+        self._save()
+        self._refresh_tree()
+        self._draw()
+        self._update_preview()
 
     def _duplicate(self) -> None:
-        if not self.selected: return
+        if not self.selected:
+            return
         source = self.areas[self.selected]
         name = simpledialog.askstring("Dupliceren", "Naam kopie:", initialvalue=f"{source.name}_copy", parent=self.panel)
-        if not name or name.strip() in self.areas: return
+        if not name or name.strip() in self.areas:
+            return
         name = name.strip()
         self.areas[name] = replace(source, name=name, x=source.x + 12, y=source.y + 12)
         self.selected = name
-        self._save(); self._refresh_tree(); self._draw()
+        self._save()
+        self._refresh_tree()
+        self._draw()
+        self._update_preview()
 
     def _delete(self) -> None:
-        if not self.selected: return
-        if not messagebox.askyesno("Verwijderen", f"'{self.selected}' verwijderen?", parent=self.panel): return
+        if not self.selected:
+            return
+        if not messagebox.askyesno("Verwijderen", f"'{self.selected}' verwijderen?", parent=self.panel):
+            return
         del self.areas[self.selected]
         self.selected = None
-        self._save(); self._refresh_tree(); self._draw()
+        self._save()
+        self._refresh_tree()
+        self._draw()
+        self._update_preview()
 
 
 def main() -> None:
