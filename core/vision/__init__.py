@@ -9,7 +9,9 @@ from .api import (
 from .areas import get_area, get_region, load_areas
 from .colour_detection import (
     build_colour_mask,
+    build_mask_from_ranges,
     colour_exists,
+    count_colour_pixels,
     find_colour,
     find_colour_blobs,
 )
@@ -27,7 +29,9 @@ __all__ = [
     "find_colour",
     "find_colour_blobs",
     "colour_exists",
+    "count_colour_pixels",
     "build_colour_mask",
+    "build_mask_from_ranges",
     "load_areas",
     "get_area",
     "get_region",
