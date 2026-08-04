@@ -3,64 +3,23 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
+from .colour_presets import HSV, HSVRange, load_colour_preset
 from .models import ColourBlob
 from .screenshots import capture_area
 
-HSVRange = tuple[tuple[int, int, int], tuple[int, int, int]]
 
-# Named defaults stay intentionally small and readable. Project-specific ranges
-# can be added later without mixing colour logic into image detection.
-COLOUR_RANGES: dict[str, tuple[HSVRange, ...]] = {
-    "red": (
-        ((0, 90, 70), (10, 255, 255)),
-        ((170, 90, 70), (179, 255, 255)),
-    ),
-    "green": (((35, 60, 50), (85, 255, 255)),),
-    "blue": (((90, 60, 50), (135, 255, 255)),),
-    "cyan": (((80, 50, 60), (100, 255, 255)),),
-    "yellow": (((20, 80, 80), (35, 255, 255)),),
-    "orange": (((8, 90, 70), (22, 255, 255)),),
-    "purple": (((135, 50, 40), (169, 255, 255)),),
-    "pink": (((160, 45, 70), (179, 255, 255)),),
-    "white": (((0, 0, 190), (179, 60, 255)),),
-    "black": (((0, 0, 0), (179, 255, 45)),),
-}
-
-ALIASES = {
-    "rood": "red",
-    "groen": "green",
-    "blauw": "blue",
-    "cyaan": "cyan",
-    "geel": "yellow",
-    "oranje": "orange",
-    "paars": "purple",
-    "roze": "pink",
-    "wit": "white",
-    "zwart": "black",
-}
-
-
-def normalize_colour_name(colour: str) -> str:
-    name = str(colour).strip().lower()
-    name = ALIASES.get(name, name)
-    if name not in COLOUR_RANGES:
-        raise ValueError(f"Unknown colour: {colour}")
-    return name
-
-
-def build_colour_mask(
+def build_mask_from_ranges(
     screenshot_rgb: np.ndarray,
-    colour: str,
+    ranges: tuple[HSVRange, ...] | list[HSVRange],
     *,
     erode_px: int = 0,
     dilate_px: int = 0,
 ) -> np.ndarray:
-    """Build a binary mask for one named colour."""
-    name = normalize_colour_name(colour)
+    """Build a binary mask from one or more HSV ranges."""
     hsv = cv2.cvtColor(screenshot_rgb, cv2.COLOR_RGB2HSV)
-
     mask = np.zeros(hsv.shape[:2], dtype=np.uint8)
-    for lower, upper in COLOUR_RANGES[name]:
+
+    for lower, upper in ranges:
         mask |= cv2.inRange(
             hsv,
             np.array(lower, dtype=np.uint8),
@@ -76,33 +35,91 @@ def build_colour_mask(
     return mask
 
 
+def build_colour_mask(
+    screenshot_rgb: np.ndarray,
+    colour: str,
+    *,
+    erode_px: int = 0,
+    dilate_px: int = 0,
+) -> np.ndarray:
+    preset = load_colour_preset(colour)
+    return build_mask_from_ranges(
+        screenshot_rgb,
+        preset.ranges,
+        erode_px=erode_px,
+        dilate_px=dilate_px,
+    )
+
+
+def count_mask_pixels(mask: np.ndarray) -> int:
+    return int(cv2.countNonZero(mask))
+
+
+def count_mask_components(mask: np.ndarray) -> int:
+    count, _ = cv2.connectedComponents((mask > 0).astype(np.uint8), connectivity=8)
+    return max(0, int(count) - 1)
+
+
+def _safe_point(
+    component_mask: np.ndarray,
+    *,
+    origin_x: int,
+    origin_y: int,
+) -> tuple[int, int, float]:
+    padded = cv2.copyMakeBorder(
+        component_mask,
+        1,
+        1,
+        1,
+        1,
+        cv2.BORDER_CONSTANT,
+        value=0,
+    )
+    distance = cv2.distanceTransform(padded, cv2.DIST_L2, 5)
+    _, radius, _, location = cv2.minMaxLoc(distance)
+    local_x = min(max(int(location[0]) - 1, 0), component_mask.shape[1] - 1)
+    local_y = min(max(int(location[1]) - 1, 0), component_mask.shape[0] - 1)
+    return origin_x + local_x, origin_y + local_y, float(radius)
+
+
 def blobs_from_mask(
     mask: np.ndarray,
     *,
     origin: tuple[int, int] = (0, 0),
-    minimum_area_px: float = 20.0,
-    maximum_area_px: float | None = None,
+    minimum_area_px: int = 20,
+    maximum_area_px: int | None = None,
 ) -> list[ColourBlob]:
-    """Convert connected mask regions to absolute-screen blobs."""
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    """Return connected blobs with exact coloured-pixel counts."""
+    minimum = max(1, int(minimum_area_px))
+    maximum = None if maximum_area_px is None else max(1, int(maximum_area_px))
+    count, labels, stats, centroids = cv2.connectedComponentsWithStats(
+        (mask > 0).astype(np.uint8),
+        connectivity=8,
+    )
+
     origin_x, origin_y = origin
     blobs: list[ColourBlob] = []
 
-    for contour in contours:
-        area_px = float(cv2.contourArea(contour))
-        if area_px < float(minimum_area_px):
+    for label in range(1, count):
+        area_px = int(stats[label, cv2.CC_STAT_AREA])
+        if area_px < minimum:
             continue
-        if maximum_area_px is not None and area_px > float(maximum_area_px):
+        if maximum is not None and area_px > maximum:
             continue
 
-        x, y, width, height = cv2.boundingRect(contour)
-        moments = cv2.moments(contour)
-        if moments["m00"]:
-            centroid_x = int(moments["m10"] / moments["m00"])
-            centroid_y = int(moments["m01"] / moments["m00"])
-        else:
-            centroid_x = x + width // 2
-            centroid_y = y + height // 2
+        x = int(stats[label, cv2.CC_STAT_LEFT])
+        y = int(stats[label, cv2.CC_STAT_TOP])
+        width = int(stats[label, cv2.CC_STAT_WIDTH])
+        height = int(stats[label, cv2.CC_STAT_HEIGHT])
+        centroid_x = int(round(float(centroids[label, 0])))
+        centroid_y = int(round(float(centroids[label, 1])))
+
+        component = (labels[y : y + height, x : x + width] == label).astype(np.uint8)
+        safe_x, safe_y, safe_radius = _safe_point(
+            component,
+            origin_x=origin_x + x,
+            origin_y=origin_y + y,
+        )
 
         blobs.append(
             ColourBlob(
@@ -113,10 +130,56 @@ def blobs_from_mask(
                 area_px=area_px,
                 centroid_x=origin_x + centroid_x,
                 centroid_y=origin_y + centroid_y,
+                safe_x=safe_x,
+                safe_y=safe_y,
+                safe_radius=safe_radius,
             )
         )
 
     return sorted(blobs, key=lambda blob: blob.area_px, reverse=True)
+
+
+def analyse_colour_image(
+    screenshot_rgb: np.ndarray,
+    colour: str,
+    *,
+    origin: tuple[int, int] = (0, 0),
+    minimum_area_px: int = 20,
+    maximum_area_px: int | None = None,
+) -> tuple[np.ndarray, list[ColourBlob], int]:
+    mask = build_colour_mask(screenshot_rgb, colour)
+    blobs = blobs_from_mask(
+        mask,
+        origin=origin,
+        minimum_area_px=minimum_area_px,
+        maximum_area_px=maximum_area_px,
+    )
+    return mask, blobs, count_mask_pixels(mask)
+
+
+def count_colour_pixels(
+    colour: str,
+    *,
+    area: str | None = "game",
+    bot_id: int | None = None,
+) -> int:
+    screenshot, _ = capture_area(area, bot_id=bot_id)
+    return count_mask_pixels(build_colour_mask(screenshot, colour))
+
+
+def colour_exists(
+    colour: str,
+    *,
+    area: str | None = "game",
+    bot_id: int | None = None,
+    minimum_pixels: int = 1,
+) -> bool:
+    """Check total matching pixels; no blob-size rule is applied."""
+    return count_colour_pixels(
+        colour,
+        area=area,
+        bot_id=bot_id,
+    ) >= max(1, int(minimum_pixels))
 
 
 def find_colour_blobs(
@@ -124,32 +187,93 @@ def find_colour_blobs(
     *,
     area: str | None = "game",
     bot_id: int | None = None,
-    minimum_area_px: float = 20.0,
-    maximum_area_px: float | None = None,
-    erode_px: int = 0,
-    dilate_px: int = 0,
+    minimum_area_px: int = 20,
+    maximum_area_px: int | None = None,
 ) -> list[ColourBlob]:
-    """Find colour blobs inside one local area for the selected bot."""
     screenshot, region = capture_area(area, bot_id=bot_id)
-    mask = build_colour_mask(
+    _, blobs, _ = analyse_colour_image(
         screenshot,
         colour,
-        erode_px=erode_px,
-        dilate_px=dilate_px,
-    )
-    return blobs_from_mask(
-        mask,
         origin=(region[0], region[1]),
         minimum_area_px=minimum_area_px,
         maximum_area_px=maximum_area_px,
     )
+    return blobs
 
 
 def find_colour(colour: str, **kwargs) -> ColourBlob | None:
-    """Return the largest valid colour blob, or None."""
     blobs = find_colour_blobs(colour, **kwargs)
     return blobs[0] if blobs else None
 
 
-def colour_exists(colour: str, **kwargs) -> bool:
-    return find_colour(colour, **kwargs) is not None
+def sample_hsv(
+    screenshot_rgb: np.ndarray,
+    x: int,
+    y: int,
+    *,
+    radius: int = 2,
+) -> HSV:
+    """Sample a small patch robustly, including hues around red's wrap point."""
+    height, width = screenshot_rgb.shape[:2]
+    x = min(max(0, int(x)), width - 1)
+    y = min(max(0, int(y)), height - 1)
+    radius = max(0, int(radius))
+
+    patch = screenshot_rgb[
+        max(0, y - radius) : min(height, y + radius + 1),
+        max(0, x - radius) : min(width, x + radius + 1),
+    ]
+    hsv = cv2.cvtColor(patch, cv2.COLOR_RGB2HSV).reshape(-1, 3).astype(np.int16)
+    center_hue = int(
+        cv2.cvtColor(
+            screenshot_rgb[y : y + 1, x : x + 1],
+            cv2.COLOR_RGB2HSV,
+        )[0, 0, 0]
+    )
+
+    hue_delta = ((hsv[:, 0] - center_hue + 90) % 180) - 90
+    hue = int(round((center_hue + float(np.median(hue_delta))) % 180))
+    saturation = int(round(float(np.median(hsv[:, 1]))))
+    value = int(round(float(np.median(hsv[:, 2]))))
+    return hue, saturation, value
+
+
+def hsv_ranges_around(
+    hsv: HSV,
+    *,
+    hue_tolerance: int = 5,
+    saturation_tolerance: int = 40,
+    value_tolerance: int = 40,
+) -> tuple[HSVRange, ...]:
+    hue, saturation, value = hsv
+    hue_tolerance = min(89, max(0, int(hue_tolerance)))
+    saturation_tolerance = max(0, int(saturation_tolerance))
+    value_tolerance = max(0, int(value_tolerance))
+
+    lower_sv = (
+        max(0, saturation - saturation_tolerance),
+        max(0, value - value_tolerance),
+    )
+    upper_sv = (
+        min(255, saturation + saturation_tolerance),
+        min(255, value + value_tolerance),
+    )
+
+    low_hue = hue - hue_tolerance
+    high_hue = hue + hue_tolerance
+    if low_hue < 0:
+        return (
+            ((0, lower_sv[0], lower_sv[1]), (high_hue, upper_sv[0], upper_sv[1])),
+            ((180 + low_hue, lower_sv[0], lower_sv[1]), (179, upper_sv[0], upper_sv[1])),
+        )
+    if high_hue > 179:
+        return (
+            ((low_hue, lower_sv[0], lower_sv[1]), (179, upper_sv[0], upper_sv[1])),
+            ((0, lower_sv[0], lower_sv[1]), (high_hue - 180, upper_sv[0], upper_sv[1])),
+        )
+    return (
+        (
+            (low_hue, lower_sv[0], lower_sv[1]),
+            (high_hue, upper_sv[0], upper_sv[1]),
+        ),
+    )

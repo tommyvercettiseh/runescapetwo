@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.6.0
+
+### Changed
+- Colour names now come from editable `config/colour_presets.json` instead of hardcoded Python ranges.
+- `colour_exists()` checks total matching pixels, which fits state sensors such as low HP.
+- `find_colour_blobs()` keeps blob-size filtering for marked objects such as large targets.
+- Blob area now means the exact number of connected mask pixels instead of contour geometry.
+- Colour blobs expose a safe interior point based on distance to the blob edge.
+- The live Colour Tester uses the same mask and blob engine as production.
+
+### Added
+- Pipette sampling with a small robust pixel patch.
+- Automatic HSV wrap handling for red.
+- Live green blob boxes with exact pixel counts.
+- Live minimum and maximum blob filtering.
+- Colour preset create, load, save and delete controls.
+- Tests proving that one red preset can support both HP presence and large target detection.
+
+### Removed
+- Hardcoded colour aliases and built-in HSV ranges.
+- Area editing and click-padding settings from colour presets.
+- Duplicate mask and blob logic inside the tester.
+
 ## 0.5.0
 
 ### Changed
