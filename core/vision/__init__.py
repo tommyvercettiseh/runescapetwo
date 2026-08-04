@@ -6,6 +6,7 @@ from .api import (
     wait_for_image,
     wait_until_gone,
 )
+from .areas import get_area, get_region, load_areas
 from .colour_detection import (
     build_colour_mask,
     colour_exists,
@@ -13,7 +14,8 @@ from .colour_detection import (
     find_colour_blobs,
 )
 from .models import ColourBlob, Hit, MatchResult, TemplateSettings
-from .offsets import get_bot_id, get_bot_offset
+from .offsets import apply_offset, get_bot_id, get_bot_offset
+from .screenshots import capture_area
 
 __all__ = [
     "find_image",
@@ -26,8 +28,13 @@ __all__ = [
     "find_colour_blobs",
     "colour_exists",
     "build_colour_mask",
+    "load_areas",
+    "get_area",
+    "get_region",
+    "capture_area",
     "get_bot_id",
     "get_bot_offset",
+    "apply_offset",
     "Hit",
     "ColourBlob",
     "MatchResult",
