@@ -1,6 +1,10 @@
 import numpy as np
 
-from tools.vision_tester.colour_debug import dominant_colours, isolate_colour
+from tools.vision_tester.colour_debug import (
+    dominant_colours,
+    editor_sample_from_ranges,
+    isolate_colour,
+)
 
 
 def test_isolate_colour_keeps_only_masked_pixels() -> None:
@@ -42,3 +46,20 @@ def test_dominant_colours_respects_limit() -> None:
     )
 
     assert len(dominant_colours(image, limit=2)) == 2
+
+
+def test_editor_sample_uses_centre_of_regular_range() -> None:
+    assert editor_sample_from_ranges((((140, 180, 160), (150, 240, 220)),)) == (
+        145,
+        210,
+        190,
+    )
+
+
+def test_editor_sample_understands_wrapped_red_range() -> None:
+    ranges = (
+        ((173, 230, 230), (179, 250, 250)),
+        ((0, 230, 230), (3, 250, 250)),
+    )
+
+    assert editor_sample_from_ranges(ranges) == (178, 240, 240)
