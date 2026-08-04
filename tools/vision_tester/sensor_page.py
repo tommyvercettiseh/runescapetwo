@@ -6,7 +6,7 @@ from tkinter import ttk
 
 from core.vision.screenshots import capture_area
 
-from .common import PreviewLabel
+from .common import COLOURS, FilterCombobox, LiveToggle, PreviewLabel
 from .sensor_checks import SensorCheck, load_sensor_checks
 from .sensor_view import analyse_sensor_frame, sensor_description
 
@@ -14,7 +14,7 @@ from .sensor_view import analyse_sensor_frame, sensor_description
 class SensorPage(ttk.Frame):
     def __init__(self, parent):
         super().__init__(parent)
-        self.running = False
+        self.live = tk.BooleanVar(value=False)
         self.checks: dict[str, SensorCheck] = {}
 
         self.bot_id = tk.IntVar(value=1)
@@ -30,51 +30,55 @@ class SensorPage(ttk.Frame):
         self.after(150, self._tick)
 
     def _build(self) -> None:
-        top = ttk.Frame(self, padding=10)
-        top.pack(fill="x")
+        top = ttk.Frame(self, padding=(14, 12), style="Surface.TFrame")
+        top.pack(fill="x", padx=18, pady=(14, 10))
 
-        ttk.Label(top, text="Sensor").pack(side="left")
-        self.sensor_box = ttk.Combobox(
-            top,
+        sensor_group = ttk.Frame(top, style="Surface.TFrame")
+        sensor_group.pack(side="left", fill="x", expand=True)
+        ttk.Label(sensor_group, text="SENSOR ZOEKEN", style="SurfaceMuted.TLabel").pack(anchor="w")
+        self.sensor_box = FilterCombobox(
+            sensor_group,
             textvariable=self.sensor_name,
-            state="readonly",
-            width=30,
+            width=36,
         )
-        self.sensor_box.pack(side="left", padx=(6, 16))
+        self.sensor_box.pack(anchor="w", fill="x", pady=(2, 0), padx=(0, 12))
         self.sensor_box.bind("<<ComboboxSelected>>", self._sensor_changed)
 
-        ttk.Label(top, text="Bot").pack(side="left")
+        bot_group = ttk.Frame(top, style="Surface.TFrame")
+        bot_group.pack(side="left", padx=(0, 14))
+        ttk.Label(bot_group, text="BOT", style="SurfaceMuted.TLabel").pack(anchor="w")
         bot_box = ttk.Combobox(
-            top,
+            bot_group,
             textvariable=self.bot_id,
             values=(1, 2, 3, 4),
             state="readonly",
             width=5,
         )
-        bot_box.pack(side="left", padx=(6, 16))
+        bot_box.pack(pady=(2, 0))
         bot_box.bind("<<ComboboxSelected>>", lambda _event: self._once())
 
-        self.live_button = ttk.Button(top, text="Live starten", command=self._toggle)
-        self.live_button.pack(side="left", padx=3)
-        ttk.Button(top, text="Eenmalig meten", command=self._once).pack(side="left", padx=3)
-        ttk.Button(top, text="Sensoren vernieuwen", command=self._load_all).pack(side="left", padx=3)
+        self.live_button = LiveToggle(top, variable=self.live, command=self._toggle)
+        self.live_button.pack(side="left", padx=3, pady=(15, 0))
+        ttk.Button(top, text="Meten", command=self._once, style="Accent.TButton").pack(side="left", padx=(7, 3), pady=(15, 0))
+        ttk.Button(top, text="↻", command=self._load_all, width=3).pack(side="left", padx=3, pady=(15, 0))
 
-        intro = ttk.LabelFrame(self, text="Wat wordt gecontroleerd?", padding=10)
-        intro.pack(fill="x", padx=10, pady=(0, 10))
-        ttk.Label(intro, textvariable=self.description, justify="left", wraplength=900).pack(anchor="w")
+        intro = ttk.LabelFrame(self, text="  Detectieregel  ", padding=12, style="Card.TLabelframe")
+        intro.pack(fill="x", padx=18, pady=(0, 10))
+        ttk.Label(intro, textvariable=self.description, justify="left", wraplength=1100, style="Surface.TLabel").pack(anchor="w")
 
-        previews = ttk.Frame(self, padding=(6, 0, 6, 6))
+        previews = ttk.Frame(self, padding=(14, 0, 14, 6))
         previews.pack(fill="both", expand=True)
 
-        live_frame = ttk.LabelFrame(previews, text="1. Live beeld van de sensor-area", padding=5)
+        live_frame = ttk.LabelFrame(previews, text="  01 · Live sensor-area  ", padding=6, style="Card.TLabelframe")
         live_frame.grid(row=0, column=0, sticky="nsew", padx=4, pady=4)
         self.live_view = PreviewLabel(live_frame, fallback_width=620, fallback_height=500)
         self.live_view.pack(fill="both", expand=True)
 
         detected_frame = ttk.LabelFrame(
             previews,
-            text="2. Wat de sensor daadwerkelijk ziet",
-            padding=5,
+            text="  02 · Wat de sensor ziet  ",
+            padding=6,
+            style="Card.TLabelframe",
         )
         detected_frame.grid(row=0, column=1, sticky="nsew", padx=4, pady=4)
         self.detected_view = PreviewLabel(detected_frame, fallback_width=620, fallback_height=500)
@@ -84,13 +88,13 @@ class SensorPage(ttk.Frame):
         previews.columnconfigure(0, weight=1)
         previews.columnconfigure(1, weight=1)
 
-        result = ttk.LabelFrame(self, text="Uitkomst", padding=12)
-        result.pack(fill="x", padx=10, pady=(0, 8))
+        result = ttk.LabelFrame(self, text="  Uitkomst  ", padding=12, style="Card.TLabelframe")
+        result.pack(fill="x", padx=18, pady=(0, 8))
 
-        values = ttk.Frame(result)
+        values = ttk.Frame(result, style="Surface.TFrame")
         values.pack(side="left", fill="x", expand=True)
-        ttk.Label(values, textvariable=self.found_text, font=("Segoe UI", 12)).pack(anchor="w")
-        ttk.Label(values, textvariable=self.required_text, font=("Segoe UI", 12)).pack(anchor="w", pady=(4, 0))
+        ttk.Label(values, textvariable=self.found_text, font=("Segoe UI", 12), style="Surface.TLabel").pack(anchor="w")
+        ttk.Label(values, textvariable=self.required_text, font=("Segoe UI", 12), style="Surface.TLabel").pack(anchor="w", pady=(4, 0))
 
         self.result_label = ttk.Label(
             result,
@@ -98,10 +102,11 @@ class SensorPage(ttk.Frame):
             font=("Segoe UI", 22, "bold"),
             anchor="center",
             width=18,
+            style="Surface.TLabel",
         )
         self.result_label.pack(side="right", padx=16)
 
-        ttk.Label(self, textvariable=self.status, padding=(10, 5)).pack(fill="x")
+        ttk.Label(self, textvariable=self.status, padding=(20, 8), style="Muted.TLabel").pack(fill="x")
 
     def _load_all(self) -> None:
         try:
@@ -111,7 +116,7 @@ class SensorPage(ttk.Frame):
                 if check.enabled
             }
             names = sorted(self.checks)
-            self.sensor_box["values"] = names
+            self.sensor_box.set_options(names)
 
             if self.sensor_name.get() not in self.checks:
                 self.sensor_name.set(names[0] if names else "")
@@ -145,18 +150,17 @@ class SensorPage(ttk.Frame):
 
     def _toggle(self) -> None:
         if not self._selected_check():
+            self.live.set(False)
             self.status.set("Kies eerst een sensor.")
             return
-        self.running = not self.running
-        self.live_button.configure(text="Live pauzeren" if self.running else "Live starten")
+        self.status.set("Live sensormeting actief." if self.live.get() else "Live sensormeting gepauzeerd.")
 
     def _once(self) -> None:
-        self.running = False
-        self.live_button.configure(text="Live starten")
+        self.live.set(False)
         self._measure()
 
     def _tick(self) -> None:
-        if self.running:
+        if self.live.get():
             self._measure()
         self.after(150, self._tick)
 
@@ -184,17 +188,16 @@ class SensorPage(ttk.Frame):
                 f"Bot {self.bot_id.get()} | {check.name} | area {check.area} | {elapsed:.1f} ms"
             )
         except Exception as exc:
-            self.running = False
-            self.live_button.configure(text="Live starten")
+            self.live.set(False)
             self._clear_result("ERROR")
             self.status.set(f"Sensor '{check.name}' kan niet meten: {exc}")
 
     def _set_result(self, result: bool) -> None:
         self.result_text.set("TRUE" if result else "FALSE")
-        self.result_label.configure(foreground="#168447" if result else "#b83232")
+        self.result_label.configure(foreground=COLOURS["accent"] if result else COLOURS["danger"])
 
     def _clear_result(self, text: str) -> None:
         self.found_text.set("Gevonden: —")
         self.required_text.set("Benodigd: —")
         self.result_text.set(text)
-        self.result_label.configure(foreground="#666666")
+        self.result_label.configure(foreground=COLOURS["muted"])
