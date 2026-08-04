@@ -1,15 +1,415 @@
 {
-  "screen": null,
   "game": {
     "x": 0,
     "y": 0,
     "width": 1280,
-    "height": 720
+    "height": 720,
+    "group": "Core"
   },
   "inventory": {
     "x": 1000,
     "y": 200,
     "width": 250,
-    "height": 420
+    "height": 420,
+    "group": "Core"
+  },
+  "Info_Area": {
+    "x": 598,
+    "y": 25,
+    "width": 253,
+    "height": 170,
+    "group": "Basic"
+  },
+  "Skilling_Area": {
+    "x": 89,
+    "y": 373,
+    "width": 170,
+    "height": 54,
+    "group": "Basic"
+  },
+  "Chat_Area": {
+    "x": 85,
+    "y": 371,
+    "width": 496,
+    "height": 115,
+    "group": "Basic"
+  },
+  "Inventory_Area": {
+    "x": 631,
+    "y": 238,
+    "width": 190,
+    "height": 255,
+    "group": "Inventory"
+  },
+  "Bot_Area": {
+    "x": 82,
+    "y": 29,
+    "width": 519,
+    "height": 339,
+    "group": "Basic"
+  },
+  "Bot_Area_Full": {
+    "x": 82,
+    "y": 29,
+    "width": 763,
+    "height": 502,
+    "group": "Basic"
+  },
+  "Buttons_Top": {
+    "x": 605,
+    "y": 189,
+    "width": 239,
+    "height": 47,
+    "group": "Interface"
+  },
+  "Buttons_Bottom": {
+    "x": 605,
+    "y": 483,
+    "width": 247,
+    "height": 56,
+    "group": "Interface"
+  },
+  "Antiban_Area": {
+    "x": 13,
+    "y": 119,
+    "width": 56,
+    "height": 247,
+    "group": "Utility"
+  },
+  "Inventory_Area_Pattern": {
+    "x": 638,
+    "y": 238,
+    "width": 174,
+    "height": 253,
+    "group": "Inventory"
+  },
+  "Run_Energy": {
+    "x": 611,
+    "y": 144,
+    "width": 26,
+    "height": 21,
+    "group": "Basic"
+  },
+  "Tab_Confirmation_Area": {
+    "x": 605,
+    "y": 192,
+    "width": 245,
+    "height": 342,
+    "group": "Interface"
+  },
+  "Compass_Area": {
+    "x": 628,
+    "y": 36,
+    "width": 27,
+    "height": 24,
+    "group": "Basic"
+  },
+  "Last_Inventory_Spot": {
+    "x": 770,
+    "y": 459,
+    "width": 33,
+    "height": 26,
+    "group": "Inventory"
+  },
+  "Woodcutting": {
+    "x": 757,
+    "y": 383,
+    "width": 60,
+    "height": 30,
+    "group": "Skilling"
+  },
+  "Fishing": {
+    "x": 755,
+    "y": 294,
+    "width": 63,
+    "height": 33,
+    "group": "Skilling"
+  },
+  "Chat_Buttons": {
+    "x": 80,
+    "y": 498,
+    "width": 527,
+    "height": 37,
+    "group": "Interface"
+  },
+  "Bot_Area_Center": {
+    "x": 277,
+    "y": 154,
+    "width": 127,
+    "height": 106,
+    "group": "Basic"
+  },
+  "HP_Area": {
+    "x": 601,
+    "y": 77,
+    "width": 23,
+    "height": 24,
+    "group": "Basic"
+  },
+  "Attack": {
+    "x": 629,
+    "y": 233,
+    "width": 63,
+    "height": 33,
+    "group": "Skilling"
+  },
+  "Crafting": {
+    "x": 692,
+    "y": 351,
+    "width": 63,
+    "height": 33,
+    "group": "Skilling"
+  },
+  "Smithing": {
+    "x": 755,
+    "y": 263,
+    "width": 63,
+    "height": 33,
+    "group": "Skilling"
+  },
+  "Slider_Area": {
+    "x": 365,
+    "y": 205,
+    "width": 20,
+    "height": 20,
+    "group": "Settings"
+  },
+  "Slider_Area_High": {
+    "x": 236,
+    "y": 204,
+    "width": 20,
+    "height": 20,
+    "group": "Settings"
+  },
+  "Map_Area": {
+    "x": 669,
+    "y": 70,
+    "width": 110,
+    "height": 80,
+    "group": "Basic"
+  },
+  "Map_Area_Nearby": {
+    "x": 696,
+    "y": 90,
+    "width": 56,
+    "height": 43,
+    "group": "Basic"
+  },
+  "Hunter": {
+    "x": 691,
+    "y": 442,
+    "width": 63,
+    "height": 33,
+    "group": "Skilling"
+  },
+  "Herblore": {
+    "x": 695,
+    "y": 295,
+    "width": 52,
+    "height": 27,
+    "group": "Skilling"
+  },
+  "Prayer": {
+    "x": 598,
+    "y": 114,
+    "width": 31,
+    "height": 21,
+    "group": "Basic"
+  },
+  "Inventory_Slot_1": {
+    "x": 646,
+    "y": 245,
+    "width": 24,
+    "height": 20,
+    "group": "Inventory_Slots"
+  },
+  "Inventory_Slot_2": {
+    "x": 690,
+    "y": 245,
+    "width": 24,
+    "height": 20,
+    "group": "Inventory_Slots"
+  },
+  "Inventory_Slot_3": {
+    "x": 733,
+    "y": 245,
+    "width": 24,
+    "height": 20,
+    "group": "Inventory_Slots"
+  },
+  "Inventory_Slot_4": {
+    "x": 777,
+    "y": 245,
+    "width": 24,
+    "height": 20,
+    "group": "Inventory_Slots"
+  },
+  "Inventory_Slot_5": {
+    "x": 646,
+    "y": 281,
+    "width": 24,
+    "height": 20,
+    "group": "Inventory_Slots"
+  },
+  "Inventory_Slot_6": {
+    "x": 690,
+    "y": 281,
+    "width": 24,
+    "height": 20,
+    "group": "Inventory_Slots"
+  },
+  "Inventory_Slot_7": {
+    "x": 733,
+    "y": 281,
+    "width": 24,
+    "height": 20,
+    "group": "Inventory_Slots"
+  },
+  "Inventory_Slot_8": {
+    "x": 777,
+    "y": 281,
+    "width": 24,
+    "height": 20,
+    "group": "Inventory_Slots"
+  },
+  "Inventory_Slot_9": {
+    "x": 646,
+    "y": 317,
+    "width": 24,
+    "height": 20,
+    "group": "Inventory_Slots"
+  },
+  "Inventory_Slot_10": {
+    "x": 690,
+    "y": 317,
+    "width": 24,
+    "height": 20,
+    "group": "Inventory_Slots"
+  },
+  "Inventory_Slot_11": {
+    "x": 733,
+    "y": 317,
+    "width": 24,
+    "height": 20,
+    "group": "Inventory_Slots"
+  },
+  "Inventory_Slot_12": {
+    "x": 777,
+    "y": 317,
+    "width": 24,
+    "height": 20,
+    "group": "Inventory_Slots"
+  },
+  "Inventory_Slot_13": {
+    "x": 646,
+    "y": 354,
+    "width": 24,
+    "height": 19,
+    "group": "Inventory_Slots"
+  },
+  "Inventory_Slot_14": {
+    "x": 690,
+    "y": 354,
+    "width": 24,
+    "height": 19,
+    "group": "Inventory_Slots"
+  },
+  "Inventory_Slot_15": {
+    "x": 733,
+    "y": 354,
+    "width": 24,
+    "height": 19,
+    "group": "Inventory_Slots"
+  },
+  "Inventory_Slot_16": {
+    "x": 777,
+    "y": 354,
+    "width": 24,
+    "height": 19,
+    "group": "Inventory_Slots"
+  },
+  "Inventory_Slot_17": {
+    "x": 646,
+    "y": 390,
+    "width": 24,
+    "height": 20,
+    "group": "Inventory_Slots"
+  },
+  "Inventory_Slot_18": {
+    "x": 690,
+    "y": 390,
+    "width": 24,
+    "height": 20,
+    "group": "Inventory_Slots"
+  },
+  "Inventory_Slot_19": {
+    "x": 733,
+    "y": 390,
+    "width": 24,
+    "height": 20,
+    "group": "Inventory_Slots"
+  },
+  "Inventory_Slot_20": {
+    "x": 777,
+    "y": 390,
+    "width": 24,
+    "height": 20,
+    "group": "Inventory_Slots"
+  },
+  "Inventory_Slot_21": {
+    "x": 646,
+    "y": 426,
+    "width": 24,
+    "height": 20,
+    "group": "Inventory_Slots"
+  },
+  "Inventory_Slot_22": {
+    "x": 690,
+    "y": 426,
+    "width": 24,
+    "height": 20,
+    "group": "Inventory_Slots"
+  },
+  "Inventory_Slot_23": {
+    "x": 733,
+    "y": 426,
+    "width": 24,
+    "height": 20,
+    "group": "Inventory_Slots"
+  },
+  "Inventory_Slot_24": {
+    "x": 777,
+    "y": 426,
+    "width": 24,
+    "height": 20,
+    "group": "Inventory_Slots"
+  },
+  "Inventory_Slot_25": {
+    "x": 646,
+    "y": 462,
+    "width": 24,
+    "height": 20,
+    "group": "Inventory_Slots"
+  },
+  "Inventory_Slot_26": {
+    "x": 690,
+    "y": 462,
+    "width": 24,
+    "height": 20,
+    "group": "Inventory_Slots"
+  },
+  "Inventory_Slot_27": {
+    "x": 733,
+    "y": 462,
+    "width": 24,
+    "height": 20,
+    "group": "Inventory_Slots"
+  },
+  "Inventory_Slot_28": {
+    "x": 777,
+    "y": 462,
+    "width": 24,
+    "height": 20,
+    "group": "Inventory_Slots"
   }
 }
