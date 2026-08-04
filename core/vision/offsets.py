@@ -7,6 +7,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 OFFSETS_FILE = ROOT / "config" / "bot_offsets.json"
 
+Region = tuple[int, int, int, int]
+
 # Fallback for the current 2x2 layout. Config values take precedence.
 DEFAULT_OFFSETS: dict[int, tuple[int, int]] = {
     1: (0, 0),
@@ -33,7 +35,7 @@ def _load_offsets() -> dict[int, tuple[int, int]]:
 
 
 def get_bot_id(default: int = 1) -> int:
-    """Return the active bot id from BOT_ID, or the supplied default."""
+    """Return BOT_ID, or the supplied default when it is missing or invalid."""
     try:
         return int(os.getenv("BOT_ID", str(default)))
     except ValueError:
@@ -41,49 +43,18 @@ def get_bot_id(default: int = 1) -> int:
 
 
 def get_bot_offset(bot_id: int | None = None) -> tuple[int, int]:
-    """Resolve one bot id to an absolute screen offset.
-
-    Explicit BOT_OFFSET_X/BOT_OFFSET_Y values are useful for launchers and
-    temporarily override both the config file and the built-in defaults.
-    """
-    override_x = os.getenv("BOT_OFFSET_X")
-    override_y = os.getenv("BOT_OFFSET_Y")
-    if override_x is not None and override_y is not None:
-        try:
-            return int(override_x), int(override_y)
-        except ValueError:
-            pass
-
+    """Return the configured desktop offset for one bot."""
     resolved_bot_id = get_bot_id() if bot_id is None else int(bot_id)
     offsets = _load_offsets()
+
     try:
         return offsets[resolved_bot_id]
     except KeyError as exc:
         raise ValueError(f"Unknown bot_id: {resolved_bot_id}") from exc
 
 
-def resolve_offset(
-    *,
-    bot_id: int | None = None,
-    offset: tuple[int, int] | None = None,
-) -> tuple[int, int]:
-    """Resolve a manual offset or derive one from bot_id.
-
-    A manual offset is kept for backwards compatibility. New code should use
-    bot_id because it keeps find, wait, exists and click calls consistent.
-    """
-    if offset is not None:
-        return int(offset[0]), int(offset[1])
-    return get_bot_offset(bot_id)
-
-
-def apply_offset(
-    area: tuple[int, int, int, int] | None,
-    offset: tuple[int, int] = (0, 0),
-) -> tuple[int, int, int, int] | None:
-    """Translate a local (x, y, width, height) area to screen coordinates."""
-    if area is None:
-        return None
-    x, y, width, height = area
-    ox, oy = offset
-    return x + int(ox), y + int(oy), width, height
+def apply_offset(region: Region, bot_id: int | None = None) -> Region:
+    """Translate one local bot-1 region to absolute desktop coordinates."""
+    x, y, width, height = map(int, region)
+    offset_x, offset_y = get_bot_offset(bot_id)
+    return x + offset_x, y + offset_y, width, height
