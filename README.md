@@ -41,7 +41,7 @@ De standaard offsets staan in `config/bot_offsets.json`:
 }
 ```
 
-`BOT_ID` kan door een runner als environment variable worden gezet. Een expliciete `bot_id=` bij een functie heeft voorrang doordat die direct wordt doorgegeven.
+`BOT_ID` kan door een runner als environment variable worden gezet. Een expliciete `bot_id=` bij een functie heeft voorrang.
 
 ## Simpel gebruik
 
@@ -69,7 +69,7 @@ visible = vision.image_exists(
 keyboard.press("space")
 ```
 
-Image detection, colour detection en de testtools gebruiken dezelfde route:
+Image detection, colour detection en de testtools gebruiken dezelfde area- en offsetroute:
 
 ```text
 get_area
@@ -108,14 +108,15 @@ runescapetwo/
 │       ├── template_matching.py
 │       ├── color_matching.py
 │       ├── templates.py
-│       ├── models.py
-│       └── nms.py
+│       └── models.py
 ├── tools/
+│   ├── image_tester/
+│   └── colour_tester/
 ├── profiles/
 └── tests/
 ```
 
-## Vision
+## Image vision
 
 Plaats PNG-bestanden in `assets/images/`.
 
@@ -132,16 +133,37 @@ vision.click_image("bank_button", area="game", bot_id=bot_id, wait=True)
 vision.wait_until_gone("loading", area="game", bot_id=bot_id)
 ```
 
-Wanneer geen area wordt meegegeven, gebruikt een template eerst zijn area uit `config/templates_meta.json` en anders `game`. Een zoekopdracht scant daardoor niet stilletjes het volledige bureaublad.
+Iedere template gebruikt in productie precies één opgeslagen OpenCV-methode. Daardoor probeert `find_image()` niet stilletjes alle methodes. Templates, metadata en de LAB-kleurweergave worden gecachet.
 
-## Image en Colour Testers
+`find_image()` controleert meerdere sterke vormkandidaten wanneer de beste kandidaat niet door de colour-threshold komt. Hierdoor kan een geldige tweede kandidaat alsnog worden gevonden.
+
+Wanneer geen area wordt meegegeven, gebruikt een template eerst zijn area uit `config/templates_meta.json` en anders `game`.
+
+## Live Image Tester
 
 ```bash
-python -m tools.image_tester.app bank --area game
+python -m tools.image_tester.app
+```
+
+De tester:
+
+- kiest bot 1 tot en met 4;
+- gebruikt alle opgeslagen areas;
+- maakt per frame één screenshot;
+- vergelijkt de aangevinkte OpenCV-methodes;
+- toont groene vakken voor geldige hits en rode vakken voor colour-afwijzingen;
+- toont verwerkingstijd en FPS;
+- slaat één vaste methode, shape-threshold, colour-threshold en area op in `config/templates_meta.json`.
+
+De tester gebruikt dezelfde matching-, candidate- en colourfuncties als de productiecode. Er bestaat dus geen tweede afwijkende debugger-engine.
+
+## Colour Tester
+
+```bash
 python -m tools.colour_tester.app
 ```
 
-Beide tools gebruiken dezelfde bot-offsets en areas als de core.
+De Colour Tester blijft een aparte fase voor live HSV- en blobkalibratie.
 
 ## Installeren en controleren
 

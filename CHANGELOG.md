@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.5.0
+
+### Changed
+- `find_image()` now uses one fixed preset method per template and never runs `ALL` in production.
+- Non-normalized OpenCV methods now use z-score plus sigmoid instead of per-frame min/max normalization.
+- The strongest shape candidate is no longer the only candidate checked against the colour threshold.
+- Candidate selection now uses repeated strongest-hit suppression instead of sorting every pixel above the threshold.
+- Template files, metadata, settings and template LAB conversion are cached.
+- The live Image Tester uses the exact same matching engine as production.
+
+### Added
+- Live previews for every enabled OpenCV method.
+- Green boxes for accepted hits and red boxes for shape hits rejected by colour.
+- Live processing time and FPS display.
+- Preset saving for method, shape threshold, colour threshold and area.
+- Tests for ghost-hit prevention, candidate suppression, colour fallback and maximum hit limits.
+
+### Removed
+- Duplicate `detection.py` implementation.
+- Separate `nms.py` layer.
+- Redundant Image Tester analyzer and storage wrappers.
+- No `find_first_image()` API was added; image use remains explicit and single-template.
+
 ## 0.4.0
 
 ### Changed
