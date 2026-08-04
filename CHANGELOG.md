@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.1
+
+### Changed
+- HSV ranges are now combined with OpenCV bitwise operations instead of a slow NumPy in-place OR over the full mask.
+- Connected-component analysis now reuses existing `uint8` masks instead of allocating a second full-size binary copy.
+
+### Performance
+- Synthetic 1280×720 colour-mask benchmarks improved from roughly 14–16 ms to roughly 3–4 ms in the development environment.
+- Small HP-style areas remain effectively sub-millisecond before screen capture.
+
 ## 0.6.0
 
 ### Changed
