@@ -22,6 +22,35 @@ class PreviewRegion:
     height: int
 
 
+def calculate_crop(
+    selected: PreviewRegion,
+    *,
+    desktop_size: tuple[int, int],
+    margin: int = MARGIN_PX,
+) -> PreviewRegion:
+    desktop_width, desktop_height = desktop_size
+    x1 = max(0, selected.x - margin)
+    y1 = max(0, selected.y - margin)
+    x2 = min(desktop_width, selected.x + selected.width + margin)
+    y2 = min(desktop_height, selected.y + selected.height + margin)
+    return PreviewRegion(x1, y1, max(1, x2 - x1), max(1, y2 - y1))
+
+
+def calculate_scale(
+    region: PreviewRegion,
+    *,
+    preview_size: tuple[int, int] = (PREVIEW_WIDTH, PREVIEW_HEIGHT),
+) -> int:
+    preview_width, preview_height = preview_size
+    return max(
+        1,
+        min(
+            preview_width // max(1, region.width),
+            preview_height // max(1, region.height),
+        ),
+    )
+
+
 class AreaPreview(ttk.LabelFrame):
     """Magnified, nearest-neighbour preview of one selected area."""
 
@@ -61,10 +90,10 @@ class AreaPreview(ttk.LabelFrame):
             width=area.width,
             height=area.height,
         )
-        crop = self._crop_region(selected)
+        crop = calculate_crop(selected, desktop_size=self._desktop.size)
         image = self._desktop.crop((crop.x, crop.y, crop.x + crop.width, crop.y + crop.height))
 
-        scale = max(1, min(PREVIEW_WIDTH // max(1, crop.width), PREVIEW_HEIGHT // max(1, crop.height)))
+        scale = calculate_scale(crop)
         rendered = image.resize((crop.width * scale, crop.height * scale), Image.Resampling.NEAREST)
 
         draw = ImageDraw.Draw(rendered)
@@ -83,12 +112,3 @@ class AreaPreview(ttk.LabelFrame):
         self.info.set(
             f"x={area.x}  y={area.y}  breedte={area.width}  hoogte={area.height}  |  zoom {scale}×"
         )
-
-    def _crop_region(self, selected: PreviewRegion) -> PreviewRegion:
-        assert self._desktop is not None
-        desktop_width, desktop_height = self._desktop.size
-        x1 = max(0, selected.x - MARGIN_PX)
-        y1 = max(0, selected.y - MARGIN_PX)
-        x2 = min(desktop_width, selected.x + selected.width + MARGIN_PX)
-        y2 = min(desktop_height, selected.y + selected.height + MARGIN_PX)
-        return PreviewRegion(x1, y1, max(1, x2 - x1), max(1, y2 - y1))
