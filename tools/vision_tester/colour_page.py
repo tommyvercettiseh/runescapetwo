@@ -22,6 +22,7 @@ from core.vision.colour_presets import (
     save_colour_preset,
 )
 from core.vision.screenshots import capture_area
+from .colour_debug import dominant_colours, isolate_colour
 from .common import PreviewLabel, SourceBar
 
 
@@ -41,6 +42,7 @@ class ColourPage(ttk.Frame):
         self.s_tol = tk.IntVar(value=40)
         self.v_tol = tk.IntVar(value=40)
         self.status = tk.StringVar(value="Kies een area en kleurpreset, of gebruik het pipet.")
+        self.debug_info = tk.StringVar(value="Topkleuren verschijnen na de eerste capture.")
 
         self._build()
         for variable in (self.minimum, self.maximum, self.h_tol, self.s_tol, self.v_tol):
@@ -85,6 +87,10 @@ class ColourPage(ttk.Frame):
         settings.columnconfigure(0, weight=1)
         self._refresh_presets()
 
+        debug = ttk.LabelFrame(self, text="Debug — dominante kleuren in geselecteerde area", padding=8)
+        debug.pack(fill="x", padx=8, pady=(0, 8))
+        ttk.Label(debug, textvariable=self.debug_info, justify="left").pack(anchor="w")
+
         previews = ttk.Frame(self, padding=(8, 0, 8, 8))
         previews.pack(fill="both", expand=True)
         capture_frame = ttk.LabelFrame(previews, text="Live area — klik hier met pipet", padding=4)
@@ -93,18 +99,27 @@ class ColourPage(ttk.Frame):
         self.capture_view.pack(fill="both", expand=True)
         self.capture_view.bind("<Button-1>", self._pick)
 
-        mask_frame = ttk.LabelFrame(previews, text="Masker", padding=4)
+        mask_frame = ttk.LabelFrame(previews, text="Binair masker — wit is geselecteerde kleur", padding=4)
         mask_frame.grid(row=0, column=1, sticky="nsew", padx=4, pady=4)
         self.mask_view = PreviewLabel(mask_frame)
         self.mask_view.pack(fill="both", expand=True)
 
+        isolated_frame = ttk.LabelFrame(
+            previews,
+            text="Kleur geïsoleerd — alles zwart behalve geselecteerde pixels",
+            padding=4,
+        )
+        isolated_frame.grid(row=0, column=2, sticky="nsew", padx=4, pady=4)
+        self.isolated_view = PreviewLabel(isolated_frame)
+        self.isolated_view.pack(fill="both", expand=True)
+
         overlay_frame = ttk.LabelFrame(previews, text="Geldige blobs + exacte pixels", padding=4)
-        overlay_frame.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=4, pady=4)
+        overlay_frame.grid(row=1, column=0, columnspan=3, sticky="nsew", padx=4, pady=4)
         self.overlay_view = PreviewLabel(overlay_frame, fallback_height=420)
         self.overlay_view.pack(fill="both", expand=True)
         for row in range(2):
             previews.rowconfigure(row, weight=1)
-        for column in range(2):
+        for column in range(3):
             previews.columnconfigure(column, weight=1)
 
         ttk.Label(self, textvariable=self.status, padding=(10, 5)).pack(fill="x")
@@ -142,11 +157,20 @@ class ColourPage(ttk.Frame):
     def _render(self, started: float | None = None) -> None:
         if self.capture is None:
             return
+
+        self._update_colour_debug()
         if not self.ranges:
             blank = np.zeros(self.capture.shape[:2], dtype=np.uint8)
+            black_rgb = np.zeros_like(self.capture)
             self.mask_view.show(cv2.cvtColor(blank, cv2.COLOR_GRAY2RGB))
+            self.isolated_view.show(black_rgb)
             self.overlay_view.show(self.capture)
+            self.status.set(
+                f"Bot {self.source.bot_id.get()} | {self.source.area.get()} | "
+                "nog geen kleur geselecteerd"
+            )
             return
+
         started = time.perf_counter() if started is None else started
         mask = build_mask_from_ranges(self.capture, self.ranges)
         maximum = self.maximum.get() or None
@@ -172,13 +196,34 @@ class ColourPage(ttk.Frame):
                 1,
                 cv2.LINE_AA,
             )
+
+        selected_pixels = count_mask_pixels(mask)
+        total_pixels = max(1, mask.size)
         self.mask_view.show(cv2.cvtColor(mask, cv2.COLOR_GRAY2RGB))
+        self.isolated_view.show(isolate_colour(self.capture, mask))
         self.overlay_view.show(overlay)
         elapsed = (time.perf_counter() - started) * 1000.0
         self.status.set(
             f"Bot {self.source.bot_id.get()} | {self.source.area.get()} | "
-            f"kleurpixels {count_mask_pixels(mask)} | blobs {len(blobs)} | {elapsed:.1f} ms"
+            f"geselecteerde kleur {selected_pixels} px ({selected_pixels / total_pixels * 100.0:.2f}%) | "
+            f"geldige blobs {len(blobs)} | {elapsed:.1f} ms"
         )
+
+    def _update_colour_debug(self) -> None:
+        if self.capture is None:
+            return
+        colours = dominant_colours(self.capture, limit=5)
+        if not colours:
+            self.debug_info.set("Geen kleuren gevonden.")
+            return
+
+        lines = []
+        for index, colour in enumerate(colours, start=1):
+            lines.append(
+                f"#{index} HSV {colour.hsv} | RGB {colour.rgb} | "
+                f"{colour.pixels} px ({colour.percentage:.2f}%)"
+            )
+        self.debug_info.set("\n".join(lines))
 
     def _enable_pipette(self) -> None:
         self.capture_view.configure(cursor="crosshair")
