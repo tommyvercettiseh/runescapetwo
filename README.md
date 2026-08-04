@@ -212,6 +212,10 @@ De Unified Vision Tester heeft drie subpagina's:
 - **Image testing** voor meerdere geselecteerde templates op één screenshot per frame.
 - **Sensor checker** voor live regels zoals `low_hp`, `in_combat` en `blue_target_found`.
 
+Typ een deel van een area-, preset-, template- of sensornaam om de lijst direct te filteren. De liveknop blijft zichtbaar aan of uit staan. In de kleurtester blijft het pipet actief voor meerdere kleurmetingen totdat je het zelf uitschakelt. Dominante kleuren worden als kleurvlakken met RGB-, HSV- en percentagewaarden getoond.
+
+Gebruik **Nieuwe kleur** om een preset toe te voegen. Je kunt een kleur met het pipet kiezen of de HSV-waarden handmatig aanpassen. Laad een bestaande preset om deze met **Wijzig opslaan** bij te werken of te verwijderen.
+
 De Sensor checker ondersteunt drie soorten checks:
 
 ```text

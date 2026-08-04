@@ -22,18 +22,21 @@ from core.vision.colour_presets import (
     save_colour_preset,
 )
 from core.vision.screenshots import capture_area
-from .colour_debug import dominant_colours, isolate_colour
-from .common import PreviewLabel, SourceBar
+from .colour_debug import dominant_colours, editor_sample_from_ranges, isolate_colour
+from .common import COLOURS, FilterCombobox, LiveToggle, PreviewLabel, SourceBar
 
 
 class ColourPage(ttk.Frame):
     def __init__(self, parent):
         super().__init__(parent)
-        self.running = False
+        self.live = tk.BooleanVar(value=False)
+        self.pipette_active = tk.BooleanVar(value=False)
         self.capture: np.ndarray | None = None
         self.region: tuple[int, int, int, int] | None = None
         self.sample: tuple[int, int, int] | None = None
         self.ranges: tuple[HSVRange, ...] = ()
+        self.loaded_name: str | None = None
+        self._updating_editor = False
 
         self.name = tk.StringVar()
         self.minimum = tk.IntVar(value=20)
@@ -41,36 +44,51 @@ class ColourPage(ttk.Frame):
         self.h_tol = tk.IntVar(value=5)
         self.s_tol = tk.IntVar(value=40)
         self.v_tol = tk.IntVar(value=40)
+        self.sample_h = tk.IntVar(value=0)
+        self.sample_s = tk.IntVar(value=0)
+        self.sample_v = tk.IntVar(value=0)
         self.status = tk.StringVar(value="Kies een area en kleurpreset, of gebruik het pipet.")
         self.debug_info = tk.StringVar(value="Topkleuren verschijnen na de eerste capture.")
+        self.colour_swatches: list[tk.Frame] = []
+        self._dominant_signature: tuple[tuple[int, int, int, int], ...] | None = None
 
         self._build()
-        for variable in (self.minimum, self.maximum, self.h_tol, self.s_tol, self.v_tol):
-            variable.trace_add("write", self._settings_changed)
+        for variable in (self.minimum, self.maximum):
+            variable.trace_add("write", self._render_setting_changed)
+        for variable in (self.h_tol, self.s_tol, self.v_tol):
+            variable.trace_add("write", self._range_setting_changed)
+        for variable in (self.sample_h, self.sample_s, self.sample_v):
+            variable.trace_add("write", self._sample_changed)
         self.after(100, self._tick)
 
     def _build(self) -> None:
-        top = ttk.Frame(self)
-        top.pack(fill="x")
+        top = ttk.Frame(self, style="Surface.TFrame", padding=(14, 12))
+        top.pack(fill="x", padx=18, pady=(14, 10))
         self.source = SourceBar(top)
         self.source.pack(side="left", fill="x", expand=True)
 
-        actions = ttk.Frame(top, padding=8)
+        actions = ttk.Frame(top, style="Surface.TFrame")
         actions.pack(side="right")
-        self.live_button = ttk.Button(actions, text="Live", command=self._toggle)
+        self.live_button = LiveToggle(actions, variable=self.live, command=self._toggle)
         self.live_button.pack(side="left", padx=3)
-        ttk.Button(actions, text="Eenmalig", command=self._once).pack(side="left", padx=3)
+        ttk.Button(actions, text="Capture", command=self._once, style="Accent.TButton").pack(side="left", padx=(7, 0))
 
-        settings = ttk.LabelFrame(self, text="Kleurdetectie", padding=8)
-        settings.pack(fill="x", padx=8, pady=(0, 8))
-        ttk.Label(settings, text="Preset").grid(row=0, column=0, sticky="w")
-        self.preset_box = ttk.Combobox(settings, textvariable=self.name, width=25)
+        settings = ttk.LabelFrame(self, text="  Detectie-instellingen  ", padding=12, style="Card.TLabelframe")
+        settings.pack(fill="x", padx=18, pady=(0, 10))
+        ttk.Label(settings, text="PRESET ZOEKEN", style="SurfaceMuted.TLabel").grid(row=0, column=0, sticky="w")
+        self.preset_box = FilterCombobox(settings, textvariable=self.name, width=25)
         self.preset_box.grid(row=1, column=0, sticky="ew", padx=(0, 6))
         self.preset_box.bind("<<ComboboxSelected>>", lambda _event: self._load())
         ttk.Button(settings, text="Laden", command=self._load).grid(row=1, column=1, padx=3)
-        ttk.Button(settings, text="Opslaan", command=self._save).grid(row=1, column=2, padx=3)
-        ttk.Button(settings, text="Verwijderen", command=self._delete).grid(row=1, column=3, padx=3)
-        ttk.Button(settings, text="Pipet", command=self._enable_pipette).grid(row=1, column=4, padx=(12, 3))
+        ttk.Button(settings, text="Nieuwe kleur", command=self._new).grid(row=1, column=2, padx=3)
+        self.pipette_button = ttk.Checkbutton(
+            settings,
+            text="PIPET",
+            variable=self.pipette_active,
+            command=self._toggle_pipette,
+            style="Toggle.TCheckbutton",
+        )
+        self.pipette_button.grid(row=1, column=3, padx=(12, 8))
 
         fields = (
             ("Min blob px", self.minimum, 1, 50000),
@@ -79,27 +97,76 @@ class ColourPage(ttk.Frame):
             ("Sat tol", self.s_tol, 0, 255),
             ("Value tol", self.v_tol, 0, 255),
         )
-        for index, (label, variable, low, high) in enumerate(fields, start=5):
-            ttk.Label(settings, text=label).grid(row=0, column=index, sticky="w", padx=3)
+        for index, (label, variable, low, high) in enumerate(fields, start=4):
+            ttk.Label(settings, text=label.upper(), style="SurfaceMuted.TLabel").grid(row=0, column=index, sticky="w", padx=3)
             ttk.Spinbox(settings, from_=low, to=high, textvariable=variable, width=10).grid(
                 row=1, column=index, padx=3
             )
         settings.columnconfigure(0, weight=1)
         self._refresh_presets()
 
-        debug = ttk.LabelFrame(self, text="Debug — dominante kleuren in geselecteerde area", padding=8)
-        debug.pack(fill="x", padx=8, pady=(0, 8))
-        ttk.Label(debug, textvariable=self.debug_info, justify="left").pack(anchor="w")
+        editor = ttk.LabelFrame(self, text="  Kleur toevoegen of bewerken  ", padding=10, style="Card.TLabelframe")
+        editor.pack(fill="x", padx=18, pady=(0, 10))
+        self.sample_swatch = tk.Frame(
+            editor,
+            width=54,
+            height=54,
+            background="#000000",
+            highlightbackground=COLOURS["border"],
+            highlightthickness=1,
+        )
+        self.sample_swatch.grid(row=0, column=0, rowspan=2, padx=(0, 12))
+        self.sample_swatch.grid_propagate(False)
 
-        previews = ttk.Frame(self, padding=(8, 0, 8, 8))
+        sample_fields = (
+            ("HUE", self.sample_h, 0, 179),
+            ("SATURATION", self.sample_s, 0, 255),
+            ("VALUE", self.sample_v, 0, 255),
+        )
+        for column, (label, variable, low, high) in enumerate(sample_fields, start=1):
+            ttk.Label(editor, text=label, style="SurfaceMuted.TLabel").grid(
+                row=0, column=column, sticky="w", padx=4
+            )
+            ttk.Spinbox(
+                editor,
+                from_=low,
+                to=high,
+                textvariable=variable,
+                width=11,
+            ).grid(row=1, column=column, sticky="ew", padx=4)
+
+        ttk.Label(
+            editor,
+            text="Kies met het pipet of pas HSV handmatig aan.",
+            style="SurfaceMuted.TLabel",
+        ).grid(row=0, column=4, sticky="w", padx=(16, 8))
+        actions = ttk.Frame(editor, style="Surface.TFrame")
+        actions.grid(row=1, column=4, sticky="e", padx=(16, 0))
+        ttk.Button(actions, text="Toevoegen", command=self._add, style="Accent.TButton").pack(side="left")
+        ttk.Button(actions, text="Wijzig opslaan", command=self._update).pack(side="left", padx=(7, 0))
+        ttk.Button(actions, text="Verwijderen", command=self._delete).pack(side="left", padx=(7, 0))
+        editor.columnconfigure(4, weight=1)
+
+        debug = ttk.LabelFrame(self, text="  Dominante kleuren  ", padding=10, style="Card.TLabelframe")
+        debug.pack(fill="x", padx=18, pady=(0, 10))
+        self.swatch_container = ttk.Frame(debug, style="Surface.TFrame")
+        self.swatch_container.pack(fill="x")
+        self.debug_label = ttk.Label(
+            self.swatch_container,
+            textvariable=self.debug_info,
+            style="SurfaceMuted.TLabel",
+        )
+        self.debug_label.pack(anchor="w", pady=8)
+
+        previews = ttk.Frame(self, padding=(14, 0, 14, 8))
         previews.pack(fill="both", expand=True)
-        capture_frame = ttk.LabelFrame(previews, text="Live area — klik hier met pipet", padding=4)
+        capture_frame = ttk.LabelFrame(previews, text="  Live area · klik om kleur te pakken  ", padding=6, style="Card.TLabelframe")
         capture_frame.grid(row=0, column=0, sticky="nsew", padx=4, pady=4)
         self.capture_view = PreviewLabel(capture_frame)
         self.capture_view.pack(fill="both", expand=True)
         self.capture_view.bind("<Button-1>", self._pick)
 
-        mask_frame = ttk.LabelFrame(previews, text="Binair masker — wit is geselecteerde kleur", padding=4)
+        mask_frame = ttk.LabelFrame(previews, text="  Binair masker  ", padding=6, style="Card.TLabelframe")
         mask_frame.grid(row=0, column=1, sticky="nsew", padx=4, pady=4)
         self.mask_view = PreviewLabel(mask_frame)
         self.mask_view.pack(fill="both", expand=True)
@@ -107,13 +174,14 @@ class ColourPage(ttk.Frame):
         isolated_frame = ttk.LabelFrame(
             previews,
             text="Kleur geïsoleerd — alles zwart behalve geselecteerde pixels",
-            padding=4,
+            padding=6,
+            style="Card.TLabelframe",
         )
         isolated_frame.grid(row=0, column=2, sticky="nsew", padx=4, pady=4)
         self.isolated_view = PreviewLabel(isolated_frame)
         self.isolated_view.pack(fill="both", expand=True)
 
-        overlay_frame = ttk.LabelFrame(previews, text="Geldige blobs + exacte pixels", padding=4)
+        overlay_frame = ttk.LabelFrame(previews, text="  Geldige blobs · exacte pixels  ", padding=6, style="Card.TLabelframe")
         overlay_frame.grid(row=1, column=0, columnspan=3, sticky="nsew", padx=4, pady=4)
         self.overlay_view = PreviewLabel(overlay_frame, fallback_height=420)
         self.overlay_view.pack(fill="both", expand=True)
@@ -122,22 +190,23 @@ class ColourPage(ttk.Frame):
         for column in range(3):
             previews.columnconfigure(column, weight=1)
 
-        ttk.Label(self, textvariable=self.status, padding=(10, 5)).pack(fill="x")
+        ttk.Label(self, textvariable=self.status, padding=(20, 8), style="Muted.TLabel").pack(fill="x")
 
     def _refresh_presets(self) -> None:
-        self.preset_box["values"] = list_colour_presets()
+        self.preset_box.set_options(list_colour_presets())
 
     def _toggle(self) -> None:
-        self.running = not self.running
-        self.live_button.configure(text="Pauze" if self.running else "Live")
+        if self.live.get():
+            self.status.set("Live capture actief.")
+        else:
+            self.status.set("Live capture gepauzeerd.")
 
     def _once(self) -> None:
-        self.running = False
-        self.live_button.configure(text="Live")
+        self.live.set(False)
         self._capture()
 
     def _tick(self) -> None:
-        if self.running:
+        if self.live.get():
             self._capture()
         self.after(100, self._tick)
 
@@ -150,8 +219,7 @@ class ColourPage(ttk.Frame):
             self.capture_view.show(self.capture)
             self._render(started)
         except Exception as exc:
-            self.running = False
-            self.live_button.configure(text="Live")
+            self.live.set(False)
             self.status.set(f"Fout: {exc}")
 
     def _render(self, started: float | None = None) -> None:
@@ -217,20 +285,62 @@ class ColourPage(ttk.Frame):
             self.debug_info.set("Geen kleuren gevonden.")
             return
 
-        lines = []
-        for index, colour in enumerate(colours, start=1):
-            lines.append(
-                f"#{index} HSV {colour.hsv} | RGB {colour.rgb} | "
-                f"{colour.pixels} px ({colour.percentage:.2f}%)"
-            )
-        self.debug_info.set("\n".join(lines))
+        signature = tuple((*colour.rgb, colour.pixels) for colour in colours)
+        if signature == self._dominant_signature:
+            return
+        self._dominant_signature = signature
 
-    def _enable_pipette(self) -> None:
-        self.capture_view.configure(cursor="crosshair")
-        self.status.set("Klik op de gewenste kleur in de live area.")
+        self.debug_info.set("")
+        self.debug_label.pack_forget()
+        for widget in self.colour_swatches:
+            widget.destroy()
+        self.colour_swatches.clear()
+
+        for index, colour in enumerate(colours, start=1):
+            card = tk.Frame(
+                self.swatch_container,
+                background=COLOURS["surface_raised"],
+                highlightbackground=COLOURS["border"],
+                highlightthickness=1,
+            )
+            card.pack(side="left", fill="x", expand=True, padx=(0 if index == 1 else 5, 5))
+            swatch = tk.Frame(card, background=self._rgb_hex(colour.rgb), width=44, height=44)
+            swatch.pack(side="left", padx=8, pady=8)
+            swatch.pack_propagate(False)
+            copy = tk.Frame(card, background=COLOURS["surface_raised"])
+            copy.pack(side="left", fill="both", expand=True, pady=6)
+            tk.Label(
+                copy,
+                text=f"#{index}  {colour.percentage:.1f}%",
+                background=COLOURS["surface_raised"],
+                foreground=COLOURS["text"],
+                font=("Segoe UI Semibold", 10),
+                anchor="w",
+            ).pack(fill="x")
+            tk.Label(
+                copy,
+                text=f"RGB {colour.rgb}\nHSV {colour.hsv}",
+                background=COLOURS["surface_raised"],
+                foreground=COLOURS["muted"],
+                font=("Segoe UI", 8),
+                anchor="w",
+                justify="left",
+            ).pack(fill="x")
+            self.colour_swatches.append(card)
+
+    @staticmethod
+    def _rgb_hex(rgb: tuple[int, int, int]) -> str:
+        return "#{:02x}{:02x}{:02x}".format(*rgb)
+
+    def _toggle_pipette(self) -> None:
+        self.capture_view.configure(cursor="crosshair" if self.pipette_active.get() else "")
+        if self.pipette_active.get():
+            self.status.set("Pipet blijft actief. Klik kleuren tot je het pipet zelf uitzet.")
+        else:
+            self.status.set("Pipet uitgeschakeld.")
 
     def _pick(self, event) -> None:
-        if self.capture is None or str(self.capture_view.cget("cursor")) != "crosshair":
+        if self.capture is None or not self.pipette_active.get():
             return
         x = int(event.x / max(self.capture_view.scale, 1e-9))
         y = int(event.y / max(self.capture_view.scale, 1e-9))
@@ -238,14 +348,51 @@ class ColourPage(ttk.Frame):
         if not 0 <= x < width or not 0 <= y < height:
             return
         self.sample = sample_hsv(self.capture, x, y, radius=2)
+        self._set_editor_sample(self.sample)
         self._rebuild_ranges()
-        self.capture_view.configure(cursor="")
         self._render()
 
-    def _settings_changed(self, *_args) -> None:
+    def _render_setting_changed(self, *_args) -> None:
+        self._render()
+
+    def _range_setting_changed(self, *_args) -> None:
         if self.sample is not None:
             self._rebuild_ranges()
         self._render()
+
+    def _sample_changed(self, *_args) -> None:
+        if self._updating_editor:
+            return
+        try:
+            sample = (self.sample_h.get(), self.sample_s.get(), self.sample_v.get())
+        except tk.TclError:
+            return
+        if not 0 <= sample[0] <= 179 or not all(0 <= value <= 255 for value in sample[1:]):
+            return
+        self.sample = sample
+        self._rebuild_ranges()
+        self._update_sample_swatch()
+        self._render()
+
+    def _set_editor_sample(self, sample: tuple[int, int, int]) -> None:
+        self._updating_editor = True
+        try:
+            self.sample_h.set(sample[0])
+            self.sample_s.set(sample[1])
+            self.sample_v.set(sample[2])
+        finally:
+            self._updating_editor = False
+        self._update_sample_swatch()
+
+    def _update_sample_swatch(self) -> None:
+        if self.sample is None:
+            self.sample_swatch.configure(background="#000000")
+            return
+        hsv_pixel = np.array([[self.sample]], dtype=np.uint8)
+        rgb = cv2.cvtColor(hsv_pixel, cv2.COLOR_HSV2RGB)[0, 0]
+        self.sample_swatch.configure(
+            background=self._rgb_hex(tuple(int(value) for value in rgb))
+        )
 
     def _rebuild_ranges(self) -> None:
         if self.sample is None:
@@ -261,30 +408,75 @@ class ColourPage(ttk.Frame):
         try:
             preset = load_colour_preset(self.name.get())
             self.name.set(preset.name)
+            self.loaded_name = preset.name
             self.ranges = preset.ranges
-            self.sample = None
+            self.sample = editor_sample_from_ranges(preset.ranges)
+            self._set_editor_sample(self.sample)
             self._render()
+            self.status.set(f"Preset '{preset.name}' geladen. Pas HSV aan en kies 'Wijzig opslaan'.")
         except Exception as exc:
             self.status.set(str(exc))
 
-    def _save(self) -> None:
+    def _new(self) -> None:
+        self.loaded_name = None
+        self.name.set("")
+        self.sample = None
+        self.ranges = ()
+        self._set_editor_sample((0, 0, 0))
+        self.sample = None
+        self._update_sample_swatch()
+        self.preset_box.focus_set()
+        self.status.set("Nieuwe kleur: geef een naam en kies een kleur met het pipet of HSV.")
+        self._render()
+
+    def _add(self) -> None:
         if not self.name.get().strip() or not self.ranges:
             messagebox.showerror("Preset", "Geef een naam en kies eerst een kleur met het pipet.")
             return
+        normalized = self.name.get().strip().lower()
+        if normalized in list_colour_presets():
+            messagebox.showerror(
+                "Preset bestaat al",
+                "Deze kleur bestaat al. Laad hem en kies daarna 'Wijzig opslaan'.",
+            )
+            return
         try:
             save_colour_preset(self.name.get(), self.ranges)
-            self.name.set(self.name.get().strip().lower())
+            self.name.set(normalized)
+            self.loaded_name = normalized
             self._refresh_presets()
-            self.status.set(f"Preset '{self.name.get()}' opgeslagen.")
+            self.status.set(f"Nieuwe kleur '{self.name.get()}' toegevoegd.")
+        except Exception as exc:
+            messagebox.showerror("Preset", str(exc))
+
+    def _update(self) -> None:
+        if not self.loaded_name:
+            messagebox.showerror("Preset", "Laad eerst een bestaande kleur om deze te wijzigen.")
+            return
+        if not self.ranges:
+            messagebox.showerror("Preset", "Kies eerst een kleur met het pipet of vul HSV in.")
+            return
+        try:
+            save_colour_preset(self.loaded_name, self.ranges)
+            self.name.set(self.loaded_name)
+            self._refresh_presets()
+            self.status.set(f"Wijzigingen aan '{self.loaded_name}' opgeslagen.")
         except Exception as exc:
             messagebox.showerror("Preset", str(exc))
 
     def _delete(self) -> None:
         try:
-            if delete_colour_preset(self.name.get()):
+            target = self.loaded_name or self.name.get()
+            if delete_colour_preset(target):
                 self.name.set("")
+                self.loaded_name = None
+                self.sample = None
                 self.ranges = ()
+                self._set_editor_sample((0, 0, 0))
+                self.sample = None
+                self._update_sample_swatch()
                 self._refresh_presets()
                 self._render()
+                self.status.set(f"Kleur '{target}' verwijderd.")
         except Exception as exc:
             messagebox.showerror("Preset", str(exc))
