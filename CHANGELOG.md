@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.4.0
+
+### Changed
+- `bot_id` is now the normal public way to select one of the four clients.
+- Areas remain local bot-1 regions and are translated exactly once to absolute desktop coordinates.
+- Image detection, colour detection and the image tester now use the same central `capture_area()` route.
+- Vision calls no longer expose a manual `offset=(x, y)` argument.
+- Missing template areas fall back to the local `game` area instead of the full desktop.
+- Area names support both short names such as `inventory` and RuneScape-style names such as `Inventory_Area`.
+
+### Added
+- `get_region(area, bot_id)` for inspecting an area's absolute region.
+- Tests for area aliases, four-client offsets, screenshot isolation and prevention of a second click offset.
+
+### Architecture
+- `areas.py` owns local area parsing.
+- `offsets.py` owns bot-id to desktop-offset conversion.
+- `screenshots.py` owns the combined area capture.
+- Sensors and scripts can later use `area="Inventory_Area", bot_id=bot_id` without containing offset math.
+
+### Manual verification
+- Run the existing Image Tester and Colour Tester on the real four-client layout before merging.
+
 ## 0.3.0
 
 ### Added
