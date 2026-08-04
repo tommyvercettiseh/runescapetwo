@@ -85,6 +85,7 @@ runescapetwo/
 │   ├── areas.json
 │   ├── bot_offsets.json
 │   ├── colour_presets.json
+│   ├── sensor_checks.json
 │   └── templates_meta.json
 ├── core/
 │   ├── mouse.py
@@ -104,6 +105,7 @@ runescapetwo/
 │       ├── templates.py
 │       └── models.py
 ├── tools/
+│   ├── vision_tester/
 │   ├── image_tester/
 │   └── colour_tester/
 └── tests/
@@ -197,6 +199,56 @@ Werkwijze:
 6. Sla de kleurpreset op.
 
 De tester en productie gebruiken dezelfde mask-, pixeltelling- en blobfuncties. Rood dat rond het einde van de HSV-schaal ligt wordt automatisch als twee ranges opgeslagen.
+
+## Unified Vision Tester
+
+```bash
+python -m tools.vision_tester.app
+```
+
+De Unified Vision Tester heeft drie subpagina's:
+
+- **Colour testing** voor areas, pipetpresets, maskers en exacte blobpixels.
+- **Image testing** voor meerdere geselecteerde templates op één screenshot per frame.
+- **Sensor checker** voor live regels zoals `low_hp`, `in_combat` en `blue_target_found`.
+
+De Sensor checker ondersteunt drie soorten checks:
+
+```text
+colour_exists  → totaal aantal kleurpixels is hoog genoeg
+colour_blob    → minimaal één verbonden kleurblob is groot genoeg
+image_exists   → een opgeslagen image-template is gevonden
+```
+
+Voorbeeldconfiguratie in `config/sensor_checks.json`:
+
+```json
+{
+  "low_hp": {
+    "kind": "colour_exists",
+    "value": "red",
+    "area": "HP_Area",
+    "threshold": 8,
+    "enabled": true
+  },
+  "blue_target_found": {
+    "kind": "colour_blob",
+    "value": "blue",
+    "area": "game",
+    "threshold": 500,
+    "enabled": true
+  },
+  "in_combat": {
+    "kind": "image_exists",
+    "value": "combat_icon.png",
+    "area": "game",
+    "threshold": 1,
+    "enabled": true
+  }
+}
+```
+
+De sensorpagina toont live `TRUE`, `FALSE`, `UIT` of een duidelijke configuratiefout. Iedere sensor gebruikt de normale productie-API, zodat de checker hetzelfde antwoord geeft als het latere script.
 
 ## Installeren en controleren
 
