@@ -6,6 +6,7 @@ from tkinter import messagebox, simpledialog, ttk
 
 from core.vision.offsets import get_bot_offset
 
+from .filters import ALL_GROUPS, group_names, visible_area_names
 from .preview import AreaPreview
 from .store import EditableArea, load_editable_areas, save_editable_areas
 
@@ -28,6 +29,8 @@ class AreaMaker(tk.Tk):
 
         self.areas = load_editable_areas()
         self.bot_id = tk.IntVar(value=1)
+        self.name_filter = tk.StringVar(value="")
+        self.group_filter = tk.StringVar(value=ALL_GROUPS)
         self.selected: str | None = None
         self.mode: str | None = None
         self.anchor = (0, 0)
@@ -50,7 +53,7 @@ class AreaMaker(tk.Tk):
     def _build_panel(self) -> None:
         panel = tk.Toplevel(self)
         panel.title("Areas")
-        panel.geometry(f"430x960+{max(20, self.winfo_screenwidth() - 460)}+20")
+        panel.geometry(f"430x980+{max(20, self.winfo_screenwidth() - 460)}+10")
         panel.attributes("-topmost", True)
         panel.protocol("WM_DELETE_WINDOW", self.destroy)
         self.panel = panel
@@ -64,7 +67,32 @@ class AreaMaker(tk.Tk):
         ttk.Button(top, text="Nieuwe area", command=self._start_new).pack(side="left", padx=3)
         ttk.Button(top, text="Opslaan", command=self._save).pack(side="left", padx=3)
 
-        self.tree = ttk.Treeview(panel, columns=("group", "size"), show="tree headings", selectmode="browse", height=15)
+        filters = ttk.LabelFrame(panel, text="Tonen", padding=8)
+        filters.pack(fill="x", padx=10, pady=(0, 8))
+
+        ttk.Label(filters, text="Naam bevat").grid(row=0, column=0, sticky="w")
+        search = ttk.Entry(filters, textvariable=self.name_filter)
+        search.grid(row=0, column=1, sticky="ew", padx=(8, 0))
+        self.name_filter.trace_add("write", lambda *_args: self._filters_changed())
+
+        ttk.Label(filters, text="Groep").grid(row=1, column=0, sticky="w", pady=(7, 0))
+        self.group_box = ttk.Combobox(
+            filters,
+            textvariable=self.group_filter,
+            values=group_names(self.areas),
+            state="readonly",
+        )
+        self.group_box.grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=(7, 0))
+        self.group_box.bind("<<ComboboxSelected>>", lambda _event: self._filters_changed())
+        filters.columnconfigure(1, weight=1)
+
+        reset_row = ttk.Frame(filters)
+        reset_row.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        ttk.Button(reset_row, text="Alles tonen", command=self._clear_filters).pack(side="left", fill="x", expand=True)
+        self.filter_count = tk.StringVar(value="")
+        ttk.Label(reset_row, textvariable=self.filter_count).pack(side="right", padx=(8, 0))
+
+        self.tree = ttk.Treeview(panel, columns=("group", "size"), show="tree headings", selectmode="browse", height=12)
         self.tree.heading("#0", text="Naam")
         self.tree.heading("group", text="Groep")
         self.tree.heading("size", text="Formaat")
@@ -87,13 +115,39 @@ class AreaMaker(tk.Tk):
         ttk.Button(buttons, text="Verwijderen", command=self._delete).pack(side="left", fill="x", expand=True, padx=(4, 0))
 
         help_text = (
-            "Selecteer een area en gebruik de uitvergrote preview voor pixelnauwkeurig resizen. "
-            "Binnen de area slepen verplaatst; dikke randen en grote hoeken resizen."
+            "Filter op een groep of een deel van de naam. Alleen zichtbare areas worden getekend en zijn klikbaar. "
+            "Selecteer daarna een area voor de uitvergrote preview."
         )
         ttk.Label(panel, text=help_text, wraplength=400, justify="left", padding=10).pack(fill="x")
         self.status = tk.StringVar(value="Kies een area of maak een nieuwe.")
         ttk.Label(panel, textvariable=self.status, padding=(10, 0, 10, 10)).pack(fill="x")
         self._refresh_tree()
+
+    def _visible_names(self) -> tuple[str, ...]:
+        return visible_area_names(
+            self.areas,
+            name_query=self.name_filter.get(),
+            group=self.group_filter.get(),
+        )
+
+    def _filters_changed(self) -> None:
+        visible = set(self._visible_names())
+        if self.selected not in visible:
+            self.selected = None
+        self._refresh_tree()
+        self._draw()
+        self._update_preview()
+
+    def _clear_filters(self) -> None:
+        self.name_filter.set("")
+        self.group_filter.set(ALL_GROUPS)
+        self._filters_changed()
+
+    def _refresh_group_values(self) -> None:
+        values = group_names(self.areas)
+        self.group_box.configure(values=values)
+        if self.group_filter.get() not in values:
+            self.group_filter.set(ALL_GROUPS)
 
     def _bot_changed(self, _event=None) -> None:
         self._draw()
@@ -132,7 +186,8 @@ class AreaMaker(tk.Tk):
 
     def _draw(self) -> None:
         self.canvas.delete("area")
-        for name, area in self.areas.items():
+        for name in self._visible_names():
+            area = self.areas[name]
             x1, y1, x2, y2 = self._screen_bounds(area)
             selected = name == self.selected
             width = 3 if selected else 2
@@ -152,8 +207,9 @@ class AreaMaker(tk.Tk):
         self.canvas.create_line(x2, y1, x2, y2, fill="#00e5ff", width=EDGE_HIT, stipple="gray50", tags=("area",))
 
     def _hit(self, x: int, y: int) -> tuple[str | None, str | None]:
-        names = [self.selected] if self.selected else []
-        names += [name for name in reversed(list(self.areas)) if name != self.selected]
+        visible = list(self._visible_names())
+        names = [self.selected] if self.selected in visible else []
+        names += [name for name in reversed(visible) if name != self.selected]
         for name in names:
             if name is None:
                 continue
@@ -265,6 +321,7 @@ class AreaMaker(tk.Tk):
                 return
             self.areas[name] = EditableArea(name, x1, y1, x2 - x1, y2 - y1)
             self.selected = name
+            self._refresh_group_values()
             self._refresh_tree()
             self._draw()
             self._save()
@@ -293,11 +350,14 @@ class AreaMaker(tk.Tk):
 
     def _refresh_tree(self) -> None:
         selected = self.selected
+        names = self._visible_names()
         self.tree.delete(*self.tree.get_children())
-        for name, area in sorted(self.areas.items(), key=lambda item: item[0].lower()):
+        for name in names:
+            area = self.areas[name]
             self.tree.insert("", "end", iid=name, text=name, values=(area.group, f"{area.width}×{area.height}"))
-        if selected in self.areas:
+        if selected in names:
             self.tree.selection_set(selected)
+        self.filter_count.set(f"{len(names)} / {len(self.areas)}")
 
     def _save(self) -> None:
         save_editable_areas(self.areas)
@@ -333,6 +393,7 @@ class AreaMaker(tk.Tk):
         self.areas[name] = replace(source, name=name, x=source.x + 12, y=source.y + 12)
         self.selected = name
         self._save()
+        self._refresh_group_values()
         self._refresh_tree()
         self._draw()
         self._update_preview()
@@ -345,6 +406,7 @@ class AreaMaker(tk.Tk):
         del self.areas[self.selected]
         self.selected = None
         self._save()
+        self._refresh_group_values()
         self._refresh_tree()
         self._draw()
         self._update_preview()
