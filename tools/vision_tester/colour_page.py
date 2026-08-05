@@ -17,7 +17,15 @@ from core.vision.colour_detection import (
 from core.vision.colour_presets import HSVRange
 from core.vision.screenshots import capture_area
 from .colour_debug import filter_mask_by_blob_size, isolate_colour
-from .common import COLOURS, LiveToggle, PreviewLabel, SourceBar
+from .common import (
+    COLOURS,
+    LiveToggle,
+    ModernButton,
+    ModernSwitch,
+    PreviewLabel,
+    SourceBar,
+)
+from .preferences import load_preferences, save_preferences
 
 
 class ColourPage(ttk.Frame):
@@ -35,6 +43,12 @@ class ColourPage(ttk.Frame):
         self.minimum = tk.IntVar(value=20)
         self.maximum = tk.IntVar(value=0)
         self.status = tk.StringVar(value="Kies een area en maak een capture.")
+        preferences = load_preferences()
+        self.auto_resize = tk.BooleanVar(value=bool(preferences["auto_resize"]))
+        self.zoom_percent = tk.IntVar(value=int(preferences["zoom_percent"]))
+        self.zoom_text = tk.StringVar(value=f"{self.zoom_percent.get()}%")
+        self.preview_views: list[PreviewLabel] = []
+        self._preference_job: str | None = None
 
         # The former HSV fields are deliberately hidden. These defaults keep the
         # same practical sampling behaviour when a colour is picked.
@@ -45,6 +59,7 @@ class ColourPage(ttk.Frame):
         self._build()
         for variable in (self.minimum, self.maximum):
             variable.trace_add("write", self._render_setting_changed)
+        self.zoom_percent.trace_add("write", self._zoom_changed)
         self.after(100, self._tick)
 
     def _build(self) -> None:
@@ -84,11 +99,57 @@ class ColourPage(ttk.Frame):
         self.pipette_button.grid(row=1, column=0, padx=(0, 8), pady=(3, 0))
         self.live_button = LiveToggle(actions, variable=self.live, command=self._toggle)
         self.live_button.grid(row=1, column=1, padx=(0, 8), pady=(3, 0))
-        ttk.Button(actions, text="CAPTURE", command=self._once, style="Accent.TButton").grid(
+        ModernButton(
+            actions,
+            text="CAPTURE",
+            command=self._once,
+            width=112,
+            variant="primary",
+        ).grid(
             row=1, column=2, pady=(3, 0)
         )
 
         toolbar.columnconfigure(0, weight=1)
+
+        viewbar = ttk.Frame(self, style="Surface.TFrame", padding=(16, 10))
+        viewbar.pack(fill="x", padx=22, pady=(0, 12))
+        ttk.Label(
+            viewbar,
+            text="WEERGAVE",
+            style="SurfaceMuted.TLabel",
+        ).pack(side="left", padx=(0, 16))
+        self.auto_switch = ModernSwitch(
+            viewbar,
+            variable=self.auto_resize,
+            command=self._view_mode_changed,
+        )
+        self.auto_switch.pack(side="left")
+        ttk.Label(viewbar, text="Auto resize", style="Surface.TLabel").pack(
+            side="left", padx=(7, 20)
+        )
+        ttk.Label(viewbar, text="ZOOM", style="SurfaceMuted.TLabel").pack(side="left")
+        self.zoom_slider = ttk.Scale(
+            viewbar,
+            from_=10,
+            to=100,
+            variable=self.zoom_percent,
+            orient="horizontal",
+            style="Modern.Horizontal.TScale",
+            length=190,
+        )
+        self.zoom_slider.pack(side="left", padx=(10, 8))
+        ttk.Label(
+            viewbar,
+            textvariable=self.zoom_text,
+            style="Surface.TLabel",
+            width=5,
+            font=("Segoe UI Semibold", 10),
+        ).pack(side="left")
+        ttk.Label(
+            viewbar,
+            text="Auto vult het venster · handmatig gaat tot originele 100%",
+            style="SurfaceMuted.TLabel",
+        ).pack(side="right")
 
         previews = ttk.Frame(self, padding=(18, 2, 18, 10))
         previews.pack(fill="both", expand=True)
@@ -112,11 +173,14 @@ class ColourPage(ttk.Frame):
                 fallback_width=650,
                 fallback_height=650,
                 allow_upscale=True,
+                auto_resize=self.auto_resize.get(),
+                zoom_percent=self.zoom_percent.get(),
             )
             view.pack(fill="both", expand=True)
             views.append(view)
 
         self.capture_view, self.mask_view, self.isolated_view = views
+        self.preview_views = views
         self.capture_view.bind("<Button-1>", self._pick)
         previews.rowconfigure(0, weight=1)
         for column in range(3):
@@ -137,6 +201,7 @@ class ColourPage(ttk.Frame):
         ttk.Label(status_bar, textvariable=self.status, style="SurfaceMuted.TLabel").pack(
             side="left", fill="x", expand=True
         )
+        self._sync_zoom_state()
 
     @staticmethod
     def _make_pipette_icon() -> ImageTk.PhotoImage:
@@ -162,6 +227,46 @@ class ColourPage(ttk.Frame):
 
     def _toggle(self) -> None:
         self.status.set("Live capture actief." if self.live.get() else "Live capture gepauzeerd.")
+
+    def _view_mode_changed(self) -> None:
+        self._sync_zoom_state()
+        self._apply_view_settings()
+
+    def _zoom_changed(self, *_args) -> None:
+        try:
+            value = min(100, max(10, int(round(self.zoom_percent.get()))))
+        except tk.TclError:
+            return
+        self.zoom_text.set(f"{value}%")
+        if not self.auto_resize.get():
+            self._apply_view_settings()
+
+    def _sync_zoom_state(self) -> None:
+        self.zoom_slider.configure(state="disabled" if self.auto_resize.get() else "normal")
+
+    def _apply_view_settings(self) -> None:
+        auto_resize = self.auto_resize.get()
+        zoom = self.zoom_percent.get()
+        for view in self.preview_views:
+            view.set_view(auto_resize=auto_resize, zoom_percent=zoom)
+        self._schedule_preference_save()
+
+    def _schedule_preference_save(self) -> None:
+        if self._preference_job is not None:
+            self.after_cancel(self._preference_job)
+        self._preference_job = self.after(200, self._save_view_preferences)
+
+    def _save_view_preferences(self) -> None:
+        self._preference_job = None
+        try:
+            save_preferences(
+                {
+                    "auto_resize": self.auto_resize.get(),
+                    "zoom_percent": self.zoom_percent.get(),
+                }
+            )
+        except OSError as exc:
+            self.status.set(f"Weergavevoorkeur kon niet worden opgeslagen: {exc}")
 
     def _once(self) -> None:
         self.live.set(False)
