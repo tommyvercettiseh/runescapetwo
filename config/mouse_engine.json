@@ -1,0 +1,9 @@
+{
+  "enabled": true,
+  "provider": "ai_mouse_lab",
+  "package_url": "git+https://github.com/tommyvercettiseh/mouse.git@agent/package-mouse-runtime",
+  "profile_path": "%USERPROFILE%\\Desktop\\Codex\\mouse\\data\\profiles\\master_profile.json",
+  "fallback_on_error": true,
+  "default_target_radius_px": 6,
+  "default_padding_px": 0
+}

@@ -62,6 +62,35 @@ visible = vision.image_exists(
 keyboard.press("space")
 ```
 
+## Externe Mouse Engine
+
+RuneScape Two kan een zelfstandige Mouse-GitHub installeren via het vaste `runescapetwo.mouse_engines` contract. Open op Windows:
+
+```text
+Start Mouse Engine Setup.bat
+```
+
+De standaardconfiguratie staat in `config/mouse_engine.json` en gebruikt:
+
+```text
+git+https://github.com/tommyvercettiseh/mouse.git@agent/package-mouse-runtime
+```
+
+Kies jouw lokale `master_profile.json`, klik **Installeren / updaten** en daarna **Verbinding testen**. Met **Test beweging** verschijnt een tijdelijk doel dat door de actieve externe Mouse wordt aangeklikt. Het persoonlijke profiel, de opnames en heatmaps blijven lokaal en worden niet naar RuneScape Two gekopieerd.
+
+Bestaande scripts hoeven niet te veranderen:
+
+```python
+mouse.move_to(800, 450)
+mouse.click()
+
+mouse.move_and_click(800, 450)
+```
+
+`move_to()` voert het bewegingsdeel uit en bewaart de resterende click delay, mouse-down en mouse-up voor de aansluitende `click()`. `move_and_click()` voert de volledige provider-tijdlijn direct uit. Als installatie, profiel of provider niet beschikbaar is, gebruikt RuneScape Two automatisch de bestaande profielgestuurde muis wanneer fallback aanstaat.
+
+Vision geeft waar mogelijk de volledige targetrechthoek door. Daardoor kan de externe Mouse-engine zelf een persoonlijke klikpositie binnen de ingestelde padding kiezen.
+
 Image detection, colour detection en de testtools gebruiken dezelfde area- en offsetroute:
 
 ```text
