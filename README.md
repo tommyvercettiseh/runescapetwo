@@ -97,6 +97,7 @@ Gebruik `core.mouse_actions` voor image- en area-acties. Alle instellingen hebbe
 
 ```python
 from core import mouse_actions
+from core.vision import wait_for_image
 
 # Alleen bewegen naar een gevonden image.
 moved = mouse_actions.move_to_image(
@@ -125,6 +126,31 @@ clicked = mouse_actions.click_image(
     confirm_before_click=True,
 )
 
+# Wachten blijft een losse Vision-verantwoordelijkheid.
+hit = wait_for_image(
+    "Logs",
+    area="Bot_Area_Full",
+    bot_id=1,
+    timeout_s=10,
+)
+if hit is not None:
+    mouse_actions.click_image(
+        image_name="Logs",
+        area_name="Bot_Area_Full",
+        bot_id=1,
+    )
+
+# Klik de grootste cyan blob die binnen de pixelgrenzen valt.
+colour_result = mouse_actions.click_colour(
+    colour_name="cyan",
+    area_name="Bot_Area_Full",
+    bot_id=1,
+    button="left",
+    minimum_blob_pixels=500,
+    maximum_blob_pixels=15000,
+    blob_edge_padding=1,
+)
+
 # Bewegen of klikken binnen een opgeslagen area.
 mouse_actions.move_to_area(
     area_name="Inventory_Area",
@@ -142,7 +168,9 @@ mouse_actions.click_in_area(
 
 `image_edge_padding=20` verwijdert 20% aan zowel de linker- als rechterrand van de gevonden image en accepteert waarden van 20 tot en met 45. `area_edge_padding=8` gebruikt acht hele pixels aan alle zijden van een area.
 
-Elke actie geeft een `MouseActionResult` terug. Gebruik `if result:` voor succes, of lees bij een fout `result.message`, `result.error`, `result.engine` en `result.fallback_used`. De action-laag vereist standaard de ingestelde externe Mouse. Een ontbrekend package of profiel wordt daardoor zichtbaar en veroorzaakt hier geen stille native fallback. De oudere functies in `core.mouse` behouden hun configureerbare fallback voor bestaande scripts.
+`click_image()` en `move_to_image()` zoeken precies één keer en wachten nooit. Gebruik daarvoor los `wait_for_image()`. `click_colour()` en `move_to_colour()` kiezen de grootste geldige blob en gebruiken een veilige binnenzone die volledig in de blob past. `minimum_blob_pixels` en `maximum_blob_pixels` bepalen welke blobs geldig zijn.
+
+Elke actie geeft een `MouseActionResult` terug. Gebruik `if result:` voor succes, of lees bij een fout `result.message`, `result.error`, `result.engine` en `result.fallback_used`. Bij kleuracties bevat `result.blob_pixels` de exacte grootte van de gekozen blob. De action-laag vereist standaard de ingestelde externe Mouse. Een ontbrekend package of profiel wordt daardoor zichtbaar en veroorzaakt hier geen stille native fallback. De oudere functies in `core.mouse` behouden hun configureerbare fallback voor bestaande scripts.
 
 Voor bewegende targets kan `confirm_before_click=True` de image vlak voor de click nogmaals controleren. Stop alle acties handmatig met `mouse_actions.emergency_stop()` en geef ze pas weer vrij met `mouse_actions.reset_emergency_stop()`.
 

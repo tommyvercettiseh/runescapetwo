@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import inspect
 
 import pytest
 
@@ -15,6 +16,24 @@ class FakeHit:
     y: int = 200
     width: int = 100
     height: int = 40
+
+
+@dataclass(frozen=True)
+class FakeBlob:
+    x: int = 130
+    y: int = 200
+    width: int = 40
+    height: int = 40
+    area_px: int = 900
+    centroid_x: int = 150
+    centroid_y: int = 220
+    safe_x: int = 150
+    safe_y: int = 220
+    safe_radius: float = 10.0
+
+    @property
+    def safe_point(self) -> tuple[int, int]:
+        return self.safe_x, self.safe_y
 
 
 def prepare_success(monkeypatch, *, position=(150, 220)) -> None:
@@ -97,29 +116,11 @@ def test_image_not_found_returns_readable_failure(monkeypatch) -> None:
     assert "niet gevonden" in result.message
 
 
-def test_wait_uses_readable_timeout_name(monkeypatch) -> None:
-    prepare_success(monkeypatch)
-    waits = []
-    monkeypatch.setattr(
-        mouse_actions,
-        "wait_for_image",
-        lambda image_name, **settings: waits.append((image_name, settings)) or FakeHit(),
-    )
-    monkeypatch.setattr(mouse_actions.mouse, "move_to_target", lambda *values, **settings: None)
-
-    result = mouse_actions.move_to_image(
-        image_name="Logs",
-        wait=True,
-        timeout_seconds=8.5,
-    )
-
-    assert result.success is True
-    assert waits == [
-        (
-            "Logs",
-            {"area": "Bot_Area_Full", "bot_id": 1, "timeout_s": 8.5},
-        )
-    ]
+def test_image_mouse_actions_do_not_own_waiting() -> None:
+    for function in (mouse_actions.move_to_image, mouse_actions.click_image):
+        parameters = inspect.signature(function).parameters
+        assert "wait" not in parameters
+        assert "timeout_seconds" not in parameters
 
 
 def test_confirm_before_click_refuses_a_large_target_shift(monkeypatch) -> None:
@@ -143,6 +144,66 @@ def test_confirm_before_click_refuses_a_large_target_shift(monkeypatch) -> None:
     assert result.success is False
     assert "verschoof 40.0px" in result.message
     assert clicks == []
+
+
+def test_click_colour_uses_safe_inner_blob_zone(monkeypatch) -> None:
+    prepare_success(monkeypatch)
+    finds = []
+    clicks = []
+    monkeypatch.setattr(
+        mouse_actions,
+        "find_colour",
+        lambda colour_name, **settings: finds.append((colour_name, settings))
+        or FakeBlob(),
+    )
+    monkeypatch.setattr(
+        mouse_actions.mouse,
+        "move_and_click_target",
+        lambda left, top, right, bottom, **settings: clicks.append(
+            ((left, top, right, bottom), settings)
+        ),
+    )
+
+    result = mouse_actions.click_colour(
+        colour_name="cyan",
+        area_name="Bot_Area_Full",
+        bot_id=2,
+        button="right",
+        minimum_blob_pixels=500,
+        maximum_blob_pixels=1500,
+        blob_edge_padding=1,
+    )
+
+    assert result.success is True
+    assert result.blob_pixels == 900
+    assert result.bounds == (144, 214, 157, 227)
+    assert finds == [
+        (
+            "cyan",
+            {
+                "area": "Bot_Area_Full",
+                "bot_id": 2,
+                "minimum_area_px": 500,
+                "maximum_area_px": 1500,
+            },
+        )
+    ]
+    assert clicks == [
+        (
+            (144, 214, 157, 227),
+            {"button": "right", "require_external": True},
+        )
+    ]
+
+
+def test_colour_not_found_returns_readable_failure(monkeypatch) -> None:
+    prepare_success(monkeypatch)
+    monkeypatch.setattr(mouse_actions, "find_colour", lambda *values, **settings: None)
+
+    result = mouse_actions.click_colour(colour_name="missing")
+
+    assert result.success is False
+    assert "kleurblob" in result.message.lower()
 
 
 def test_click_in_area_applies_absolute_bot_region_and_pixel_padding(monkeypatch) -> None:
@@ -240,15 +301,15 @@ def test_external_mouse_failure_is_visible_and_does_not_silently_fallback(monkey
 def test_invalid_public_parameters_fail_before_mouse_action() -> None:
     with pytest.raises(ValueError, match="left.*right"):
         mouse_actions.click_image(image_name="Logs", button="middle")
-    with pytest.raises(ValueError, match="greater than zero"):
-        mouse_actions.move_to_image(
-            image_name="Logs",
-            wait=True,
-            timeout_seconds=0,
-        )
     with pytest.raises(ValueError, match="non-negative"):
         mouse_actions.click_image(
             image_name="Logs",
             confirm_before_click=True,
             maximum_target_shift=-1,
+        )
+    with pytest.raises(ValueError, match="smaller than minimum"):
+        mouse_actions.click_colour(
+            colour_name="cyan",
+            minimum_blob_pixels=500,
+            maximum_blob_pixels=100,
         )
