@@ -36,18 +36,19 @@ from .sensor_view import analyse_sensor_frame, sensor_description
 from .template_capture import TemplateCaptureOverlay
 
 
-BG = "#f4f7fb"
+BG = "#f3f6fa"
 CARD = "#ffffff"
-CARD_ALT = "#eef3f9"
-BORDER = "#d8e1ee"
+CARD_ALT = "#f1f5f9"
+BORDER = "#dbe3ed"
 TEXT = "#17243d"
 MUTED = "#6f7f97"
-ACCENT = "#21b8d1"
-ACCENT_HOVER = "#169db4"
-ACCENT_SOFT = "#dff6fa"
+ACCENT = "#1eaac2"
+ACCENT_HOVER = "#148da2"
+ACCENT_SOFT = "#dff4f7"
 DANGER = "#dc5268"
 SUCCESS = "#25a969"
 VIEW_BG = "#101827"
+DEFAULT_AREA = "Bot_Area_Full"
 
 
 def _label(parent, text: str, *, muted: bool = False, size: int = 12, bold: bool = False, **kwargs):
@@ -160,7 +161,7 @@ class ImageView(tk.Label):
 
 
 class SourceControls(ctk.CTkFrame):
-    def __init__(self, parent, *, default_area: str = "game"):
+    def __init__(self, parent, *, default_area: str = DEFAULT_AREA):
         super().__init__(parent, fg_color="transparent")
         areas = sorted(load_areas())
         self.bot_id = tk.StringVar(value="1")
@@ -217,6 +218,14 @@ class ColourPage(ctk.CTkFrame):
         self._build()
         self.after(100, self._tick)
 
+    def activate(self) -> None:
+        self.live.set(True)
+        self.status.set("Live capture actief.")
+        self.after_idle(self._capture)
+
+    def deactivate(self) -> None:
+        self.live.set(False)
+
     def _build(self) -> None:
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(2, weight=1)
@@ -247,7 +256,7 @@ class ColourPage(ctk.CTkFrame):
 
         actions = ctk.CTkFrame(toolbar, fg_color="transparent")
         actions.grid(row=0, column=2, padx=(0, 16), pady=14)
-        self.pipette_button = _button(actions, "PIPET", self._toggle_pipette, width=82)
+        self.pipette_button = _button(actions, "Pipet", self._toggle_pipette, width=82)
         self.pipette_button.grid(row=0, column=0, padx=(0, 8))
         ctk.CTkSwitch(
             actions,
@@ -259,7 +268,7 @@ class ColourPage(ctk.CTkFrame):
             button_hover_color=CARD,
             text_color=TEXT,
         ).grid(row=0, column=1, padx=(0, 10))
-        _button(actions, "CAPTURE", self._once, primary=True, width=105).grid(row=0, column=2)
+        _button(actions, "Capture", self._once, primary=True, width=105).grid(row=0, column=2)
 
         viewbar = ctk.CTkFrame(self, fg_color=CARD, corner_radius=12)
         viewbar.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 10))
@@ -452,6 +461,14 @@ class TemplatePage(ctk.CTkFrame):
         self._build()
         self.after(100, self._tick)
 
+    def activate(self) -> None:
+        self.live.set(True)
+        self.status.set("Live matching actief.")
+        self.after_idle(self._capture)
+
+    def deactivate(self) -> None:
+        self.live.set(False)
+
     def _build(self) -> None:
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -462,7 +479,7 @@ class TemplatePage(ctk.CTkFrame):
         self.source.grid(row=0, column=0, sticky="ew", padx=16, pady=14)
         actions = ctk.CTkFrame(toolbar, fg_color="transparent")
         actions.grid(row=0, column=1, padx=16, pady=14)
-        _button(actions, "NIEUWE TEMPLATE", self._new_template, width=150).grid(row=0, column=0, padx=(0, 10))
+        _button(actions, "Nieuwe template", self._new_template, width=150).grid(row=0, column=0, padx=(0, 10))
         ctk.CTkSwitch(
             actions,
             text="Live",
@@ -471,7 +488,7 @@ class TemplatePage(ctk.CTkFrame):
             progress_color=ACCENT,
             text_color=TEXT,
         ).grid(row=0, column=1, padx=(0, 12))
-        _button(actions, "CAPTURE", self._once, primary=True, width=105).grid(row=0, column=2)
+        _button(actions, "Capture", self._once, primary=True, width=105).grid(row=0, column=2)
 
         content = ctk.CTkFrame(self, fg_color="transparent")
         content.grid(row=1, column=0, sticky="nsew", padx=14, pady=(0, 10))
@@ -486,7 +503,7 @@ class TemplatePage(ctk.CTkFrame):
         search = ctk.CTkEntry(
             sidebar,
             textvariable=self.query,
-            placeholder_text="Zoeken...",
+            placeholder_text="Zoek template",
             height=38,
             corner_radius=8,
             fg_color=CARD_ALT,
@@ -502,8 +519,8 @@ class TemplatePage(ctk.CTkFrame):
         template_actions.grid(row=3, column=0, sticky="ew", padx=14, pady=12)
         template_actions.grid_columnconfigure(0, weight=1)
         template_actions.grid_columnconfigure(1, weight=1)
-        _button(template_actions, "HERNOEM", self._rename, width=108).grid(row=0, column=0, sticky="ew", padx=(0, 4))
-        _button(template_actions, "VERWIJDER", self._delete, danger=True, width=108).grid(row=0, column=1, sticky="ew", padx=(4, 0))
+        _button(template_actions, "Hernoem", self._rename, width=108).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        _button(template_actions, "Verwijder", self._delete, danger=True, width=108).grid(row=0, column=1, sticky="ew", padx=(4, 0))
 
         center = ctk.CTkFrame(content, fg_color=CARD, corner_radius=12)
         center.grid(row=0, column=1, sticky="nsew", padx=(0, 8))
@@ -561,7 +578,7 @@ class TemplatePage(ctk.CTkFrame):
         )
         max_entry.pack(anchor="w", padx=16, pady=(4, 18))
         max_entry.bind("<KeyRelease>", lambda _event: self._schedule())
-        _button(panel, "INSTELLINGEN OPSLAAN", self._save, primary=True, width=288).pack(padx=16, fill="x")
+        _button(panel, "Instellingen opslaan", self._save, primary=True, width=288).pack(padx=16, fill="x")
         self.summary = _label(panel, "Beste shape —\nKleur daarbij —\nGeldige hits —", muted=True, size=12, justify="left")
         self.summary.pack(anchor="w", padx=16, pady=(20, 0))
 
@@ -631,8 +648,6 @@ class TemplatePage(ctk.CTkFrame):
             self.method.set(settings.method)
             self.shape.set(settings.min_shape)
             self.colour.set(settings.min_color)
-            if settings.area:
-                self.source.area.set(settings.area)
             self._update_threshold_labels()
             self.status.set(f"{name} geladen. Thresholds zijn live aanpasbaar.")
             self._schedule()
@@ -823,6 +838,14 @@ class SensorPage(ctk.CTkFrame):
         self._load()
         self.after(150, self._tick)
 
+    def activate(self) -> None:
+        self.live.set(True)
+        self.status.set("Live sensormeting actief.")
+        self.after_idle(self._measure)
+
+    def deactivate(self) -> None:
+        self.live.set(False)
+
     def _build(self) -> None:
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(2, weight=1)
@@ -864,7 +887,7 @@ class SensorPage(ctk.CTkFrame):
             progress_color=ACCENT,
             text_color=TEXT,
         ).grid(row=0, column=1, padx=(0, 10))
-        _button(actions, "METEN", self._once, primary=True, width=100).grid(row=0, column=2)
+        _button(actions, "Meten", self._once, primary=True, width=100).grid(row=0, column=2)
 
         desc = ctk.CTkFrame(self, fg_color=CARD, corner_radius=12)
         desc.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 10))
@@ -950,37 +973,64 @@ class VisionTester(ctk.CTk):
         self.minsize(1180, 760)
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
+        self.pages: dict[str, ctk.CTkFrame] = {}
+        self.current_page: ctk.CTkFrame | None = None
 
-        header = ctk.CTkFrame(self, fg_color="transparent")
-        header.grid(row=0, column=0, sticky="ew", padx=24, pady=(18, 8))
-        header.grid_columnconfigure(0, weight=1)
+        header = ctk.CTkFrame(self, fg_color=CARD, corner_radius=12)
+        header.grid(row=0, column=0, sticky="ew", padx=24, pady=(18, 10))
+        header.grid_columnconfigure(1, weight=1)
         copy = ctk.CTkFrame(header, fg_color="transparent")
-        copy.grid(row=0, column=0, sticky="w")
-        _label(copy, "Vision Workspace", size=22, bold=True).pack(anchor="w")
-        _label(copy, "Kleur, templates en sensoren in één rustige live omgeving", muted=True, size=12).pack(anchor="w")
-        _label(header, "●  ENGINE READY", size=11, bold=True, text_color=ACCENT_HOVER).grid(row=0, column=1, sticky="e")
+        copy.grid(row=0, column=0, sticky="w", padx=(18, 28), pady=12)
+        _label(copy, "Vision Workspace", size=18, bold=True).pack(anchor="w")
+        _label(copy, "Live kalibratie", muted=True, size=11).pack(anchor="w")
 
-        tabs = ctk.CTkTabview(
-            self,
-            fg_color=BG,
-            segmented_button_fg_color=CARD,
-            segmented_button_selected_color=ACCENT,
-            segmented_button_selected_hover_color=ACCENT_HOVER,
-            segmented_button_unselected_color=CARD,
-            segmented_button_unselected_hover_color=CARD_ALT,
+        names = ("01  KLEUR", "02  TEMPLATE", "03  SENSOR")
+        self.navigation_value = tk.StringVar(value=names[0])
+        navigation = ctk.CTkSegmentedButton(
+            header,
+            values=list(names),
+            variable=self.navigation_value,
+            command=self._show_page,
+            height=36,
+            corner_radius=9,
+            fg_color=CARD_ALT,
+            selected_color=ACCENT,
+            selected_hover_color=ACCENT_HOVER,
+            unselected_color=CARD_ALT,
+            unselected_hover_color="#e5ebf2",
             text_color=TEXT,
-            corner_radius=12,
         )
-        tabs.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
+        navigation.grid(row=0, column=1)
+        _label(header, "●  LIVE ENGINE", size=11, bold=True, text_color=ACCENT_HOVER).grid(
+            row=0,
+            column=2,
+            sticky="e",
+            padx=18,
+        )
+
+        page_host = ctk.CTkFrame(self, fg_color="transparent")
+        page_host.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
+        page_host.grid_columnconfigure(0, weight=1)
+        page_host.grid_rowconfigure(0, weight=1)
         for name, page_class in (
             ("01  KLEUR", ColourPage),
             ("02  TEMPLATE", TemplatePage),
             ("03  SENSOR", SensorPage),
         ):
-            tab = tabs.add(name)
-            tab.grid_columnconfigure(0, weight=1)
-            tab.grid_rowconfigure(0, weight=1)
-            page_class(tab).grid(row=0, column=0, sticky="nsew")
+            page = page_class(page_host)
+            page.grid(row=0, column=0, sticky="nsew")
+            self.pages[name] = page
+        self.after(150, lambda: self._show_page(self.navigation_value.get()))
+
+    def _show_page(self, name: str) -> None:
+        page = self.pages.get(name)
+        if page is None:
+            return
+        if self.current_page is not None and self.current_page is not page:
+            self.current_page.deactivate()
+        page.tkraise()
+        self.current_page = page
+        page.activate()
 
 
 def main() -> None:
