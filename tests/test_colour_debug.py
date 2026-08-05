@@ -5,6 +5,7 @@ from tools.vision_tester.colour_debug import (
     editor_sample_from_ranges,
     filter_mask_by_blob_size,
     isolate_colour,
+    measure_mask_blobs,
 )
 
 
@@ -40,6 +41,19 @@ def test_filter_mask_by_blob_size_removes_regions_outside_limits() -> None:
 
     assert count == 1
     assert np.count_nonzero(filtered) == 4
+
+
+def test_measure_mask_blobs_returns_largest_region_first() -> None:
+    mask = np.zeros((8, 10), dtype=np.uint8)
+    mask[1:3, 1:4] = 255
+    mask[3:7, 5:9] = 255
+
+    blobs = measure_mask_blobs(mask)
+
+    assert [(blob.x, blob.y, blob.width, blob.height, blob.area_px) for blob in blobs] == [
+        (5, 3, 4, 4, 16),
+        (1, 1, 3, 2, 6),
+    ]
 
 
 def test_dominant_colours_reports_pixel_counts_and_percentages() -> None:
