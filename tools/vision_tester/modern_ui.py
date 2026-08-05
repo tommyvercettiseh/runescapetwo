@@ -992,7 +992,13 @@ class TemplatePage(ctk.CTkFrame):
         self.x_padding.set(f"{padding_percent:g}")
         left, top, right, bottom = self.best_valid_bounds
         try:
-            mouse.move_to_target(left, top, right, bottom)
+            mouse.move_to_target(
+                left,
+                top,
+                right,
+                bottom,
+                keep_pending_click=False,
+            )
             error = mouse.last_engine_error()
             if error:
                 self.status.set(f"Muis bewogen via fallback · Mouse Engine: {error}")
