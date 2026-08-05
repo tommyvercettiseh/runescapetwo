@@ -17,11 +17,11 @@ class VisionTester(tk.Tk):
         self.minsize(1180, 760)
         configure_style(self)
 
-        header = ttk.Frame(self, padding=(22, 17, 22, 13))
+        header = ttk.Frame(self, padding=(24, 20, 24, 15))
         header.pack(fill="x")
         heading = ttk.Frame(header)
         heading.pack(side="left")
-        ttk.Label(heading, text="Vision workspace", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(heading, text="Vision Workspace", style="Title.TLabel").pack(anchor="w")
         ttk.Label(
             heading,
             text="Calibreer kleur, templates en sensoren in één live omgeving",
@@ -29,8 +29,8 @@ class VisionTester(tk.Tk):
         ).pack(anchor="w", pady=(3, 0))
         ttk.Label(
             header,
-            text="  ENGINE READY  ",
-            foreground=COLOURS["accent"],
+            text="●  ENGINE READY",
+            foreground="#087f95",
             font=("Segoe UI Semibold", 9),
         ).pack(side="right", pady=8)
 
