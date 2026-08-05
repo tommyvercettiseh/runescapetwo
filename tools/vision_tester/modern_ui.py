@@ -36,18 +36,20 @@ from .sensor_view import analyse_sensor_frame, sensor_description
 from .template_capture import TemplateCaptureOverlay
 
 
-BG = "#f3f6fa"
-CARD = "#ffffff"
-CARD_ALT = "#f1f5f9"
-BORDER = "#dbe3ed"
-TEXT = "#17243d"
-MUTED = "#6f7f97"
-ACCENT = "#1eaac2"
-ACCENT_HOVER = "#148da2"
-ACCENT_SOFT = "#dff4f7"
-DANGER = "#dc5268"
-SUCCESS = "#25a969"
-VIEW_BG = "#101827"
+BG = "#0b0906"
+CARD = "#17130d"
+CARD_ALT = "#211a11"
+BORDER = "#4b3923"
+CONTROL_HOVER = "#352818"
+TEXT = "#e9dfc8"
+MUTED = "#aa9a7b"
+ACCENT = "#8ec63f"
+ACCENT_HOVER = "#75aa2f"
+ACCENT_SOFT = "#29371d"
+GOLD = "#d1a64b"
+DANGER = "#d06655"
+SUCCESS = "#8ec63f"
+VIEW_BG = "#040403"
 DEFAULT_AREA = "Bot_Area_Full"
 
 
@@ -64,23 +66,35 @@ def _label(parent, text: str, *, muted: bool = False, size: int = 12, bold: bool
 
 def _button(parent, text: str, command, *, primary: bool = False, danger: bool = False, width=120):
     if primary:
-        fg, hover, colour = ACCENT, ACCENT_HOVER, "#073b47"
+        fg, hover, colour = ACCENT, ACCENT_HOVER, "#111509"
     elif danger:
-        fg, hover, colour = "#fff0f2", "#fde3e8", DANGER
+        fg, hover, colour = "#321a17", "#45221d", "#ef8a78"
     else:
-        fg, hover, colour = CARD_ALT, "#e2eaf4", TEXT
+        fg, hover, colour = CARD_ALT, CONTROL_HOVER, TEXT
     return ctk.CTkButton(
         parent,
         text=text,
         command=command,
         width=width,
         height=38,
-        corner_radius=9,
+        corner_radius=7,
         fg_color=fg,
         hover_color=hover,
         text_color=colour,
         font=ctk.CTkFont(size=12, weight="bold"),
-        border_width=0,
+        border_width=1,
+        border_color=BORDER,
+    )
+
+
+def _card(parent, **kwargs):
+    return ctk.CTkFrame(
+        parent,
+        fg_color=kwargs.pop("fg_color", CARD),
+        corner_radius=kwargs.pop("corner_radius", 9),
+        border_width=kwargs.pop("border_width", 1),
+        border_color=kwargs.pop("border_color", BORDER),
+        **kwargs,
     )
 
 
@@ -177,7 +191,7 @@ class SourceControls(ctk.CTkFrame):
             corner_radius=8,
             fg_color=CARD_ALT,
             button_color=BORDER,
-            button_hover_color="#c8d4e4",
+            button_hover_color=CONTROL_HOVER,
             text_color=TEXT,
         ).grid(row=1, column=0, padx=(0, 12), pady=(4, 0), sticky="w")
         _label(self, "AREA", muted=True, size=11).grid(row=0, column=1, sticky="w")
@@ -190,7 +204,7 @@ class SourceControls(ctk.CTkFrame):
             fg_color=CARD_ALT,
             border_color=BORDER,
             button_color=BORDER,
-            button_hover_color="#c8d4e4",
+            button_hover_color=CONTROL_HOVER,
             text_color=TEXT,
         )
         self.area_box.grid(row=1, column=1, pady=(4, 0), sticky="ew")
@@ -229,7 +243,7 @@ class ColourPage(ctk.CTkFrame):
     def _build(self) -> None:
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(2, weight=1)
-        toolbar = ctk.CTkFrame(self, fg_color=CARD, corner_radius=12)
+        toolbar = _card(self)
         toolbar.grid(row=0, column=0, sticky="ew", padx=14, pady=(12, 10))
         toolbar.grid_columnconfigure(0, weight=1)
         self.source = SourceControls(toolbar)
@@ -256,21 +270,19 @@ class ColourPage(ctk.CTkFrame):
 
         actions = ctk.CTkFrame(toolbar, fg_color="transparent")
         actions.grid(row=0, column=2, padx=(0, 16), pady=14)
-        self.pipette_button = _button(actions, "Pipet", self._toggle_pipette, width=82)
-        self.pipette_button.grid(row=0, column=0, padx=(0, 8))
         ctk.CTkSwitch(
             actions,
             text="Live",
             variable=self.live,
             command=self._toggle_live,
             progress_color=ACCENT,
-            button_color=CARD,
-            button_hover_color=CARD,
+            button_color=TEXT,
+            button_hover_color=GOLD,
             text_color=TEXT,
-        ).grid(row=0, column=1, padx=(0, 10))
-        _button(actions, "Capture", self._once, primary=True, width=105).grid(row=0, column=2)
+        ).grid(row=0, column=0, padx=(0, 10))
+        _button(actions, "Capture", self._once, primary=True, width=105).grid(row=0, column=1)
 
-        viewbar = ctk.CTkFrame(self, fg_color=CARD, corner_radius=12)
+        viewbar = _card(self)
         viewbar.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 10))
         _label(viewbar, "WEERGAVE", muted=True, size=11).pack(side="left", padx=(16, 12), pady=11)
         self.auto_switch = ctk.CTkSwitch(
@@ -317,9 +329,19 @@ class ColourPage(ctk.CTkFrame):
             ("KLEUR GEÏSOLEERD", "Alleen geldige kleurpixels blijven staan"),
         )
         for column, (title, subtitle) in enumerate(specs):
-            card = ctk.CTkFrame(previews, fg_color=CARD, corner_radius=12)
+            card = _card(previews)
             card.grid(row=0, column=column, sticky="nsew", padx=4)
-            _label(card, title, size=12, bold=True).pack(anchor="w", padx=14, pady=(12, 0))
+            heading = ctk.CTkFrame(card, fg_color="transparent")
+            heading.pack(fill="x", padx=14, pady=(10, 0))
+            _label(heading, title, size=12, bold=True).pack(side="left")
+            if column == 0:
+                self.pipette_button = _button(
+                    heading,
+                    "⌖  Pipet",
+                    self._toggle_pipette,
+                    width=92,
+                )
+                self.pipette_button.pack(side="right")
             _label(card, subtitle, muted=True, size=11).pack(anchor="w", padx=14, pady=(0, 10))
             view = ImageView(
                 card,
@@ -331,7 +353,7 @@ class ColourPage(ctk.CTkFrame):
         self.capture_view, self.mask_view, self.isolated_view = self.views
         self.capture_view.bind("<Button-1>", self._pick)
 
-        status = ctk.CTkFrame(self, fg_color=CARD, corner_radius=10)
+        status = _card(self)
         status.grid(row=3, column=0, sticky="ew", padx=14, pady=(0, 12))
         _label(status, "", size=11, textvariable=self.status).pack(anchor="w", padx=14, pady=9)
 
@@ -472,7 +494,7 @@ class TemplatePage(ctk.CTkFrame):
     def _build(self) -> None:
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
-        toolbar = ctk.CTkFrame(self, fg_color=CARD, corner_radius=12)
+        toolbar = _card(self)
         toolbar.grid(row=0, column=0, sticky="ew", padx=14, pady=(12, 10))
         toolbar.grid_columnconfigure(0, weight=1)
         self.source = SourceControls(toolbar)
@@ -495,7 +517,7 @@ class TemplatePage(ctk.CTkFrame):
         content.grid_rowconfigure(0, weight=1)
         content.grid_columnconfigure(1, weight=1)
 
-        sidebar = ctk.CTkFrame(content, fg_color=CARD, corner_radius=12, width=270)
+        sidebar = _card(content, width=270)
         sidebar.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
         sidebar.grid_propagate(False)
         sidebar.grid_rowconfigure(2, weight=1)
@@ -512,7 +534,12 @@ class TemplatePage(ctk.CTkFrame):
         )
         search.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 10))
         search.bind("<KeyRelease>", lambda _event: self._draw_templates())
-        self.template_scroll = ctk.CTkScrollableFrame(sidebar, fg_color="transparent")
+        self.template_scroll = ctk.CTkScrollableFrame(
+            sidebar,
+            fg_color="transparent",
+            scrollbar_button_color=BORDER,
+            scrollbar_button_hover_color=GOLD,
+        )
         self.template_scroll.grid(row=2, column=0, sticky="nsew", padx=8)
         self.template_scroll.grid_columnconfigure(0, weight=1)
         template_actions = ctk.CTkFrame(sidebar, fg_color="transparent")
@@ -522,7 +549,7 @@ class TemplatePage(ctk.CTkFrame):
         _button(template_actions, "Hernoem", self._rename, width=108).grid(row=0, column=0, sticky="ew", padx=(0, 4))
         _button(template_actions, "Verwijder", self._delete, danger=True, width=108).grid(row=0, column=1, sticky="ew", padx=(4, 0))
 
-        center = ctk.CTkFrame(content, fg_color=CARD, corner_radius=12)
+        center = _card(content)
         center.grid(row=0, column=1, sticky="nsew", padx=(0, 8))
         center.grid_rowconfigure(2, weight=1)
         center.grid_columnconfigure(0, weight=1)
@@ -544,7 +571,7 @@ class TemplatePage(ctk.CTkFrame):
         self.results.insert("1.0", "Nog geen analyse uitgevoerd.")
         self.results.configure(state="disabled")
 
-        panel = ctk.CTkFrame(content, fg_color=CARD, corner_radius=12, width=320)
+        panel = _card(content, width=320)
         panel.grid(row=0, column=2, sticky="nsew")
         panel.grid_propagate(False)
         _label(panel, "DETECTIE INSTELLEN", size=12, bold=True).pack(anchor="w", padx=16, pady=(14, 0))
@@ -559,7 +586,7 @@ class TemplatePage(ctk.CTkFrame):
             corner_radius=8,
             fg_color=CARD_ALT,
             button_color=BORDER,
-            button_hover_color="#c8d4e4",
+            button_hover_color=CONTROL_HOVER,
             text_color=TEXT,
         )
         self.method_box.pack(fill="x", padx=16, pady=(4, 18))
@@ -582,7 +609,7 @@ class TemplatePage(ctk.CTkFrame):
         self.summary = _label(panel, "Beste shape —\nKleur daarbij —\nGeldige hits —", muted=True, size=12, justify="left")
         self.summary.pack(anchor="w", padx=16, pady=(20, 0))
 
-        status = ctk.CTkFrame(self, fg_color=CARD, corner_radius=10)
+        status = _card(self)
         status.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 12))
         _label(status, "", textvariable=self.status, muted=True, size=11).pack(anchor="w", padx=14, pady=9)
         self._refresh_templates()
@@ -849,7 +876,7 @@ class SensorPage(ctk.CTkFrame):
     def _build(self) -> None:
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(2, weight=1)
-        toolbar = ctk.CTkFrame(self, fg_color=CARD, corner_radius=12)
+        toolbar = _card(self)
         toolbar.grid(row=0, column=0, sticky="ew", padx=14, pady=(12, 10))
         toolbar.grid_columnconfigure(0, weight=1)
         group = ctk.CTkFrame(toolbar, fg_color="transparent")
@@ -865,7 +892,7 @@ class SensorPage(ctk.CTkFrame):
             fg_color=CARD_ALT,
             border_color=BORDER,
             button_color=BORDER,
-            button_hover_color="#c8d4e4",
+            button_hover_color=CONTROL_HOVER,
             text_color=TEXT,
         )
         self.sensor_box.pack(fill="x", pady=(4, 0))
@@ -889,7 +916,7 @@ class SensorPage(ctk.CTkFrame):
         ).grid(row=0, column=1, padx=(0, 10))
         _button(actions, "Meten", self._once, primary=True, width=100).grid(row=0, column=2)
 
-        desc = ctk.CTkFrame(self, fg_color=CARD, corner_radius=12)
+        desc = _card(self)
         desc.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 10))
         _label(desc, "", textvariable=self.description, size=12, wraplength=1200, justify="left").pack(anchor="w", padx=16, pady=12)
 
@@ -900,7 +927,7 @@ class SensorPage(ctk.CTkFrame):
         previews.grid_columnconfigure(1, weight=1, uniform="sensor")
         self.views = []
         for column, title in enumerate(("LIVE SENSOR AREA", "WAT DE SENSOR ZIET")):
-            card = ctk.CTkFrame(previews, fg_color=CARD, corner_radius=12)
+            card = _card(previews)
             card.grid(row=0, column=column, sticky="nsew", padx=4)
             _label(card, title, size=12, bold=True).pack(anchor="w", padx=14, pady=12)
             view = ImageView(card)
@@ -908,13 +935,13 @@ class SensorPage(ctk.CTkFrame):
             self.views.append(view)
         self.live_view, self.detected_view = self.views
 
-        result = ctk.CTkFrame(self, fg_color=CARD, corner_radius=12)
+        result = _card(self)
         result.grid(row=3, column=0, sticky="ew", padx=14, pady=(0, 10))
         self.measurement = _label(result, "Nog niet gemeten", size=13)
         self.measurement.pack(side="left", padx=16, pady=12)
         self.outcome = _label(result, "—", size=20, bold=True)
         self.outcome.pack(side="right", padx=18, pady=10)
-        status = ctk.CTkFrame(self, fg_color=CARD, corner_radius=10)
+        status = _card(self)
         status.grid(row=4, column=0, sticky="ew", padx=14, pady=(0, 12))
         _label(status, "", textvariable=self.status, muted=True, size=11).pack(anchor="w", padx=14, pady=9)
 
@@ -965,8 +992,8 @@ class SensorPage(ctk.CTkFrame):
 
 class VisionTester(ctk.CTk):
     def __init__(self):
-        ctk.set_appearance_mode("light")
-        ctk.set_default_color_theme("blue")
+        ctk.set_appearance_mode("dark")
+        ctk.set_default_color_theme("green")
         super().__init__(fg_color=BG)
         self.title("RuneScape Two - Unified Vision Tester")
         self.geometry("1500x920")
@@ -976,13 +1003,18 @@ class VisionTester(ctk.CTk):
         self.pages: dict[str, ctk.CTkFrame] = {}
         self.current_page: ctk.CTkFrame | None = None
 
-        header = ctk.CTkFrame(self, fg_color=CARD, corner_radius=12)
+        header = _card(self)
         header.grid(row=0, column=0, sticky="ew", padx=24, pady=(18, 10))
         header.grid_columnconfigure(1, weight=1)
         copy = ctk.CTkFrame(header, fg_color="transparent")
         copy.grid(row=0, column=0, sticky="w", padx=(18, 28), pady=12)
-        _label(copy, "Vision Workspace", size=18, bold=True).pack(anchor="w")
-        _label(copy, "Live kalibratie", muted=True, size=11).pack(anchor="w")
+        ctk.CTkLabel(
+            copy,
+            text="RuneScape Vision",
+            text_color=GOLD,
+            font=ctk.CTkFont(family="Georgia", size=19, weight="bold"),
+        ).pack(anchor="w")
+        _label(copy, "Live kalibratie workspace", muted=True, size=11).pack(anchor="w")
 
         names = ("01  KLEUR", "02  TEMPLATE", "03  SENSOR")
         self.navigation_value = tk.StringVar(value=names[0])
@@ -997,7 +1029,7 @@ class VisionTester(ctk.CTk):
             selected_color=ACCENT,
             selected_hover_color=ACCENT_HOVER,
             unselected_color=CARD_ALT,
-            unselected_hover_color="#e5ebf2",
+            unselected_hover_color=CONTROL_HOVER,
             text_color=TEXT,
         )
         navigation.grid(row=0, column=1)
