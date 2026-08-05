@@ -5,6 +5,7 @@ import pytest
 
 from core.vision.models import TemplateSettings
 from core.vision.template_matching import _score_map, iter_candidates
+from core.vision import templates
 from core.vision.templates import normalize_name, validate_settings
 
 
@@ -55,3 +56,24 @@ def test_candidate_selection_removes_nearby_matches() -> None:
         )
     )
     assert [(x, y) for x, y, _ in candidates] == [(2, 2), (15, 15)]
+
+
+def test_rename_and_delete_template_keep_metadata_in_sync(tmp_path, monkeypatch) -> None:
+    images = tmp_path / "images"
+    images.mkdir()
+    metadata = tmp_path / "templates_meta.json"
+    metadata.write_text(
+        '{"old.png": {"method": "TM_CCOEFF_NORMED", "min_shape": 80, "min_color": 70}}',
+        encoding="utf-8",
+    )
+    (images / "old.png").write_bytes(b"png")
+    monkeypatch.setattr(templates, "IMAGES_DIR", images)
+    monkeypatch.setattr(templates, "METADATA_FILE", metadata)
+    templates.clear_metadata_cache()
+
+    assert templates.rename_template("old.png", "new") == "new.png"
+    assert (images / "new.png").exists()
+    assert "new.png" in templates.load_metadata()
+    assert templates.delete_template("new.png") is True
+    assert not (images / "new.png").exists()
+    assert "new.png" not in templates.load_metadata()
