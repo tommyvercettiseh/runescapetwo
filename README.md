@@ -328,6 +328,8 @@ De Unified Vision Tester heeft drie subpagina's:
 
 Typ een deel van een area-, template- of sensornaam om de lijst direct te filteren. De liveknop blijft zichtbaar aan of uit staan. In de kleurtester blijft het pipet actief voor meerdere kleurmetingen totdat je het zelf uitschakelt. Auto resize staat standaard aan; schakel dit uit om de preview handmatig tussen 10 en 100 procent te zoomen. Deze voorkeur wordt buiten de repository opgeslagen.
 
+Boven Live Area testen `Move kleur` en `Klik kleur` de echte schermcoördinaten met de externe Mouse-engine. De tester verbergt zichzelf kort zodat hij de doelapplicatie niet afdekt. `Trace` toont optioneel een click-through fading spoor, een roterende cursorring en de veilige targetzone. Alleen de tester gebruikt deze overlay; de keuze wordt samen met de andere weergavevoorkeuren lokaal opgeslagen.
+
 In de Template Tester kun je een nieuwe template rechtstreeks uit een fullscreen screenshot knippen. Shape- en colour-thresholds, OpenCV-methode, area en max hits zijn live aanpasbaar. Sla de gekozen productie-instellingen daarna per template op in `config/templates_meta.json`.
 
 De Sensor checker ondersteunt drie soorten checks:

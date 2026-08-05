@@ -8,8 +8,10 @@ from . import mouse
 from .mouse_engine import MouseEngineError
 from .targeting import (
     area_target_bounds,
+    colour_blob_target_bounds,
     image_target_bounds,
     validate_area_edge_padding,
+    validate_blob_edge_padding,
     validate_image_edge_padding,
 )
 from .vision.api import find_image
@@ -93,13 +95,7 @@ def _validate_blob_settings(
         raise TypeError("minimum_blob_pixels must be a whole number")
     if minimum_blob_pixels < 1:
         raise ValueError("minimum_blob_pixels must be at least 1")
-    if isinstance(blob_edge_padding, bool) or not isinstance(
-        blob_edge_padding,
-        (int, float),
-    ):
-        raise TypeError("blob_edge_padding must be a percentage")
-    if not math.isfinite(float(blob_edge_padding)) or not 0 <= blob_edge_padding <= 45:
-        raise ValueError("blob_edge_padding must be between 0 and 45 percent")
+    validate_blob_edge_padding(blob_edge_padding)
     if maximum_blob_pixels is not None:
         if isinstance(maximum_blob_pixels, bool) or not isinstance(
             maximum_blob_pixels,
@@ -121,35 +117,6 @@ def _image_bounds(hit: Hit, image_edge_padding: float) -> TargetBounds:
         hit.y + hit.height,
         image_edge_padding=image_edge_padding,
     )
-
-
-def _colour_bounds(blob: ColourBlob, blob_edge_padding: float) -> TargetBounds:
-    """Intersect percentage-padded bounds with a square inside the real blob."""
-    safe_x, safe_y = blob.safe_point
-    half_side = max(0, int(math.floor(float(blob.safe_radius) / math.sqrt(2.0))))
-    safe_circle_square = (
-        safe_x - half_side,
-        safe_y - half_side,
-        safe_x + half_side + 1,
-        safe_y + half_side + 1,
-    )
-    horizontal_margin = int(math.ceil(blob.width * blob_edge_padding / 100.0))
-    vertical_margin = int(math.ceil(blob.height * blob_edge_padding / 100.0))
-    percentage_padded_bounds = (
-        blob.x + horizontal_margin,
-        blob.y + vertical_margin,
-        blob.x + blob.width - horizontal_margin,
-        blob.y + blob.height - vertical_margin,
-    )
-    left = max(safe_circle_square[0], percentage_padded_bounds[0])
-    top = max(safe_circle_square[1], percentage_padded_bounds[1])
-    right = min(safe_circle_square[2], percentage_padded_bounds[2])
-    bottom = min(safe_circle_square[3], percentage_padded_bounds[3])
-    if right <= left or bottom <= top:
-        raise ValueError(
-            "blob_edge_padding leaves no click zone safely inside the colour blob"
-        )
-    return left, top, right, bottom
 
 
 def _area_bounds(
@@ -459,7 +426,10 @@ def move_to_colour(
                 f"Geen geldige kleurblob gevonden: {colour_name}",
                 target_name=colour_name,
             )
-        bounds = _colour_bounds(blob, blob_edge_padding)
+        bounds = colour_blob_target_bounds(
+            blob,
+            blob_edge_padding=blob_edge_padding,
+        )
         with mouse.action_guard():
             mouse.move_to_target(
                 *bounds,
@@ -525,7 +495,10 @@ def click_colour(
                 f"Geen geldige kleurblob gevonden: {colour_name}",
                 target_name=colour_name,
             )
-        bounds = _colour_bounds(blob, blob_edge_padding)
+        bounds = colour_blob_target_bounds(
+            blob,
+            blob_edge_padding=blob_edge_padding,
+        )
         with mouse.action_guard():
             mouse.move_and_click_target(
                 *bounds,
