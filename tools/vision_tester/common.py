@@ -214,25 +214,79 @@ class LiveToggle(ttk.Checkbutton):
 
 
 class PreviewLabel(ttk.Label):
-    def __init__(self, parent, *, fallback_width: int = 620, fallback_height: int = 360):
+    def __init__(
+        self,
+        parent,
+        *,
+        fallback_width: int = 620,
+        fallback_height: int = 360,
+        allow_upscale: bool = False,
+        maximum_upscale: float = 6.0,
+    ):
         super().__init__(parent, anchor="center", style="Surface.TLabel")
         self.fallback_width = fallback_width
         self.fallback_height = fallback_height
+        self.allow_upscale = allow_upscale
+        self.maximum_upscale = max(1.0, float(maximum_upscale))
         self.scale = 1.0
+        self.image_offset = (0, 0)
+        self.display_size = (0, 0)
         self._photo: ImageTk.PhotoImage | None = None
+        self._last_rgb: np.ndarray | None = None
+        self._resize_job: str | None = None
+        self.bind("<Configure>", self._schedule_redraw, add="+")
 
     def show(self, rgb: np.ndarray) -> None:
+        self._last_rgb = rgb
+        self._draw(rgb)
+
+    def _draw(self, rgb: np.ndarray) -> None:
         height, width = rgb.shape[:2]
-        target_width = max(300, self.winfo_width() or self.fallback_width)
-        target_height = max(180, self.winfo_height() or self.fallback_height)
-        self.scale = min(1.0, target_width / width, target_height / height)
+        widget_width = self.winfo_width()
+        widget_height = self.winfo_height()
+        target_width = self.fallback_width if widget_width <= 1 else widget_width
+        target_height = self.fallback_height if widget_height <= 1 else widget_height
+        scale_limit = self.maximum_upscale if self.allow_upscale else 1.0
+        self.scale = min(scale_limit, target_width / width, target_height / height)
+        display_width = max(1, int(width * self.scale))
+        display_height = max(1, int(height * self.scale))
+        self.display_size = (display_width, display_height)
+        self.image_offset = (
+            max(0, (target_width - display_width) // 2),
+            max(0, (target_height - display_height) // 2),
+        )
         resized = cv2.resize(
             rgb,
-            (max(1, int(width * self.scale)), max(1, int(height * self.scale))),
+            self.display_size,
             interpolation=cv2.INTER_AREA if self.scale < 1.0 else cv2.INTER_NEAREST,
         )
         self._photo = ImageTk.PhotoImage(Image.fromarray(resized))
         self.configure(image=self._photo)
+
+    def _schedule_redraw(self, _event) -> None:
+        if self._last_rgb is None:
+            return
+        if self._resize_job is not None:
+            self.after_cancel(self._resize_job)
+        self._resize_job = self.after(60, self._redraw)
+
+    def _redraw(self) -> None:
+        self._resize_job = None
+        if self._last_rgb is not None:
+            self._draw(self._last_rgb)
+
+    def image_coordinates(self, widget_x: int, widget_y: int) -> tuple[int, int] | None:
+        """Translate a click in the centred preview back to its source pixel."""
+        offset_x, offset_y = self.image_offset
+        display_width, display_height = self.display_size
+        relative_x = widget_x - offset_x
+        relative_y = widget_y - offset_y
+        if not 0 <= relative_x < display_width or not 0 <= relative_y < display_height:
+            return None
+        return (
+            int(relative_x / max(self.scale, 1e-9)),
+            int(relative_y / max(self.scale, 1e-9)),
+        )
 
 
 class SourceBar(ttk.Frame):
