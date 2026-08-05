@@ -91,6 +91,47 @@ mouse.move_and_click(800, 450)
 
 Vision geeft waar mogelijk de volledige targetrechthoek door. Daardoor kan de externe Mouse-engine zelf een persoonlijke klikpositie binnen de ingestelde padding kiezen.
 
+### Leesbare Mouse Actions voor scripts
+
+Gebruik `core.mouse_actions` voor image- en area-acties. Alle instellingen hebben expliciete namen; de publieke API gebruikt geen `*args` of `**kwargs`.
+
+```python
+from core import mouse_actions
+
+# Alleen bewegen naar een gevonden image.
+found = mouse_actions.move_to_image(
+    "Logs",
+    area_name="Bot_Area_Full",
+    bot_id=1,
+    image_edge_padding=20,
+)
+
+# Rechtsklikken gebruikt dezelfde functie, dus geen dubbele rightclick-API.
+clicked = mouse_actions.click_image(
+    "Logs",
+    area_name="Bot_Area_Full",
+    bot_id=1,
+    button="right",
+    image_edge_padding=20,
+)
+
+# Bewegen of klikken binnen een opgeslagen area.
+mouse_actions.move_to_area(
+    "Inventory_Area",
+    bot_id=1,
+    area_edge_padding=8,
+)
+
+mouse_actions.click_in_area(
+    "Inventory_Area",
+    bot_id=1,
+    button="left",
+    area_edge_padding=8,
+)
+```
+
+`image_edge_padding=20` verwijdert 20% aan zowel de linker- als rechterrand van de gevonden image en accepteert waarden van 20 tot en met 45. `area_edge_padding=8` gebruikt acht hele pixels aan alle zijden van een area. Image-acties geven `False` terug wanneer de template niet wordt gevonden; area-acties geven configuratiefouten direct door.
+
 Image detection, colour detection en de testtools gebruiken dezelfde area- en offsetroute:
 
 ```text

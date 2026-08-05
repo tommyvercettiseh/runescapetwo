@@ -15,6 +15,11 @@ from pynput.keyboard import Key as KeyboardKey
 from pynput.keyboard import Listener as KeyboardListener
 
 from core import mouse
+from core.targeting import (
+    MIN_IMAGE_EDGE_PADDING,
+    image_target_bounds,
+    normalize_image_edge_padding,
+)
 from core.vision.areas import load_areas
 from core.vision.color_matching import calculate_color_score
 from core.vision.colour_detection import (
@@ -44,11 +49,6 @@ from .preferences import load_preferences, save_preferences
 from .sensor_checks import SensorCheck, load_sensor_checks
 from .sensor_view import analyse_sensor_frame, sensor_description
 from .template_capture import TemplateCaptureOverlay
-from .template_target import (
-    MIN_X_PADDING_PERCENT,
-    horizontal_target_bounds,
-    normalize_x_padding_percent,
-)
 
 
 BG = "#0b0906"
@@ -926,12 +926,12 @@ class TemplatePage(ctk.CTkFrame):
                     key=lambda row: (row[1], row[2]),
                 )
                 padding_percent = self._x_padding_percent()
-                local_bounds = horizontal_target_bounds(
+                local_bounds = image_target_bounds(
                     target_x,
                     target_y,
                     target_x + width,
                     target_y + height,
-                    x_padding_percent=padding_percent,
+                    image_edge_padding=padding_percent,
                 )
                 origin_x, origin_y = self.region[0], self.region[1]
                 self.best_valid_bounds = (
@@ -977,8 +977,8 @@ class TemplatePage(ctk.CTkFrame):
         try:
             value = float(self.x_padding.get().strip().replace(",", "."))
         except ValueError:
-            value = MIN_X_PADDING_PERCENT
-        return normalize_x_padding_percent(value)
+            value = MIN_IMAGE_EDGE_PADDING
+        return normalize_image_edge_padding(value)
 
     def _move_to_image(self) -> None:
         self.live.set(False)
