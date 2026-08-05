@@ -1,27 +1,100 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 import ctypes
 import random
 import threading
 import time
-from typing import Any, Mapping, Sequence
+from typing import Any, Iterator, Mapping, Sequence
 
 from pynput.mouse import Button, Controller
 
 from . import mouse_engine
 from .movements import create_path
+from .mouse_plan import MousePlanValidationError, validate_mouse_plan
 from .profile import get_section
 
 _controller = Controller()
 _thread_state = threading.local()
 _last_engine_error: str | None = None
+_action_lock = threading.RLock()
+_emergency_stop = threading.Event()
+PENDING_CLICK_TIMEOUT_S = 3.0
+
+
+class MouseRuntimeError(RuntimeError):
+    pass
+
+
+class MouseActionCancelled(MouseRuntimeError):
+    pass
+
+
+class PendingClickUnavailable(MouseRuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class MouseExecutionStatus:
+    engine: str
+    fallback_used: bool = False
+    error: str | None = None
 
 
 @dataclass
 class _PendingTimeline:
     events: list[dict[str, Any]]
-    started_at: float
+    created_at: float
+    target_bounds: tuple[float, float, float, float]
+
+
+@contextmanager
+def action_guard() -> Iterator[None]:
+    """Serialize access to the one physical mouse shared by every bot."""
+    with _action_lock:
+        yield
+
+
+def _set_execution_status(
+    engine: str,
+    *,
+    fallback_used: bool = False,
+    error: str | None = None,
+) -> None:
+    _thread_state.execution_status = MouseExecutionStatus(
+        engine=engine,
+        fallback_used=fallback_used,
+        error=error,
+    )
+
+
+def last_execution_status() -> MouseExecutionStatus:
+    return getattr(
+        _thread_state,
+        "execution_status",
+        MouseExecutionStatus(engine="none"),
+    )
+
+
+def request_emergency_stop() -> None:
+    """Stop the active timeline; its finally block releases the mouse button."""
+    _emergency_stop.set()
+
+
+def reset_emergency_stop() -> None:
+    _emergency_stop.clear()
+
+
+def emergency_stop_requested() -> bool:
+    return _emergency_stop.is_set()
+
+
+def _raise_if_stopped() -> None:
+    if _emergency_stop.is_set():
+        raise MouseActionCancelled(
+            "Mouse emergency stop is active. Call reset_emergency_stop() before retrying."
+        )
 
 
 def _between(settings: dict, minimum: str, maximum: str) -> float:
@@ -29,7 +102,11 @@ def _between(settings: dict, minimum: str, maximum: str) -> float:
 
 
 def _selected_button(button: str) -> Button:
-    return Button.left if button == "left" else Button.right
+    if button == "left":
+        return Button.left
+    if button == "right":
+        return Button.right
+    raise ValueError("button must be 'left' or 'right'")
 
 
 def _screen_size() -> tuple[int, int]:
@@ -42,6 +119,7 @@ def _screen_size() -> tuple[int, int]:
 
 def _wait_until(deadline: float) -> None:
     while True:
+        _raise_if_stopped()
         remaining = deadline - time.perf_counter()
         if remaining <= 0:
             return
@@ -49,6 +127,10 @@ def _wait_until(deadline: float) -> None:
             time.sleep(remaining - 0.0015)
         else:
             time.sleep(0)
+
+
+def _sleep_interruptibly(duration_seconds: float) -> None:
+    _wait_until(time.perf_counter() + max(0.0, duration_seconds))
 
 
 def _timer_resolution(enable: bool) -> None:
@@ -67,10 +149,12 @@ def _execute_events(
 ) -> None:
     selected = _selected_button(button)
     pressed = False
+    _raise_if_stopped()
     _timer_resolution(True)
     try:
         for event in events:
             _wait_until(started_at + float(event["t_ms"]) / 1000.0)
+            _raise_if_stopped()
             event_type = str(event["type"])
             if event_type == "move":
                 _controller.position = int(round(event["x"])), int(round(event["y"]))
@@ -93,27 +177,54 @@ def _external_plan(
     *,
     target_radius: float | None = None,
     padding_px: float | None = None,
+    require_external: bool = False,
+    require_click: bool = False,
 ) -> dict[str, Any] | None:
     global _last_engine_error
     settings = mouse_engine.load_settings()
     if not bool(settings.get("enabled")):
+        message = "External mouse engine is disabled"
+        _last_engine_error = message
+        _set_execution_status("fallback", fallback_used=True, error=message)
+        if require_external:
+            raise mouse_engine.MouseEngineDisabled(message)
         return None
     start = tuple(map(int, _controller.position))
+    screen_size = _screen_size()
     try:
         plan = mouse_engine.create_plan(
             start,
             target,
             target_radius=target_radius,
             padding_px=padding_px,
-            coordinate_size=_screen_size(),
+            coordinate_size=screen_size,
             settings=settings,
+        )
+        validate_mouse_plan(
+            plan,
+            target=target,
+            screen_size=screen_size,
+            require_click=require_click,
+            target_padding=(
+                float(settings.get("default_padding_px", 0))
+                if padding_px is None
+                else float(padding_px)
+            ),
         )
     except Exception as exc:
         _last_engine_error = str(exc)
-        if bool(settings.get("fallback_on_error", True)):
+        _set_execution_status("fallback", fallback_used=True, error=str(exc))
+        if bool(settings.get("fallback_on_error", True)) and not require_external:
             return None
-        raise
+        if isinstance(exc, mouse_engine.MouseEngineError):
+            raise
+        if isinstance(exc, MousePlanValidationError):
+            raise mouse_engine.MouseEngineUnavailable(
+                f"Mouse provider returned an unsafe plan: {exc}"
+            ) from exc
+        raise mouse_engine.MouseEngineUnavailable(str(exc)) from exc
     _last_engine_error = None
+    _set_execution_status("external")
     return plan
 
 
@@ -127,6 +238,52 @@ def _split_before_first_click(
     return copied, []
 
 
+def _rebase_pending_events(
+    movement_events: Sequence[Mapping[str, Any]],
+    click_events: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Restart the provider's remaining click timing when click() is called."""
+    if not click_events:
+        return []
+    movement_finished_at = (
+        float(movement_events[-1]["t_ms"])
+        if movement_events
+        else float(click_events[0]["t_ms"])
+    )
+    return [
+        {
+            **dict(event),
+            "t_ms": max(0.0, float(event["t_ms"]) - movement_finished_at),
+        }
+        for event in click_events
+    ]
+
+
+def _point_target_bounds(
+    x: float,
+    y: float,
+    radius: float,
+) -> tuple[float, float, float, float]:
+    return x - radius, y - radius, x + radius, y + radius
+
+
+def _rectangle_target_bounds(
+    bounds: Mapping[str, float],
+) -> tuple[float, float, float, float]:
+    return (
+        float(bounds["left"]),
+        float(bounds["top"]),
+        float(bounds["right"]),
+        float(bounds["bottom"]),
+    )
+
+
+def _cursor_inside(bounds: tuple[float, float, float, float]) -> bool:
+    x, y = position()
+    left, top, right, bottom = bounds
+    return left <= x < right and top <= y < bottom
+
+
 def _set_pending(value: _PendingTimeline | None) -> None:
     _thread_state.pending = value
 
@@ -137,7 +294,28 @@ def _pop_pending() -> _PendingTimeline | None:
     return pending
 
 
+def has_pending_click() -> bool:
+    pending = getattr(_thread_state, "pending", None)
+    if pending is None:
+        return False
+    if time.perf_counter() - pending.created_at > PENDING_CLICK_TIMEOUT_S:
+        _set_pending(None)
+        return False
+    if not _cursor_inside(pending.target_bounds):
+        _set_pending(None)
+        return False
+    return bool(pending.events)
+
+
+def cancel_pending_click() -> bool:
+    with action_guard():
+        existed = getattr(_thread_state, "pending", None) is not None
+        _set_pending(None)
+        return existed
+
+
 def _native_move_to(x: int, y: int, method: str | None = None) -> None:
+    _raise_if_stopped()
     settings = get_section("mouse")
     start = tuple(map(int, _controller.position))
     target = (int(x), int(y))
@@ -148,18 +326,25 @@ def _native_move_to(x: int, y: int, method: str | None = None) -> None:
     path = create_path(movement_method, start, target, steps, movement_settings)
     step_delay = duration / max(1, len(path))
     for point in path:
+        _raise_if_stopped()
         _controller.position = point
-        time.sleep(step_delay)
+        _sleep_interruptibly(step_delay)
 
 
 def _native_click(button: str = "left") -> None:
+    _raise_if_stopped()
     settings = get_section("mouse")
     selected = _selected_button(button)
-    time.sleep(_between(settings, "pre_click_min_s", "pre_click_max_s"))
+    _sleep_interruptibly(_between(settings, "pre_click_min_s", "pre_click_max_s"))
     _controller.press(selected)
-    time.sleep(_between(settings, "click_hold_min_s", "click_hold_max_s"))
-    _controller.release(selected)
-    time.sleep(_between(settings, "post_click_min_s", "post_click_max_s"))
+    try:
+        _sleep_interruptibly(
+            _between(settings, "click_hold_min_s", "click_hold_max_s")
+        )
+        _raise_if_stopped()
+    finally:
+        _controller.release(selected)
+    _sleep_interruptibly(_between(settings, "post_click_min_s", "post_click_max_s"))
 
 
 def move_to(
@@ -168,34 +353,68 @@ def move_to(
     method: str | None = None,
     *,
     target_radius: float | None = None,
+    require_external: bool = False,
+    keep_pending_click: bool = True,
 ) -> None:
     """Move to a point using the external engine or active-profile fallback."""
-    _set_pending(None)
-    use_external = method is None or method.strip().lower() in {"external", "ai_mouse_lab"}
-    if use_external:
-        settings = mouse_engine.load_settings()
-        radius = float(
-            target_radius
-            if target_radius is not None
-            else settings.get("default_target_radius_px", 6)
-        )
-        plan = _external_plan((int(x), int(y), radius))
-        if plan is not None:
-            before, after = _split_before_first_click(plan["events"])
-            started_at = time.perf_counter()
-            _execute_events(before, started_at)
-            _set_pending(_PendingTimeline(after, started_at) if after else None)
-            return
-    _native_move_to(x, y, method if not use_external else None)
+    with action_guard():
+        _raise_if_stopped()
+        _set_pending(None)
+        use_external = method is None or method.strip().lower() in {
+            "external",
+            "ai_mouse_lab",
+        }
+        if require_external and not use_external:
+            raise ValueError("require_external cannot be combined with a native method")
+        if use_external:
+            settings = mouse_engine.load_settings()
+            radius = float(
+                target_radius
+                if target_radius is not None
+                else settings.get("default_target_radius_px", 6)
+            )
+            plan = _external_plan(
+                (int(x), int(y), radius),
+                require_external=require_external,
+            )
+            if plan is not None:
+                before, after = _split_before_first_click(plan["events"])
+                started_at = time.perf_counter()
+                _execute_events(before, started_at)
+                pending_events = _rebase_pending_events(before, after)
+                pending = (
+                    _PendingTimeline(
+                        pending_events,
+                        time.perf_counter(),
+                        _point_target_bounds(int(x), int(y), radius),
+                    )
+                    if keep_pending_click and pending_events
+                    else None
+                )
+                _set_pending(pending)
+                return
+        if not use_external or not last_execution_status().fallback_used:
+            _set_execution_status("native")
+        _native_move_to(x, y, method if not use_external else None)
 
 
-def click(button: str = "left") -> None:
+def click(button: str = "left", *, require_pending: bool = False) -> None:
     """Finish a pending external plan or use active-profile click delays."""
-    pending = _pop_pending()
-    if pending is not None:
-        _execute_events(pending.events, pending.started_at, button=button)
-        return
-    _native_click(button)
+    with action_guard():
+        _raise_if_stopped()
+        _selected_button(button)
+        if has_pending_click():
+            pending = _pop_pending()
+            if pending is not None:
+                _set_execution_status("external")
+                _execute_events(pending.events, time.perf_counter(), button=button)
+                return
+        if require_pending:
+            raise PendingClickUnavailable(
+                "No pending click is available. Move to a target again before clicking."
+            )
+        _set_execution_status("native")
+        _native_click(button)
 
 
 def move_and_click(
@@ -204,20 +423,28 @@ def move_and_click(
     button: str = "left",
     *,
     target_radius: float | None = None,
+    require_external: bool = False,
 ) -> None:
-    _set_pending(None)
-    settings = mouse_engine.load_settings()
-    radius = float(
-        target_radius
-        if target_radius is not None
-        else settings.get("default_target_radius_px", 6)
-    )
-    plan = _external_plan((int(x), int(y), radius))
-    if plan is not None:
-        _execute_events(plan["events"], time.perf_counter(), button=button)
-        return
-    _native_move_to(x, y)
-    _native_click(button)
+    with action_guard():
+        _raise_if_stopped()
+        _selected_button(button)
+        _set_pending(None)
+        settings = mouse_engine.load_settings()
+        radius = float(
+            target_radius
+            if target_radius is not None
+            else settings.get("default_target_radius_px", 6)
+        )
+        plan = _external_plan(
+            (int(x), int(y), radius),
+            require_external=require_external,
+            require_click=True,
+        )
+        if plan is not None:
+            _execute_events(plan["events"], time.perf_counter(), button=button)
+            return
+        _native_move_to(x, y)
+        _native_click(button)
 
 
 def _safe_point(bounds: Mapping[str, float], padding_px: float) -> tuple[int, int]:
@@ -241,17 +468,35 @@ def move_to_target(
     bottom: int,
     *,
     padding_px: float = 0,
+    require_external: bool = False,
+    keep_pending_click: bool = True,
 ) -> None:
-    _set_pending(None)
-    bounds = {"left": left, "top": top, "right": right, "bottom": bottom}
-    plan = _external_plan(bounds, padding_px=padding_px)
-    if plan is not None:
-        before, after = _split_before_first_click(plan["events"])
-        started_at = time.perf_counter()
-        _execute_events(before, started_at)
-        _set_pending(_PendingTimeline(after, started_at) if after else None)
-        return
-    _native_move_to(*_safe_point(bounds, padding_px))
+    with action_guard():
+        _raise_if_stopped()
+        _set_pending(None)
+        bounds = {"left": left, "top": top, "right": right, "bottom": bottom}
+        plan = _external_plan(
+            bounds,
+            padding_px=padding_px,
+            require_external=require_external,
+        )
+        if plan is not None:
+            before, after = _split_before_first_click(plan["events"])
+            started_at = time.perf_counter()
+            _execute_events(before, started_at)
+            pending_events = _rebase_pending_events(before, after)
+            pending = (
+                _PendingTimeline(
+                    pending_events,
+                    time.perf_counter(),
+                    _rectangle_target_bounds(bounds),
+                )
+                if keep_pending_click and pending_events
+                else None
+            )
+            _set_pending(pending)
+            return
+        _native_move_to(*_safe_point(bounds, padding_px))
 
 
 def move_and_click_target(
@@ -262,23 +507,37 @@ def move_and_click_target(
     *,
     padding_px: float = 0,
     button: str = "left",
+    require_external: bool = False,
 ) -> None:
-    _set_pending(None)
-    bounds = {"left": left, "top": top, "right": right, "bottom": bottom}
-    plan = _external_plan(bounds, padding_px=padding_px)
-    if plan is not None:
-        _execute_events(plan["events"], time.perf_counter(), button=button)
-        return
-    _native_move_to(*_safe_point(bounds, padding_px))
-    _native_click(button)
+    with action_guard():
+        _raise_if_stopped()
+        _selected_button(button)
+        _set_pending(None)
+        bounds = {"left": left, "top": top, "right": right, "bottom": bottom}
+        plan = _external_plan(
+            bounds,
+            padding_px=padding_px,
+            require_external=require_external,
+            require_click=True,
+        )
+        if plan is not None:
+            _execute_events(plan["events"], time.perf_counter(), button=button)
+            return
+        _native_move_to(*_safe_point(bounds, padding_px))
+        _native_click(button)
 
 
 def scroll(amount: int) -> None:
-    settings = get_section("mouse")
-    direction = 1 if amount > 0 else -1
-    for _ in range(abs(int(amount))):
-        _controller.scroll(0, direction)
-        time.sleep(_between(settings, "scroll_delay_min_s", "scroll_delay_max_s"))
+    with action_guard():
+        _raise_if_stopped()
+        _set_pending(None)
+        _set_execution_status("native")
+        settings = get_section("mouse")
+        direction = 1 if amount > 0 else -1
+        for _ in range(abs(int(amount))):
+            _raise_if_stopped()
+            _controller.scroll(0, direction)
+            time.sleep(_between(settings, "scroll_delay_min_s", "scroll_delay_max_s"))
 
 
 def position() -> tuple[int, int]:

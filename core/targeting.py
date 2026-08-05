@@ -59,10 +59,7 @@ def area_target_bounds(
     """Return an area bounding box with an equal pixel margin on every side."""
     if right <= left or bottom <= top:
         raise ValueError("Target bounds must have positive width and height")
-    if isinstance(area_edge_padding, bool) or not isinstance(area_edge_padding, int):
-        raise TypeError("area_edge_padding must be a whole number of pixels")
-    if area_edge_padding < 0:
-        raise ValueError("area_edge_padding cannot be negative")
+    validate_area_edge_padding(area_edge_padding)
 
     safe_left = left + area_edge_padding
     safe_top = top + area_edge_padding
@@ -71,3 +68,12 @@ def area_target_bounds(
     if safe_right <= safe_left or safe_bottom <= safe_top:
         raise ValueError("area_edge_padding leaves no usable target area")
     return safe_left, safe_top, safe_right, safe_bottom
+
+
+def validate_area_edge_padding(area_edge_padding: int) -> int:
+    """Validate a whole, non-negative pixel margin for script callers."""
+    if isinstance(area_edge_padding, bool) or not isinstance(area_edge_padding, int):
+        raise TypeError("area_edge_padding must be a whole number of pixels")
+    if area_edge_padding < 0:
+        raise ValueError("area_edge_padding cannot be negative")
+    return area_edge_padding

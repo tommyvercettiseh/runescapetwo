@@ -99,38 +99,52 @@ Gebruik `core.mouse_actions` voor image- en area-acties. Alle instellingen hebbe
 from core import mouse_actions
 
 # Alleen bewegen naar een gevonden image.
-found = mouse_actions.move_to_image(
-    "Logs",
+moved = mouse_actions.move_to_image(
+    image_name="Logs",
     area_name="Bot_Area_Full",
     bot_id=1,
     image_edge_padding=20,
 )
+if not moved:
+    print(moved.message)
 
-# Rechtsklikken gebruikt dezelfde functie, dus geen dubbele rightclick-API.
+# Klik daarna los op exact dezelfde voorbereide provider-tijdlijn.
+# Deze click vervalt na drie seconden, zodat een oud doel nooit later wordt geklikt.
+if moved:
+    clicked = mouse_actions.click(button="left")
+    if not clicked:
+        print(clicked.message)
+
+# Of zoek, beweeg en rechtsklik atomair met één functie.
 clicked = mouse_actions.click_image(
-    "Logs",
+    image_name="Logs",
     area_name="Bot_Area_Full",
     bot_id=1,
     button="right",
     image_edge_padding=20,
+    confirm_before_click=True,
 )
 
 # Bewegen of klikken binnen een opgeslagen area.
 mouse_actions.move_to_area(
-    "Inventory_Area",
+    area_name="Inventory_Area",
     bot_id=1,
     area_edge_padding=8,
 )
 
 mouse_actions.click_in_area(
-    "Inventory_Area",
+    area_name="Inventory_Area",
     bot_id=1,
     button="left",
     area_edge_padding=8,
 )
 ```
 
-`image_edge_padding=20` verwijdert 20% aan zowel de linker- als rechterrand van de gevonden image en accepteert waarden van 20 tot en met 45. `area_edge_padding=8` gebruikt acht hele pixels aan alle zijden van een area. Image-acties geven `False` terug wanneer de template niet wordt gevonden; area-acties geven configuratiefouten direct door.
+`image_edge_padding=20` verwijdert 20% aan zowel de linker- als rechterrand van de gevonden image en accepteert waarden van 20 tot en met 45. `area_edge_padding=8` gebruikt acht hele pixels aan alle zijden van een area.
+
+Elke actie geeft een `MouseActionResult` terug. Gebruik `if result:` voor succes, of lees bij een fout `result.message`, `result.error`, `result.engine` en `result.fallback_used`. De action-laag vereist standaard de ingestelde externe Mouse. Een ontbrekend package of profiel wordt daardoor zichtbaar en veroorzaakt hier geen stille native fallback. De oudere functies in `core.mouse` behouden hun configureerbare fallback voor bestaande scripts.
+
+Voor bewegende targets kan `confirm_before_click=True` de image vlak voor de click nogmaals controleren. Stop alle acties handmatig met `mouse_actions.emergency_stop()` en geef ze pas weer vrij met `mouse_actions.reset_emergency_stop()`.
 
 Image detection, colour detection en de testtools gebruiken dezelfde area- en offsetroute:
 

@@ -1,16 +1,60 @@
 from __future__ import annotations
 
+import math
+from dataclasses import dataclass
 from typing import Literal
 
 from . import mouse
-from .targeting import area_target_bounds, image_target_bounds
+from .mouse_engine import MouseEngineError
+from .targeting import (
+    area_target_bounds,
+    image_target_bounds,
+    validate_area_edge_padding,
+    validate_image_edge_padding,
+)
 from .vision.api import find_image, wait_for_image
 from .vision.areas import get_region
 from .vision.models import Hit
 
 
+# =============================================================================
+# PUBLIC TYPES AND RESULTS
+# =============================================================================
+
 DEFAULT_AREA_NAME = "Bot_Area_Full"
 MouseButton = Literal["left", "right"]
+TargetBounds = tuple[int, int, int, int]
+
+
+@dataclass(frozen=True)
+class MouseActionResult:
+    """Readable outcome for logging, retries and production fail-safes."""
+
+    success: bool
+    action: str
+    message: str
+    target_name: str | None = None
+    position: tuple[int, int] | None = None
+    bounds: TargetBounds | None = None
+    engine: str = "none"
+    fallback_used: bool = False
+    error: str | None = None
+
+    def __bool__(self) -> bool:
+        return self.success
+
+
+# =============================================================================
+# SHARED INTERNAL HELPERS
+# =============================================================================
+
+EXPECTED_ACTION_ERRORS = (
+    FileNotFoundError,
+    KeyError,
+    ValueError,
+    MouseEngineError,
+    mouse.MouseRuntimeError,
+)
 
 
 def _validate_button(button: str) -> MouseButton:
@@ -21,6 +65,16 @@ def _validate_button(button: str) -> MouseButton:
     raise ValueError("button must be 'left' or 'right'")
 
 
+def _validate_timeout(timeout_seconds: float | None) -> None:
+    if timeout_seconds is not None and timeout_seconds <= 0:
+        raise ValueError("timeout_seconds must be greater than zero")
+
+
+def _validate_target_shift(maximum_target_shift: float) -> None:
+    if not math.isfinite(float(maximum_target_shift)) or maximum_target_shift < 0:
+        raise ValueError("maximum_target_shift must be a non-negative number")
+
+
 def _find_target_image(
     image_name: str,
     *,
@@ -29,8 +83,7 @@ def _find_target_image(
     wait: bool,
     timeout_seconds: float | None,
 ) -> Hit | None:
-    if timeout_seconds is not None and timeout_seconds <= 0:
-        raise ValueError("timeout_seconds must be greater than zero")
+    _validate_timeout(timeout_seconds)
     if wait:
         return wait_for_image(
             image_name,
@@ -41,15 +94,142 @@ def _find_target_image(
     return find_image(image_name, area=area_name, bot_id=bot_id)
 
 
-# Example in scripts:
-# from core import mouse_actions
-#
-# mouse_actions.move_to_image(
-#     "Logs",
+def _image_bounds(hit: Hit, image_edge_padding: float) -> TargetBounds:
+    validate_image_edge_padding(image_edge_padding)
+    return image_target_bounds(
+        hit.x,
+        hit.y,
+        hit.x + hit.width,
+        hit.y + hit.height,
+        image_edge_padding=image_edge_padding,
+    )
+
+
+def _area_bounds(
+    area_name: str,
+    *,
+    bot_id: int,
+    area_edge_padding: int,
+) -> TargetBounds:
+    x, y, width, height = get_region(area_name, bot_id=bot_id)
+    return area_target_bounds(
+        x,
+        y,
+        x + width,
+        y + height,
+        area_edge_padding=area_edge_padding,
+    )
+
+
+def _center(bounds: TargetBounds) -> tuple[float, float]:
+    left, top, right, bottom = bounds
+    return (left + right) / 2.0, (top + bottom) / 2.0
+
+
+def _target_shift(first: TargetBounds, second: TargetBounds) -> float:
+    first_x, first_y = _center(first)
+    second_x, second_y = _center(second)
+    return math.hypot(second_x - first_x, second_y - first_y)
+
+
+def _point_inside(position: tuple[int, int], bounds: TargetBounds) -> bool:
+    x, y = position
+    left, top, right, bottom = bounds
+    return left <= x < right and top <= y < bottom
+
+
+def _failure(
+    action: str,
+    message: str,
+    *,
+    target_name: str | None = None,
+    bounds: TargetBounds | None = None,
+    error: str | None = None,
+    include_execution_status: bool = False,
+) -> MouseActionResult:
+    status = (
+        mouse.last_execution_status()
+        if include_execution_status
+        else mouse.MouseExecutionStatus(engine="none")
+    )
+    return MouseActionResult(
+        success=False,
+        action=action,
+        message=message,
+        target_name=target_name,
+        position=mouse.position(),
+        bounds=bounds,
+        engine=status.engine,
+        fallback_used=status.fallback_used,
+        error=error,
+    )
+
+
+def _success(
+    action: str,
+    message: str,
+    *,
+    target_name: str | None = None,
+    bounds: TargetBounds | None = None,
+) -> MouseActionResult:
+    position = mouse.position()
+    status = mouse.last_execution_status()
+    if bounds is not None and not _point_inside(position, bounds):
+        mouse.cancel_pending_click()
+        return MouseActionResult(
+            success=False,
+            action=action,
+            message="Muis eindigde buiten de veilige targetzone.",
+            target_name=target_name,
+            position=position,
+            bounds=bounds,
+            engine=status.engine,
+            fallback_used=status.fallback_used,
+            error="Final mouse position is outside target bounds",
+        )
+    return MouseActionResult(
+        success=True,
+        action=action,
+        message=message,
+        target_name=target_name,
+        position=position,
+        bounds=bounds,
+        engine=status.engine,
+        fallback_used=status.fallback_used,
+        error=status.error,
+    )
+
+
+def _operational_failure(
+    action: str,
+    target_name: str,
+    error: BaseException,
+    *,
+    bounds: TargetBounds | None = None,
+) -> MouseActionResult:
+    return _failure(
+        action,
+        f"{action} mislukt: {error}",
+        target_name=target_name,
+        bounds=bounds,
+        error=str(error),
+        include_execution_status=True,
+    )
+
+
+# =============================================================================
+# IMAGE ACTIONS: MOVE TO IMAGE AND CLICK IMAGE
+# =============================================================================
+
+# Voorbeeld in scripts:
+# result = mouse_actions.move_to_image(
+#     image_name="Logs",
 #     area_name="Bot_Area_Full",
 #     bot_id=1,
-#     image_edge_padding=20,  # Percentage aan beide horizontale randen
+#     image_edge_padding=20,
 # )
+# if not result:
+#     print(result.message)
 def move_to_image(
     image_name: str,
     *,
@@ -58,38 +238,51 @@ def move_to_image(
     image_edge_padding: float = 20,
     wait: bool = False,
     timeout_seconds: float | None = None,
-) -> bool:
-    """Find an image and move to its horizontally safe inner bounding box."""
-    hit = _find_target_image(
-        image_name,
-        area_name=area_name,
-        bot_id=bot_id,
-        wait=wait,
-        timeout_seconds=timeout_seconds,
-    )
-    if hit is None:
-        return False
+    require_external_mouse: bool = True,
+) -> MouseActionResult:
+    """Move to an image and prepare one short-lived separate click."""
+    validate_image_edge_padding(image_edge_padding)
+    _validate_timeout(timeout_seconds)
+    try:
+        hit = _find_target_image(
+            image_name,
+            area_name=area_name,
+            bot_id=bot_id,
+            wait=wait,
+            timeout_seconds=timeout_seconds,
+        )
+        if hit is None:
+            return _failure(
+                "move_to_image",
+                f"Image niet gevonden: {image_name}",
+                target_name=image_name,
+            )
+        bounds = _image_bounds(hit, image_edge_padding)
+        with mouse.action_guard():
+            mouse.move_to_target(
+                *bounds,
+                require_external=require_external_mouse,
+                keep_pending_click=True,
+            )
+            return _success(
+                "move_to_image",
+                "Muis staat op de image; losse click is maximaal "
+                f"{mouse.PENDING_CLICK_TIMEOUT_S:g} seconden beschikbaar.",
+                target_name=image_name,
+                bounds=bounds,
+            )
+    except EXPECTED_ACTION_ERRORS as error:
+        return _operational_failure("move_to_image", image_name, error)
 
-    left, top, right, bottom = image_target_bounds(
-        hit.x,
-        hit.y,
-        hit.x + hit.width,
-        hit.y + hit.height,
-        image_edge_padding=image_edge_padding,
-    )
-    mouse.move_to_target(left, top, right, bottom)
-    return True
 
-
-# Example in scripts:
-# from core import mouse_actions
-#
-# mouse_actions.click_image(
-#     "Logs",
+# Voorbeeld in scripts:
+# result = mouse_actions.click_image(
+#     image_name="Logs",
 #     area_name="Bot_Area_Full",
 #     bot_id=1,
 #     button="right",
-#     image_edge_padding=20,  # Percentage aan beide horizontale randen
+#     image_edge_padding=20,
+#     confirm_before_click=True,
 # )
 def click_image(
     image_name: str,
@@ -100,70 +293,141 @@ def click_image(
     image_edge_padding: float = 20,
     wait: bool = False,
     timeout_seconds: float | None = None,
-) -> bool:
-    """Find an image and click inside its horizontally safe inner bbox."""
+    confirm_before_click: bool = False,
+    maximum_target_shift: float = 12,
+    require_external_mouse: bool = True,
+) -> MouseActionResult:
+    """Find, move and click as one serialized action."""
     selected_button = _validate_button(button)
-    hit = _find_target_image(
-        image_name,
-        area_name=area_name,
-        bot_id=bot_id,
-        wait=wait,
-        timeout_seconds=timeout_seconds,
-    )
-    if hit is None:
-        return False
+    validate_image_edge_padding(image_edge_padding)
+    _validate_timeout(timeout_seconds)
+    _validate_target_shift(maximum_target_shift)
 
-    left, top, right, bottom = image_target_bounds(
-        hit.x,
-        hit.y,
-        hit.x + hit.width,
-        hit.y + hit.height,
-        image_edge_padding=image_edge_padding,
-    )
-    mouse.move_and_click_target(
-        left,
-        top,
-        right,
-        bottom,
-        button=selected_button,
-    )
-    return True
+    bounds: TargetBounds | None = None
+    try:
+        hit = _find_target_image(
+            image_name,
+            area_name=area_name,
+            bot_id=bot_id,
+            wait=wait,
+            timeout_seconds=timeout_seconds,
+        )
+        if hit is None:
+            return _failure(
+                "click_image",
+                f"Image niet gevonden: {image_name}",
+                target_name=image_name,
+            )
+        bounds = _image_bounds(hit, image_edge_padding)
+
+        with mouse.action_guard():
+            if confirm_before_click:
+                mouse.move_to_target(
+                    *bounds,
+                    require_external=require_external_mouse,
+                    keep_pending_click=False,
+                )
+                confirmed_hit = _find_target_image(
+                    image_name,
+                    area_name=area_name,
+                    bot_id=bot_id,
+                    wait=False,
+                    timeout_seconds=None,
+                )
+                if confirmed_hit is None:
+                    return _failure(
+                        "click_image",
+                        "Image verdween tijdens de muisbeweging; er is niet geklikt.",
+                        target_name=image_name,
+                        bounds=bounds,
+                        include_execution_status=True,
+                    )
+                confirmed_bounds = _image_bounds(confirmed_hit, image_edge_padding)
+                shift = _target_shift(bounds, confirmed_bounds)
+                if shift > maximum_target_shift:
+                    return _failure(
+                        "click_image",
+                        f"Image verschoof {shift:.1f}px; er is niet geklikt.",
+                        target_name=image_name,
+                        bounds=confirmed_bounds,
+                        include_execution_status=True,
+                    )
+                bounds = confirmed_bounds
+
+            mouse.move_and_click_target(
+                *bounds,
+                button=selected_button,
+                require_external=require_external_mouse,
+            )
+            return _success(
+                "click_image",
+                f"Image geklikt met {selected_button}.",
+                target_name=image_name,
+                bounds=bounds,
+            )
+    except EXPECTED_ACTION_ERRORS as error:
+        return _operational_failure(
+            "click_image",
+            image_name,
+            error,
+            bounds=bounds,
+        )
 
 
-# Example in scripts:
-# from core import mouse_actions
-#
-# mouse_actions.move_to_area(
-#     "Inventory_Area",
+# =============================================================================
+# AREA ACTIONS: MOVE TO AREA AND CLICK IN AREA
+# =============================================================================
+
+# Voorbeeld in scripts:
+# result = mouse_actions.move_to_area(
+#     area_name="Inventory_Area",
 #     bot_id=1,
-#     area_edge_padding=8,  # Pixels aan alle randen
+#     area_edge_padding=8,
 # )
 def move_to_area(
     area_name: str,
     *,
     bot_id: int = 1,
     area_edge_padding: int = 0,
-) -> None:
-    """Move to a safe target inside one configured bot area."""
-    x, y, width, height = get_region(area_name, bot_id=bot_id)
-    left, top, right, bottom = area_target_bounds(
-        x,
-        y,
-        x + width,
-        y + height,
-        area_edge_padding=area_edge_padding,
-    )
-    mouse.move_to_target(left, top, right, bottom)
+    require_external_mouse: bool = True,
+) -> MouseActionResult:
+    """Move inside an area and prepare one short-lived separate click."""
+    validate_area_edge_padding(area_edge_padding)
+    bounds: TargetBounds | None = None
+    try:
+        bounds = _area_bounds(
+            area_name,
+            bot_id=bot_id,
+            area_edge_padding=area_edge_padding,
+        )
+        with mouse.action_guard():
+            mouse.move_to_target(
+                *bounds,
+                require_external=require_external_mouse,
+                keep_pending_click=True,
+            )
+            return _success(
+                "move_to_area",
+                "Muis staat in de area; losse click is maximaal "
+                f"{mouse.PENDING_CLICK_TIMEOUT_S:g} seconden beschikbaar.",
+                target_name=area_name,
+                bounds=bounds,
+            )
+    except EXPECTED_ACTION_ERRORS as error:
+        return _operational_failure(
+            "move_to_area",
+            area_name,
+            error,
+            bounds=bounds,
+        )
 
 
-# Example in scripts:
-# from core import mouse_actions
-#
-# mouse_actions.click_in_area(
-#     "Inventory_Area",
+# Voorbeeld in scripts:
+# result = mouse_actions.click_in_area(
+#     area_name="Inventory_Area",
 #     bot_id=1,
 #     button="right",
-#     area_edge_padding=8,  # Pixels aan alle randen
+#     area_edge_padding=8,
 # )
 def click_in_area(
     area_name: str,
@@ -171,30 +435,103 @@ def click_in_area(
     bot_id: int = 1,
     button: MouseButton = "left",
     area_edge_padding: int = 0,
-) -> None:
-    """Click inside one configured bot area."""
+    require_external_mouse: bool = True,
+) -> MouseActionResult:
+    """Move and click inside an area as one serialized action."""
     selected_button = _validate_button(button)
-    x, y, width, height = get_region(area_name, bot_id=bot_id)
-    left, top, right, bottom = area_target_bounds(
-        x,
-        y,
-        x + width,
-        y + height,
-        area_edge_padding=area_edge_padding,
-    )
-    mouse.move_and_click_target(
-        left,
-        top,
-        right,
-        bottom,
-        button=selected_button,
-    )
+    validate_area_edge_padding(area_edge_padding)
+    bounds: TargetBounds | None = None
+    try:
+        bounds = _area_bounds(
+            area_name,
+            bot_id=bot_id,
+            area_edge_padding=area_edge_padding,
+        )
+        with mouse.action_guard():
+            mouse.move_and_click_target(
+                *bounds,
+                button=selected_button,
+                require_external=require_external_mouse,
+            )
+            return _success(
+                "click_in_area",
+                f"Area geklikt met {selected_button}.",
+                target_name=area_name,
+                bounds=bounds,
+            )
+    except EXPECTED_ACTION_ERRORS as error:
+        return _operational_failure(
+            "click_in_area",
+            area_name,
+            error,
+            bounds=bounds,
+        )
+
+
+# =============================================================================
+# CLICK CURRENT POSITION AFTER MOVE TO IMAGE OR MOVE TO AREA
+# =============================================================================
+
+# Voorbeeld in scripts:
+# moved = mouse_actions.move_to_image(image_name="Logs")
+# if moved:
+#     clicked = mouse_actions.click(button="left")
+#     if not clicked:
+#         print(clicked.message)
+def click(
+    *,
+    button: MouseButton = "left",
+    require_previous_move: bool = True,
+) -> MouseActionResult:
+    """Click the position prepared by move_to_image or move_to_area."""
+    selected_button = _validate_button(button)
+    with mouse.action_guard():
+        if require_previous_move and not mouse.has_pending_click():
+            return _failure(
+                "click",
+                "Geen geldige voorbereidende move gevonden; er is niet geklikt.",
+            )
+        try:
+            mouse.click(
+                selected_button,
+                require_pending=require_previous_move,
+            )
+            return _success(
+                "click",
+                f"Huidige muispositie geklikt met {selected_button}.",
+            )
+        except EXPECTED_ACTION_ERRORS as error:
+            return _operational_failure("click", "current_position", error)
+
+
+# =============================================================================
+# FAIL-SAFES AND MANUAL CONTROL
+# =============================================================================
+
+def cancel_pending_click() -> bool:
+    """Cancel the click prepared by a separate move action."""
+    return mouse.cancel_pending_click()
+
+
+def emergency_stop() -> None:
+    """Request an immediate stop; the executor safely releases the button."""
+    mouse.request_emergency_stop()
+
+
+def reset_emergency_stop() -> None:
+    """Allow mouse actions again after the cause of the stop was checked."""
+    mouse.reset_emergency_stop()
 
 
 __all__ = [
+    "MouseActionResult",
     "MouseButton",
     "move_to_image",
     "click_image",
     "move_to_area",
     "click_in_area",
+    "click",
+    "cancel_pending_click",
+    "emergency_stop",
+    "reset_emergency_stop",
 ]
