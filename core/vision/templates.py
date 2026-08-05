@@ -141,3 +141,49 @@ def save_settings(image_name: str, settings: TemplateSettings) -> None:
     temporary.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
     os.replace(temporary, METADATA_FILE)
     clear_metadata_cache()
+
+
+def rename_template(image_name: str, new_name: str) -> str:
+    old = normalize_name(image_name)
+    new = normalize_name(new_name)
+    source = template_path(old)
+    target = IMAGES_DIR / new
+    if target.exists():
+        raise FileExistsError(f"Template already exists: {new}")
+
+    source.rename(target)
+    data = dict(load_metadata())
+    if old in data:
+        data[new] = data.pop(old)
+        temporary = METADATA_FILE.with_suffix(".tmp")
+        temporary.write_text(
+            json.dumps(data, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        os.replace(temporary, METADATA_FILE)
+    clear_template_cache()
+    clear_metadata_cache()
+    return new
+
+
+def delete_template(image_name: str) -> bool:
+    name = normalize_name(image_name)
+    path = IMAGES_DIR / name
+    removed = False
+    if path.exists():
+        path.unlink()
+        removed = True
+
+    data = dict(load_metadata())
+    if name in data:
+        data.pop(name)
+        temporary = METADATA_FILE.with_suffix(".tmp")
+        temporary.write_text(
+            json.dumps(data, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        os.replace(temporary, METADATA_FILE)
+        removed = True
+    clear_template_cache()
+    clear_metadata_cache()
+    return removed

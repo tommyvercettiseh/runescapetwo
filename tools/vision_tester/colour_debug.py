@@ -16,6 +16,15 @@ class DominantColour:
     percentage: float
 
 
+@dataclass(frozen=True)
+class BlobMeasurement:
+    x: int
+    y: int
+    width: int
+    height: int
+    area_px: int
+
+
 def editor_sample_from_ranges(ranges: tuple[HSVRange, ...]) -> tuple[int, int, int]:
     """Return a useful editable HSV centre for one or more stored ranges."""
     if not ranges:
@@ -49,6 +58,49 @@ def isolate_colour(screenshot_rgb: np.ndarray, mask: np.ndarray) -> np.ndarray:
     isolated = np.zeros_like(screenshot_rgb)
     isolated[mask > 0] = screenshot_rgb[mask > 0]
     return isolated
+
+
+def measure_mask_blobs(mask: np.ndarray) -> list[BlobMeasurement]:
+    """Measure connected mask regions, largest first, before size filtering."""
+    count, _labels, stats, _centroids = cv2.connectedComponentsWithStats(
+        (mask > 0).astype(np.uint8),
+        connectivity=8,
+    )
+    blobs = [
+        BlobMeasurement(
+            x=int(stats[label, cv2.CC_STAT_LEFT]),
+            y=int(stats[label, cv2.CC_STAT_TOP]),
+            width=int(stats[label, cv2.CC_STAT_WIDTH]),
+            height=int(stats[label, cv2.CC_STAT_HEIGHT]),
+            area_px=int(stats[label, cv2.CC_STAT_AREA]),
+        )
+        for label in range(1, count)
+    ]
+    return sorted(blobs, key=lambda blob: blob.area_px, reverse=True)
+
+
+def filter_mask_by_blob_size(
+    mask: np.ndarray,
+    *,
+    minimum_area_px: int,
+    maximum_area_px: int | None,
+) -> tuple[np.ndarray, int]:
+    """Keep only connected colour regions inside the configured pixel range."""
+    minimum = max(1, int(minimum_area_px))
+    maximum = None if maximum_area_px is None else max(1, int(maximum_area_px))
+    count, labels, stats, _centroids = cv2.connectedComponentsWithStats(
+        (mask > 0).astype(np.uint8),
+        connectivity=8,
+    )
+    filtered = np.zeros(mask.shape, dtype=np.uint8)
+    valid_count = 0
+    for label in range(1, count):
+        area_px = int(stats[label, cv2.CC_STAT_AREA])
+        if area_px < minimum or (maximum is not None and area_px > maximum):
+            continue
+        filtered[labels == label] = 255
+        valid_count += 1
+    return filtered, valid_count
 
 
 def dominant_colours(

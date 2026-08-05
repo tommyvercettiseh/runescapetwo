@@ -62,6 +62,35 @@ visible = vision.image_exists(
 keyboard.press("space")
 ```
 
+## Externe Mouse Engine
+
+RuneScape Two kan een zelfstandige Mouse-GitHub installeren via het vaste `runescapetwo.mouse_engines` contract. Open op Windows:
+
+```text
+Start Mouse Engine Setup.bat
+```
+
+De standaardconfiguratie staat in `config/mouse_engine.json` en gebruikt:
+
+```text
+git+https://github.com/tommyvercettiseh/mouse.git@agent/package-mouse-runtime
+```
+
+Kies jouw lokale `master_profile.json`, klik **Installeren / updaten** en daarna **Verbinding testen**. Met **Test beweging** verschijnt een tijdelijk doel dat door de actieve externe Mouse wordt aangeklikt. Het persoonlijke profiel, de opnames en heatmaps blijven lokaal en worden niet naar RuneScape Two gekopieerd.
+
+Bestaande scripts hoeven niet te veranderen:
+
+```python
+mouse.move_to(800, 450)
+mouse.click()
+
+mouse.move_and_click(800, 450)
+```
+
+`move_to()` voert het bewegingsdeel uit en bewaart de resterende click delay, mouse-down en mouse-up voor de aansluitende `click()`. `move_and_click()` voert de volledige provider-tijdlijn direct uit. Als installatie, profiel of provider niet beschikbaar is, gebruikt RuneScape Two automatisch de bestaande profielgestuurde muis wanneer fallback aanstaat.
+
+Vision geeft waar mogelijk de volledige targetrechthoek door. Daardoor kan de externe Mouse-engine zelf een persoonlijke klikpositie binnen de ingestelde padding kiezen.
+
 Image detection, colour detection en de testtools gebruiken dezelfde area- en offsetroute:
 
 ```text
@@ -211,12 +240,12 @@ Op Windows kun je ook dubbelklikken op `Start Unified Vision Tester.bat`, of de 
 De Unified Vision Tester heeft drie subpagina's:
 
 - **Colour testing** voor areas, pipetpresets, maskers en exacte blobpixels.
-- **Image testing** voor meerdere geselecteerde templates op één screenshot per frame.
+- **Image testing** voor templatecaptures, live thresholds, methodekeuze en productiepresets.
 - **Sensor checker** voor live regels zoals `low_hp`, `in_combat` en `blue_target_found`.
 
-Typ een deel van een area-, preset-, template- of sensornaam om de lijst direct te filteren. De liveknop blijft zichtbaar aan of uit staan. In de kleurtester blijft het pipet actief voor meerdere kleurmetingen totdat je het zelf uitschakelt. Dominante kleuren worden als kleurvlakken met RGB-, HSV- en percentagewaarden getoond.
+Typ een deel van een area-, template- of sensornaam om de lijst direct te filteren. De liveknop blijft zichtbaar aan of uit staan. In de kleurtester blijft het pipet actief voor meerdere kleurmetingen totdat je het zelf uitschakelt. Auto resize staat standaard aan; schakel dit uit om de preview handmatig tussen 10 en 100 procent te zoomen. Deze voorkeur wordt buiten de repository opgeslagen.
 
-Gebruik **Nieuwe kleur** om een preset toe te voegen. Je kunt een kleur met het pipet kiezen of de HSV-waarden handmatig aanpassen. Laad een bestaande preset om deze met **Wijzig opslaan** bij te werken of te verwijderen.
+In de Template Tester kun je een nieuwe template rechtstreeks uit een fullscreen screenshot knippen. Shape- en colour-thresholds, OpenCV-methode, area en max hits zijn live aanpasbaar. Sla de gekozen productie-instellingen daarna per template op in `config/templates_meta.json`.
 
 De Sensor checker ondersteunt drie soorten checks:
 

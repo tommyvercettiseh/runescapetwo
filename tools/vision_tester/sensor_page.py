@@ -194,7 +194,7 @@ class SensorPage(ttk.Frame):
 
     def _set_result(self, result: bool) -> None:
         self.result_text.set("TRUE" if result else "FALSE")
-        self.result_label.configure(foreground=COLOURS["accent"] if result else COLOURS["danger"])
+        self.result_label.configure(foreground=COLOURS["blue"] if result else COLOURS["danger"])
 
     def _clear_result(self, text: str) -> None:
         self.found_text.set("Gevonden: —")

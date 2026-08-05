@@ -1,0 +1,1 @@
+"""Mouse-engine configuration tool."""

@@ -2,7 +2,18 @@
 
 ## Unreleased
 
+### Added
+- Installable external Mouse Engine support through the `runescapetwo.mouse_engines` provider contract.
+- `config/mouse_engine.json` for provider, GitHub package, local profile, padding and fallback settings.
+- A plain Mouse Engine Setup window for saving settings, installing/updating a GitHub package, testing the provider connection and clicking a visible movement target.
+- Full timed event execution for personal movement points, reaction time, click delay, mouse hold, corrections and miss recovery.
+- Target-rectangle movement APIs so vision can pass the complete detected object instead of reducing it to one point.
+
 ### Changed
+- Existing `move_to()` plus `click()` calls now resume one external Mouse timeline when the engine is enabled.
+- `move_and_click()` executes the complete provider timeline directly and safely falls back to the built-in movement profile on errors.
+- `vision.click_image()` now passes the full template bounds and configured padding to the mouse engine.
+- Core submodules are imported lazily so mouse-engine configuration can be inspected without starting screen-capture backends.
 - Redesigned the Unified Vision Tester with a modern dark workspace layout and consistent controls.
 - Area, preset, template and sensor selectors now filter immediately on partial, case-insensitive search.
 - Live capture is now a persistent, visibly selected on/off toggle on every tester page.
