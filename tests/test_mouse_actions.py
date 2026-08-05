@@ -171,12 +171,12 @@ def test_click_colour_uses_safe_inner_blob_zone(monkeypatch) -> None:
         button="right",
         minimum_blob_pixels=500,
         maximum_blob_pixels=1500,
-        blob_edge_padding=1,
+        blob_edge_padding=20,
     )
 
     assert result.success is True
     assert result.blob_pixels == 900
-    assert result.bounds == (144, 214, 157, 227)
+    assert result.bounds == (143, 213, 158, 228)
     assert finds == [
         (
             "cyan",
@@ -190,7 +190,7 @@ def test_click_colour_uses_safe_inner_blob_zone(monkeypatch) -> None:
     ]
     assert clicks == [
         (
-            (144, 214, 157, 227),
+            (143, 213, 158, 228),
             {"button": "right", "require_external": True},
         )
     ]
@@ -204,6 +204,24 @@ def test_colour_not_found_returns_readable_failure(monkeypatch) -> None:
 
     assert result.success is False
     assert "kleurblob" in result.message.lower()
+
+
+def test_colour_click_refuses_blob_without_padded_safe_zone(monkeypatch) -> None:
+    prepare_success(monkeypatch)
+    edge_blob = FakeBlob(safe_x=132, safe_y=202, safe_radius=2)
+    monkeypatch.setattr(
+        mouse_actions,
+        "find_colour",
+        lambda *values, **settings: edge_blob,
+    )
+
+    result = mouse_actions.click_colour(
+        colour_name="edge",
+        blob_edge_padding=20,
+    )
+
+    assert result.success is False
+    assert "no click zone" in (result.error or "")
 
 
 def test_click_in_area_applies_absolute_bot_region_and_pixel_padding(monkeypatch) -> None:
@@ -312,4 +330,9 @@ def test_invalid_public_parameters_fail_before_mouse_action() -> None:
             colour_name="cyan",
             minimum_blob_pixels=500,
             maximum_blob_pixels=100,
+        )
+    with pytest.raises(ValueError, match="between 0 and 45"):
+        mouse_actions.click_colour(
+            colour_name="cyan",
+            blob_edge_padding=49,
         )
