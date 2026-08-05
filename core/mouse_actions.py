@@ -10,6 +10,7 @@ from .targeting import (
     area_target_bounds,
     colour_blob_target_bounds,
     image_target_bounds,
+    randomized_target_bounds,
     validate_area_edge_padding,
     validate_blob_edge_padding,
     validate_image_edge_padding,
@@ -426,9 +427,11 @@ def move_to_colour(
                 f"Geen geldige kleurblob gevonden: {colour_name}",
                 target_name=colour_name,
             )
-        bounds = colour_blob_target_bounds(
-            blob,
-            blob_edge_padding=blob_edge_padding,
+        bounds = randomized_target_bounds(
+            colour_blob_target_bounds(
+                blob,
+                blob_edge_padding=blob_edge_padding,
+            )
         )
         with mouse.action_guard():
             mouse.move_to_target(
@@ -495,9 +498,11 @@ def click_colour(
                 f"Geen geldige kleurblob gevonden: {colour_name}",
                 target_name=colour_name,
             )
-        bounds = colour_blob_target_bounds(
-            blob,
-            blob_edge_padding=blob_edge_padding,
+        bounds = randomized_target_bounds(
+            colour_blob_target_bounds(
+                blob,
+                blob_edge_padding=blob_edge_padding,
+            )
         )
         with mouse.action_guard():
             mouse.move_and_click_target(

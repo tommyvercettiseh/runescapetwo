@@ -59,6 +59,7 @@ def plan_for_target(_start, target, **_settings):
 def prepare_external(monkeypatch, plan=None):
     controller = FakeController()
     monkeypatch.setattr(mouse, "_controller", controller)
+    monkeypatch.setattr(mouse, "_screen_origin", lambda: (0, 0))
     monkeypatch.setattr(mouse, "_screen_size", lambda: (1920, 1080))
     monkeypatch.setattr(mouse, "_wait_until", lambda deadline: None)
     monkeypatch.setattr(mouse.time, "perf_counter", lambda: 100.0)
@@ -117,6 +118,46 @@ def test_target_rectangle_and_padding_are_passed_to_provider(monkeypatch):
 
     assert calls[0][0][1] == {"left": 100, "top": 120, "right": 240, "bottom": 220}
     assert calls[0][1]["padding_px"] == 12
+    assert len(controller.pressed) == 1
+
+
+def test_external_provider_uses_virtual_desktop_coordinates(monkeypatch):
+    calls = []
+    controller = prepare_external(monkeypatch)
+    controller._position = (-1000, 200)
+    monkeypatch.setattr(mouse, "_screen_origin", lambda: (-1920, 0))
+    monkeypatch.setattr(mouse, "_screen_size", lambda: (3840, 1080))
+
+    def create_virtual_desktop_plan(start, target, **settings):
+        calls.append((start, target, settings))
+        return {
+            "events": [
+                {"type": "move", "t_ms": 0, "x": start[0], "y": start[1]},
+                {"type": "move", "t_ms": 50, "x": 1120, "y": 350},
+                {"type": "button_down", "t_ms": 70, "x": 1120, "y": 350},
+                {"type": "button_up", "t_ms": 90, "x": 1120, "y": 350},
+            ]
+        }
+
+    monkeypatch.setattr(mouse.mouse_engine, "create_plan", create_virtual_desktop_plan)
+
+    mouse.move_and_click_target(
+        -900,
+        250,
+        -700,
+        450,
+        require_external=True,
+    )
+
+    assert calls[0][0] == (920, 200)
+    assert calls[0][1] == {
+        "left": 1020.0,
+        "top": 250.0,
+        "right": 1220.0,
+        "bottom": 450.0,
+    }
+    assert calls[0][2]["coordinate_size"] == (3840, 1080)
+    assert controller.positions[-1] == (-800, 350)
     assert len(controller.pressed) == 1
 
 

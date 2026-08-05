@@ -1,3 +1,5 @@
+import random
+
 import pytest
 
 from core.targeting import (
@@ -5,6 +7,7 @@ from core.targeting import (
     colour_blob_target_bounds,
     image_target_bounds,
     normalize_image_edge_padding,
+    randomized_target_bounds,
 )
 from core.vision.models import ColourBlob
 
@@ -62,3 +65,29 @@ def test_colour_blob_target_is_padded_and_inside_real_blob() -> None:
         158,
         228,
     )
+
+
+def test_random_target_stays_inside_the_complete_safe_zone() -> None:
+    safe_bounds = (100, 200, 200, 300)
+
+    target = randomized_target_bounds(
+        safe_bounds,
+        random_generator=random.Random(42),
+    )
+
+    assert safe_bounds[0] <= target[0] < target[2] <= safe_bounds[2]
+    assert safe_bounds[1] <= target[1] < target[3] <= safe_bounds[3]
+    assert target[2] - target[0] == 40
+    assert target[3] - target[1] == 40
+
+
+def test_random_target_varies_between_actions() -> None:
+    targets = {
+        randomized_target_bounds(
+            (100, 200, 300, 400),
+            random_generator=random.Random(seed),
+        )
+        for seed in range(10)
+    }
+
+    assert len(targets) > 5

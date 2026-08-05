@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import random
 from typing import Protocol
 
 
@@ -19,6 +20,7 @@ MIN_IMAGE_EDGE_PADDING = 20.0
 MAX_IMAGE_EDGE_PADDING = 45.0
 DEFAULT_BLOB_EDGE_PADDING = 20.0
 MAX_BLOB_EDGE_PADDING = 45.0
+RANDOM_TARGET_FRACTION = 0.4
 
 
 def normalize_image_edge_padding(value: float) -> float:
@@ -112,6 +114,37 @@ def colour_blob_target_bounds(
             "blob_edge_padding leaves no click zone safely inside the colour blob"
         )
     return left, top, right, bottom
+
+
+def randomized_target_bounds(
+    bounds: tuple[int, int, int, int],
+    *,
+    random_generator: random.Random | None = None,
+) -> tuple[int, int, int, int]:
+    """Choose a varied subzone with a mild preference for the target centre."""
+    left, top, right, bottom = bounds
+    if right <= left or bottom <= top:
+        raise ValueError("Target bounds must have positive width and height")
+
+    generator = random_generator or random
+    width = right - left
+    height = bottom - top
+    target_width = max(1, min(width, int(round(width * RANDOM_TARGET_FRACTION))))
+    target_height = max(1, min(height, int(round(height * RANDOM_TARGET_FRACTION))))
+    horizontal_space = width - target_width
+    vertical_space = height - target_height
+
+    # Beta(2, 2) still uses the complete safe zone, with a gentle centre bias.
+    offset_x = int(round(horizontal_space * generator.betavariate(2.0, 2.0)))
+    offset_y = int(round(vertical_space * generator.betavariate(2.0, 2.0)))
+    target_left = left + offset_x
+    target_top = top + offset_y
+    return (
+        target_left,
+        target_top,
+        target_left + target_width,
+        target_top + target_height,
+    )
 
 
 def area_target_bounds(
