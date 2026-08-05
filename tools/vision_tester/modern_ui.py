@@ -29,7 +29,12 @@ from core.vision.templates import (
     rename_template,
     save_settings,
 )
-from .colour_debug import filter_mask_by_blob_size, isolate_colour
+from .colour_debug import (
+    BlobMeasurement,
+    filter_mask_by_blob_size,
+    isolate_colour,
+    measure_mask_blobs,
+)
 from .preferences import load_preferences, save_preferences
 from .sensor_checks import SensorCheck, load_sensor_checks
 from .sensor_view import analyse_sensor_frame, sensor_description
@@ -51,6 +56,11 @@ DANGER = "#d06655"
 SUCCESS = "#8ec63f"
 VIEW_BG = "#040403"
 DEFAULT_AREA = "Bot_Area_Full"
+BLOB_BOX_PADDING = 8
+
+
+def _format_pixels(value: int) -> str:
+    return f"{int(value):,}".replace(",", ".")
 
 
 def _label(parent, text: str, *, muted: bool = False, size: int = 12, bold: bool = False, **kwargs):
@@ -225,8 +235,13 @@ class ColourPage(ctk.CTkFrame):
         self.auto_resize = tk.BooleanVar(value=bool(preferences["auto_resize"]))
         self.zoom = tk.IntVar(value=int(preferences["zoom_percent"]))
         self.status = tk.StringVar(value="Kies een area en maak een capture.")
+        self.blob_live_text = tk.StringVar(value="— PX")
+        self.blob_range_text = tk.StringVar(value="MIN —   MAX —")
         self.capture: np.ndarray | None = None
         self.ranges = ()
+        self.current_blob_px = 0
+        self.observed_min_px: int | None = None
+        self.observed_max_px: int | None = None
         self.views: list[ImageView] = []
         self._save_job: str | None = None
         self._build()
@@ -249,27 +264,8 @@ class ColourPage(ctk.CTkFrame):
         self.source = SourceControls(toolbar)
         self.source.grid(row=0, column=0, sticky="ew", padx=16, pady=14)
 
-        fields = ctk.CTkFrame(toolbar, fg_color="transparent")
-        fields.grid(row=0, column=1, padx=(0, 14), pady=14)
-        for column, (title, variable) in enumerate((("MIN BLOB PX", self.minimum), ("MAX BLOB PX", self.maximum))):
-            group = ctk.CTkFrame(fields, fg_color="transparent")
-            group.grid(row=0, column=column, padx=5)
-            _label(group, title, muted=True, size=11).pack(anchor="w")
-            entry = ctk.CTkEntry(
-                group,
-                textvariable=variable,
-                width=116,
-                height=38,
-                corner_radius=8,
-                fg_color=CARD_ALT,
-                border_color=BORDER,
-                text_color=TEXT,
-            )
-            entry.pack(pady=(4, 0))
-            entry.bind("<KeyRelease>", lambda _event: self._render())
-
         actions = ctk.CTkFrame(toolbar, fg_color="transparent")
-        actions.grid(row=0, column=2, padx=(0, 16), pady=14)
+        actions.grid(row=0, column=1, padx=(0, 16), pady=14)
         ctk.CTkSwitch(
             actions,
             text="Live",
@@ -284,38 +280,84 @@ class ColourPage(ctk.CTkFrame):
 
         viewbar = _card(self)
         viewbar.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 10))
-        _label(viewbar, "WEERGAVE", muted=True, size=11).pack(side="left", padx=(16, 12), pady=11)
+        viewbar.grid_columnconfigure(1, weight=1)
+
+        limits = ctk.CTkFrame(viewbar, fg_color="transparent")
+        limits.grid(row=0, column=0, padx=(14, 18), pady=10, sticky="w")
+        for column, (title, variable) in enumerate((("MIN BLOB PX", self.minimum), ("MAX BLOB PX", self.maximum))):
+            group = ctk.CTkFrame(limits, fg_color="transparent")
+            group.grid(row=0, column=column, padx=(0, 8))
+            _label(group, title, muted=True, size=10).pack(anchor="w")
+            entry = ctk.CTkEntry(
+                group,
+                textvariable=variable,
+                width=94,
+                height=32,
+                corner_radius=7,
+                fg_color=CARD_ALT,
+                border_color=BORDER,
+                text_color=TEXT,
+            )
+            entry.pack(pady=(2, 0))
+            entry.bind("<KeyRelease>", lambda _event: self._render())
+
+        tracker = ctk.CTkFrame(viewbar, fg_color="transparent")
+        tracker.grid(row=0, column=1, sticky="ew", padx=(0, 18), pady=9)
+        tracker.grid_columnconfigure(1, weight=1)
+        _label(tracker, "LIVE BLOB", muted=True, size=10).grid(row=0, column=0, sticky="w")
+        _label(
+            tracker,
+            "",
+            textvariable=self.blob_live_text,
+            text_color=ACCENT,
+            size=13,
+            bold=True,
+        ).grid(row=0, column=1, sticky="w", padx=(8, 14))
+        _label(tracker, "", textvariable=self.blob_range_text, muted=True, size=10).grid(
+            row=0,
+            column=2,
+            sticky="e",
+            padx=(0, 10),
+        )
+        _button(tracker, "Reset", self._reset_blob_history, width=68).grid(row=0, column=3, rowspan=2)
+        self.blob_meter = ctk.CTkProgressBar(
+            tracker,
+            height=8,
+            corner_radius=4,
+            fg_color=BORDER,
+            progress_color=ACCENT,
+        )
+        self.blob_meter.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(6, 0), padx=(0, 10))
+        self.blob_meter.set(0)
+
+        display = ctk.CTkFrame(viewbar, fg_color="transparent")
+        display.grid(row=0, column=2, padx=(0, 14), pady=10, sticky="e")
+        _label(display, "WEERGAVE", muted=True, size=10).grid(row=0, column=0, sticky="w")
         self.auto_switch = ctk.CTkSwitch(
-            viewbar,
+            display,
             text="Auto resize",
             variable=self.auto_resize,
             command=self._view_changed,
             progress_color=ACCENT,
             text_color=TEXT,
         )
-        self.auto_switch.pack(side="left", padx=(0, 18))
-        self.zoom_label = _label(viewbar, f"Zoom {self.zoom.get()}%", size=11, bold=True)
-        self.zoom_label.pack(side="left", padx=(0, 8))
+        self.auto_switch.grid(row=1, column=0, padx=(0, 12), pady=(3, 0))
+        self.zoom_label = _label(display, f"Zoom {self.zoom.get()}%", size=10, bold=True)
+        self.zoom_label.grid(row=1, column=1, padx=(0, 7), pady=(3, 0))
         self.zoom_slider = ctk.CTkSlider(
-            viewbar,
+            display,
             from_=10,
             to=100,
             number_of_steps=90,
             variable=self.zoom,
             command=self._zoom_changed,
-            width=210,
+            width=150,
             progress_color=ACCENT,
             button_color=ACCENT,
             button_hover_color=ACCENT_HOVER,
             fg_color=BORDER,
         )
-        self.zoom_slider.pack(side="left")
-        _label(
-            viewbar,
-            "Auto vult de beschikbare ruimte",
-            muted=True,
-            size=11,
-        ).pack(side="right", padx=16)
+        self.zoom_slider.grid(row=1, column=2, pady=(3, 0))
         self._sync_zoom_state()
 
         previews = ctk.CTkFrame(self, fg_color="transparent")
@@ -373,7 +415,6 @@ class ColourPage(ctk.CTkFrame):
         started = time.perf_counter()
         try:
             self.capture, _region = capture_area(self.source.area.get(), bot_id=self.source.bot())
-            self.capture_view.show(self.capture)
             self._render(started)
         except Exception as exc:
             self.live.set(False)
@@ -392,12 +433,17 @@ class ColourPage(ctk.CTkFrame):
         except ValueError:
             return
         if not self.ranges:
+            self.capture_view.show(self.capture)
             blank = np.zeros(self.capture.shape[:2], dtype=np.uint8)
             self.mask_view.show(cv2.cvtColor(blank, cv2.COLOR_GRAY2RGB))
             self.isolated_view.show(np.zeros_like(self.capture))
             return
         started = time.perf_counter() if started is None else started
         raw_mask = build_mask_from_ranges(self.capture, self.ranges)
+        blobs = measure_mask_blobs(raw_mask)
+        dominant_blob = blobs[0] if blobs else None
+        self._observe_blob(dominant_blob)
+        self.capture_view.show(self._draw_blob_overlay(dominant_blob))
         mask, blob_count = filter_mask_by_blob_size(
             raw_mask,
             minimum_area_px=minimum,
@@ -411,6 +457,73 @@ class ColourPage(ctk.CTkFrame):
             f"Bot {self.source.bot()}  •  {self.source.area.get()}  •  "
             f"{pixels} px  •  {blob_count} geldige blobs  •  {elapsed:.1f} ms"
         )
+
+    def _observe_blob(self, blob: BlobMeasurement | None) -> None:
+        if blob is None:
+            self.current_blob_px = 0
+            self.blob_live_text.set("— PX")
+            self.blob_meter.set(0)
+            return
+
+        pixels = blob.area_px
+        self.current_blob_px = pixels
+        self.observed_min_px = pixels if self.observed_min_px is None else min(self.observed_min_px, pixels)
+        self.observed_max_px = pixels if self.observed_max_px is None else max(self.observed_max_px, pixels)
+        self.blob_live_text.set(f"{_format_pixels(pixels)} PX")
+        self.blob_range_text.set(
+            f"MIN {_format_pixels(self.observed_min_px)}   "
+            f"MAX {_format_pixels(self.observed_max_px)}"
+        )
+        span = self.observed_max_px - self.observed_min_px
+        position = 0.5 if span == 0 else (pixels - self.observed_min_px) / span
+        self.blob_meter.set(position)
+
+    def _reset_blob_history(self) -> None:
+        current = self.current_blob_px or None
+        self.observed_min_px = current
+        self.observed_max_px = current
+        if current is None:
+            self.blob_range_text.set("MIN —   MAX —")
+            self.blob_meter.set(0)
+        else:
+            formatted = _format_pixels(current)
+            self.blob_range_text.set(f"MIN {formatted}   MAX {formatted}")
+            self.blob_meter.set(0.5)
+
+    def _draw_blob_overlay(self, blob: BlobMeasurement | None) -> np.ndarray:
+        visual = self.capture.copy()
+        if blob is None:
+            return visual
+        height, width = visual.shape[:2]
+        left = max(0, blob.x - BLOB_BOX_PADDING)
+        top = max(0, blob.y - BLOB_BOX_PADDING)
+        right = min(width - 1, blob.x + blob.width - 1 + BLOB_BOX_PADDING)
+        bottom = min(height - 1, blob.y + blob.height - 1 + BLOB_BOX_PADDING)
+        cv2.rectangle(visual, (left, top), (right, bottom), (142, 198, 63), 2)
+        label = f"{_format_pixels(blob.area_px)} PX"
+        label_above = top >= 24
+        label_top = top - 22 if label_above else top
+        label_bottom = top if label_above else min(height - 1, top + 22)
+        text_y = top - 6 if label_above else min(height - 5, top + 16)
+        label_width = max(78, len(label) * 8)
+        cv2.rectangle(
+            visual,
+            (left, label_top),
+            (min(width - 1, left + label_width), label_bottom),
+            (23, 19, 13),
+            -1,
+        )
+        cv2.putText(
+            visual,
+            label,
+            (left + 5, text_y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.45,
+            (142, 198, 63),
+            1,
+            cv2.LINE_AA,
+        )
+        return visual
 
     def _toggle_pipette(self) -> None:
         self.pipette = not self.pipette
@@ -434,6 +547,10 @@ class ColourPage(ctk.CTkFrame):
             saturation_tolerance=40,
             value_tolerance=40,
         )
+        self.current_blob_px = 0
+        self.observed_min_px = None
+        self.observed_max_px = None
+        self.blob_range_text.set("MIN —   MAX —")
         self._render()
 
     def _view_changed(self) -> None:
