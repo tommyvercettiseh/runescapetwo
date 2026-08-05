@@ -19,6 +19,7 @@ from core import mouse
 from core.targeting import (
     MIN_IMAGE_EDGE_PADDING,
     colour_blob_target_bounds,
+    randomized_target_bounds,
     image_target_bounds,
     normalize_image_edge_padding,
 )
@@ -682,7 +683,9 @@ class ColourPage(ctk.CTkFrame):
             self.status.set("Geen geldige kleurblob binnen MIN/MAX BLOB PX.")
             return
         try:
-            bounds = colour_blob_target_bounds(blob, blob_edge_padding=20)
+            bounds = randomized_target_bounds(
+                colour_blob_target_bounds(blob, blob_edge_padding=20)
+            )
         except ValueError as exc:
             self.live.set(self._resume_live_after_mouse)
             self.status.set(f"Geen veilige clickzone: {exc}")

@@ -156,6 +156,12 @@ def test_click_colour_uses_safe_inner_blob_zone(monkeypatch) -> None:
         lambda colour_name, **settings: finds.append((colour_name, settings))
         or FakeBlob(),
     )
+    safe_zones = []
+    monkeypatch.setattr(
+        mouse_actions,
+        "randomized_target_bounds",
+        lambda bounds: safe_zones.append(bounds) or (146, 216, 152, 222),
+    )
     monkeypatch.setattr(
         mouse_actions.mouse,
         "move_and_click_target",
@@ -176,7 +182,8 @@ def test_click_colour_uses_safe_inner_blob_zone(monkeypatch) -> None:
 
     assert result.success is True
     assert result.blob_pixels == 900
-    assert result.bounds == (143, 213, 158, 228)
+    assert safe_zones == [(143, 213, 158, 228)]
+    assert result.bounds == (146, 216, 152, 222)
     assert finds == [
         (
             "cyan",
@@ -190,7 +197,7 @@ def test_click_colour_uses_safe_inner_blob_zone(monkeypatch) -> None:
     ]
     assert clicks == [
         (
-            (143, 213, 158, 228),
+            (146, 216, 152, 222),
             {"button": "right", "require_external": True},
         )
     ]

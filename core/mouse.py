@@ -110,11 +110,66 @@ def _selected_button(button: str) -> Button:
 
 
 def _screen_size() -> tuple[int, int]:
+    """Return the size of the complete Windows virtual desktop."""
     try:
         user32 = ctypes.windll.user32
+        width = int(user32.GetSystemMetrics(78))
+        height = int(user32.GetSystemMetrics(79))
+        if width > 0 and height > 0:
+            return width, height
         return int(user32.GetSystemMetrics(0)), int(user32.GetSystemMetrics(1))
     except (AttributeError, OSError):
         return 1920, 1080
+
+
+def _screen_origin() -> tuple[int, int]:
+    """Return the top-left of the virtual desktop in global coordinates."""
+    try:
+        user32 = ctypes.windll.user32
+        return int(user32.GetSystemMetrics(76)), int(user32.GetSystemMetrics(77))
+    except (AttributeError, OSError):
+        return 0, 0
+
+
+def _target_to_local(
+    target: Mapping[str, Any] | Sequence[float],
+    origin: tuple[int, int],
+) -> dict[str, Any] | tuple[float, ...]:
+    """Translate a global target into provider-local virtual desktop coordinates."""
+    origin_x, origin_y = origin
+    if isinstance(target, Mapping):
+        translated = dict(target)
+        for field in ("left", "right", "x"):
+            if field in translated:
+                translated[field] = float(translated[field]) - origin_x
+        for field in ("top", "bottom", "y"):
+            if field in translated:
+                translated[field] = float(translated[field]) - origin_y
+        return translated
+
+    translated = list(target)
+    if len(translated) >= 2:
+        translated[0] = float(translated[0]) - origin_x
+        translated[1] = float(translated[1]) - origin_y
+    return tuple(translated)
+
+
+def _plan_to_global(
+    plan: Mapping[str, Any],
+    origin: tuple[int, int],
+) -> dict[str, Any]:
+    """Copy a validated provider plan back into Windows global coordinates."""
+    origin_x, origin_y = origin
+    translated = dict(plan)
+    translated["events"] = [
+        {
+            **dict(event),
+            "x": float(event["x"]) + origin_x,
+            "y": float(event["y"]) + origin_y,
+        }
+        for event in plan["events"]
+    ]
+    return translated
 
 
 def _wait_until(deadline: float) -> None:
@@ -189,12 +244,15 @@ def _external_plan(
         if require_external:
             raise mouse_engine.MouseEngineDisabled(message)
         return None
-    start = tuple(map(int, _controller.position))
+    origin = _screen_origin()
+    global_start = tuple(map(int, _controller.position))
+    start = (global_start[0] - origin[0], global_start[1] - origin[1])
+    local_target = _target_to_local(target, origin)
     screen_size = _screen_size()
     try:
         plan = mouse_engine.create_plan(
             start,
-            target,
+            local_target,
             target_radius=target_radius,
             padding_px=padding_px,
             coordinate_size=screen_size,
@@ -202,7 +260,7 @@ def _external_plan(
         )
         validate_mouse_plan(
             plan,
-            target=target,
+            target=local_target,
             screen_size=screen_size,
             require_click=require_click,
             target_padding=(
@@ -225,7 +283,7 @@ def _external_plan(
         raise mouse_engine.MouseEngineUnavailable(str(exc)) from exc
     _last_engine_error = None
     _set_execution_status("external")
-    return plan
+    return _plan_to_global(plan, origin)
 
 
 def _split_before_first_click(

@@ -168,7 +168,9 @@ mouse_actions.click_in_area(
 
 `image_edge_padding=20` verwijdert 20% aan zowel de linker- als rechterrand van de gevonden image en accepteert waarden van 20 tot en met 45. `area_edge_padding=8` gebruikt acht hele pixels aan alle zijden van een area.
 
-`click_image()` en `move_to_image()` zoeken precies één keer en wachten nooit. Gebruik daarvoor los `wait_for_image()`. `click_colour()` en `move_to_colour()` kiezen de grootste geldige blob. Standaard sluit `blob_edge_padding=20` twintig procent aan alle zijden uit. De overgebleven clickzone moet daarnaast volledig binnen de echte blobvorm passen. `minimum_blob_pixels` en `maximum_blob_pixels` bepalen welke blobs geldig zijn.
+`click_image()` en `move_to_image()` zoeken precies één keer en wachten nooit. Gebruik daarvoor los `wait_for_image()`. `click_colour()` en `move_to_colour()` kiezen de grootste geldige blob. Standaard sluit `blob_edge_padding=20` twintig procent aan alle zijden uit. Binnen de overgebleven veilige blobvorm wordt per actie een nieuwe, licht naar het midden gewogen subzone gekozen. `minimum_blob_pixels` en `maximum_blob_pixels` bepalen welke blobs geldig zijn.
+
+Op Windows gebruiken beeldopname en de externe Mouse-provider het volledige virtuele bureaublad. Areas en muisdoelen mogen daardoor ook op een monitor links, rechts, boven of onder het hoofdscherm staan.
 
 Elke actie geeft een `MouseActionResult` terug. Gebruik `if result:` voor succes, of lees bij een fout `result.message`, `result.error`, `result.engine` en `result.fallback_used`. Bij kleuracties bevat `result.blob_pixels` de exacte grootte van de gekozen blob. De action-laag vereist standaard de ingestelde externe Mouse. Een ontbrekend package of profiel wordt daardoor zichtbaar en veroorzaakt hier geen stille native fallback. De oudere functies in `core.mouse` behouden hun configureerbare fallback voor bestaande scripts.
 
