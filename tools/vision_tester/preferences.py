@@ -8,6 +8,7 @@ from pathlib import Path
 DEFAULT_PREFERENCES = {
     "auto_resize": True,
     "zoom_percent": 100,
+    "mouse_trace": False,
 }
 
 
@@ -35,6 +36,7 @@ def load_preferences(path: Path | None = None) -> dict[str, object]:
     return {
         "auto_resize": bool(data.get("auto_resize", DEFAULT_PREFERENCES["auto_resize"])),
         "zoom_percent": zoom,
+        "mouse_trace": bool(data.get("mouse_trace", DEFAULT_PREFERENCES["mouse_trace"])),
     }
 
 

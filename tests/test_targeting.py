@@ -2,9 +2,11 @@ import pytest
 
 from core.targeting import (
     area_target_bounds,
+    colour_blob_target_bounds,
     image_target_bounds,
     normalize_image_edge_padding,
 )
+from core.vision.models import ColourBlob
 
 
 def test_horizontal_target_bounds_keeps_twenty_percent_clear() -> None:
@@ -38,3 +40,25 @@ def test_area_padding_uses_whole_pixels_and_cannot_collapse_area() -> None:
         area_target_bounds(0, 0, 100, 80, area_edge_padding=2.5)
     with pytest.raises(ValueError, match="no usable target area"):
         area_target_bounds(0, 0, 100, 80, area_edge_padding=40)
+
+
+def test_colour_blob_target_is_padded_and_inside_real_blob() -> None:
+    blob = ColourBlob(
+        x=130,
+        y=200,
+        width=40,
+        height=40,
+        area_px=900,
+        centroid_x=150,
+        centroid_y=220,
+        safe_x=150,
+        safe_y=220,
+        safe_radius=10,
+    )
+
+    assert colour_blob_target_bounds(blob, blob_edge_padding=20) == (
+        143,
+        213,
+        158,
+        228,
+    )

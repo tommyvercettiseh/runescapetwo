@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import threading
 import time
 import tkinter as tk
 from pathlib import Path
@@ -17,18 +18,20 @@ from pynput.keyboard import Listener as KeyboardListener
 from core import mouse
 from core.targeting import (
     MIN_IMAGE_EDGE_PADDING,
+    colour_blob_target_bounds,
     image_target_bounds,
     normalize_image_edge_padding,
 )
 from core.vision.areas import load_areas
 from core.vision.color_matching import calculate_color_score
 from core.vision.colour_detection import (
+    blobs_from_mask,
     build_mask_from_ranges,
     count_mask_pixels,
     hsv_ranges_around,
     sample_hsv,
 )
-from core.vision.models import TemplateSettings
+from core.vision.models import ColourBlob, TemplateSettings
 from core.vision.screenshots import capture_area
 from core.vision.template_matching import available_methods, iter_candidates, match_template
 from core.vision.templates import (
@@ -46,6 +49,7 @@ from .colour_debug import (
     measure_mask_blobs,
 )
 from .preferences import load_preferences, save_preferences
+from .mouse_trace import MouseTraceOverlay
 from .sensor_checks import SensorCheck, load_sensor_checks
 from .sensor_view import analyse_sensor_frame, sensor_description
 from .template_capture import TemplateCaptureOverlay
@@ -244,16 +248,24 @@ class ColourPage(ctk.CTkFrame):
         self.maximum = tk.StringVar(value="0")
         self.auto_resize = tk.BooleanVar(value=bool(preferences["auto_resize"]))
         self.zoom = tk.IntVar(value=int(preferences["zoom_percent"]))
+        self.mouse_trace = tk.BooleanVar(value=bool(preferences["mouse_trace"]))
         self.status = tk.StringVar(value="Kies een area en maak een capture.")
         self.blob_live_text = tk.StringVar(value="— PX")
         self.blob_range_text = tk.StringVar(value="MIN —   MAX —")
         self.capture: np.ndarray | None = None
+        self.capture_region = (0, 0, 0, 0)
         self.ranges = ()
+        self.current_target_blob: ColourBlob | None = None
         self.current_blob_px = 0
         self.observed_min_px: int | None = None
         self.observed_max_px: int | None = None
         self.views: list[ImageView] = []
         self._save_job: str | None = None
+        self._mouse_action_running = False
+        self._mouse_results: SimpleQueue[tuple[bool, str]] = SimpleQueue()
+        self._trace_overlay: MouseTraceOverlay | None = None
+        self._resume_live_after_mouse = False
+        self._tester_window_state = "normal"
         self._build()
         self.after(100, self._tick)
 
@@ -387,14 +399,51 @@ class ColourPage(ctk.CTkFrame):
             heading.pack(fill="x", padx=14, pady=(10, 0))
             _label(heading, title, size=12, bold=True).pack(side="left")
             if column == 0:
+                mousebar = ctk.CTkFrame(card, fg_color="transparent")
+                mousebar.pack(fill="x", padx=14, pady=(7, 5))
                 self.pipette_button = _button(
-                    heading,
+                    mousebar,
                     "⌖  Pipet",
                     self._toggle_pipette,
-                    width=92,
+                    width=80,
                 )
-                self.pipette_button.pack(side="right")
-            _label(card, subtitle, muted=True, size=11).pack(anchor="w", padx=14, pady=(0, 10))
+                self.pipette_button.pack(side="left")
+                self.move_colour_button = _button(
+                    mousebar,
+                    "Move kleur",
+                    lambda: self._start_colour_mouse_action(click=False),
+                    width=84,
+                )
+                self.move_colour_button.pack(side="left", padx=(7, 0))
+                self.click_colour_button = _button(
+                    mousebar,
+                    "Klik kleur",
+                    lambda: self._start_colour_mouse_action(click=True),
+                    primary=True,
+                    width=84,
+                )
+                self.click_colour_button.pack(side="left", padx=(7, 0))
+                self.trace_switch = ctk.CTkSwitch(
+                    mousebar,
+                    text="Trace",
+                    variable=self.mouse_trace,
+                    command=self._trace_changed,
+                    width=88,
+                    progress_color=ACCENT,
+                    button_color=TEXT,
+                    button_hover_color=GOLD,
+                    text_color=MUTED,
+                )
+                self.trace_switch.pack(side="right")
+            else:
+                spacer = ctk.CTkFrame(card, fg_color="transparent", height=38)
+                spacer.pack(fill="x", padx=14, pady=(7, 5))
+                spacer.pack_propagate(False)
+            _label(card, subtitle, muted=True, size=11).pack(
+                anchor="w",
+                padx=14,
+                pady=(0, 8),
+            )
             view = ImageView(
                 card,
                 auto_resize=self.auto_resize.get(),
@@ -427,10 +476,14 @@ class ColourPage(ctk.CTkFrame):
     def _capture(self) -> None:
         started = time.perf_counter()
         try:
-            self.capture, _region = capture_area(self.source.area.get(), bot_id=self.source.bot())
+            self.capture, self.capture_region = capture_area(
+                self.source.area.get(),
+                bot_id=self.source.bot(),
+            )
             self._render(started)
         except Exception as exc:
             self.live.set(False)
+            self.current_target_blob = None
             self.status.set(f"Fout: {exc}")
 
     def _limits(self) -> tuple[int, int | None]:
@@ -439,6 +492,7 @@ class ColourPage(ctk.CTkFrame):
         return minimum, maximum or None
 
     def _render(self, started: float | None = None) -> None:
+        self.current_target_blob = None
         if self.capture is None:
             return
         try:
@@ -456,11 +510,43 @@ class ColourPage(ctk.CTkFrame):
         blobs = measure_mask_blobs(raw_mask)
         dominant_blob = blobs[0] if blobs else None
         self._observe_blob(dominant_blob)
-        self.capture_view.show(self._draw_blob_overlay(dominant_blob))
         mask, blob_count = filter_mask_by_blob_size(
             raw_mask,
             minimum_area_px=minimum,
             maximum_area_px=maximum,
+        )
+        valid_blobs = blobs_from_mask(
+            mask,
+            origin=(self.capture_region[0], self.capture_region[1]),
+            minimum_area_px=1,
+        )
+        self.current_target_blob = valid_blobs[0] if valid_blobs else None
+        if self.current_target_blob is None:
+            visible_target = None
+            visible_safe_bounds = None
+        else:
+            visible_target = BlobMeasurement(
+                x=self.current_target_blob.x - self.capture_region[0],
+                y=self.current_target_blob.y - self.capture_region[1],
+                width=self.current_target_blob.width,
+                height=self.current_target_blob.height,
+                area_px=self.current_target_blob.area_px,
+            )
+            try:
+                safe_bounds = colour_blob_target_bounds(
+                    self.current_target_blob,
+                    blob_edge_padding=20,
+                )
+                visible_safe_bounds = (
+                    safe_bounds[0] - self.capture_region[0],
+                    safe_bounds[1] - self.capture_region[1],
+                    safe_bounds[2] - self.capture_region[0],
+                    safe_bounds[3] - self.capture_region[1],
+                )
+            except ValueError:
+                visible_safe_bounds = None
+        self.capture_view.show(
+            self._draw_blob_overlay(visible_target, visible_safe_bounds)
         )
         pixels = count_mask_pixels(mask)
         self.mask_view.show(cv2.cvtColor(mask, cv2.COLOR_GRAY2RGB))
@@ -503,7 +589,11 @@ class ColourPage(ctk.CTkFrame):
             self.blob_range_text.set(f"MIN {formatted}   MAX {formatted}")
             self.blob_meter.set(0.5)
 
-    def _draw_blob_overlay(self, blob: BlobMeasurement | None) -> np.ndarray:
+    def _draw_blob_overlay(
+        self,
+        blob: BlobMeasurement | None,
+        safe_bounds: tuple[int, int, int, int] | None = None,
+    ) -> np.ndarray:
         visual = self.capture.copy()
         if blob is None:
             return visual
@@ -513,6 +603,15 @@ class ColourPage(ctk.CTkFrame):
         right = min(width - 1, blob.x + blob.width - 1 + BLOB_BOX_PADDING)
         bottom = min(height - 1, blob.y + blob.height - 1 + BLOB_BOX_PADDING)
         cv2.rectangle(visual, (left, top), (right, bottom), (142, 198, 63), 2)
+        if safe_bounds is not None:
+            safe_left, safe_top, safe_right, safe_bottom = safe_bounds
+            cv2.rectangle(
+                visual,
+                (max(0, safe_left), max(0, safe_top)),
+                (min(width - 1, safe_right - 1), min(height - 1, safe_bottom - 1)),
+                (209, 166, 75),
+                2,
+            )
         label = f"{_format_pixels(blob.area_px)} PX"
         label_above = top >= 24
         label_top = top - 22 if label_above else top
@@ -566,6 +665,133 @@ class ColourPage(ctk.CTkFrame):
         self.blob_range_text.set("MIN —   MAX —")
         self._render()
 
+    def _start_colour_mouse_action(self, *, click: bool) -> None:
+        if self._mouse_action_running:
+            self.status.set("Er loopt al een muisactie.")
+            return
+        if not self.ranges:
+            self.status.set("Kies eerst een kleur met het pipet.")
+            return
+
+        self._resume_live_after_mouse = self.live.get()
+        self.live.set(False)
+        self._capture()
+        blob = self.current_target_blob
+        if blob is None:
+            self.live.set(self._resume_live_after_mouse)
+            self.status.set("Geen geldige kleurblob binnen MIN/MAX BLOB PX.")
+            return
+        try:
+            bounds = colour_blob_target_bounds(blob, blob_edge_padding=20)
+        except ValueError as exc:
+            self.live.set(self._resume_live_after_mouse)
+            self.status.set(f"Geen veilige clickzone: {exc}")
+            return
+
+        self._mouse_action_running = True
+        self.move_colour_button.configure(state="disabled")
+        self.click_colour_button.configure(state="disabled")
+        root = self.winfo_toplevel()
+        self._tester_window_state = root.state()
+        trace_warning = ""
+        if self.mouse_trace.get():
+            try:
+                self._trace_overlay = MouseTraceOverlay(
+                    root,
+                    cursor_position=mouse.position,
+                    target_bounds=bounds,
+                )
+            except Exception as exc:
+                self._trace_overlay = None
+                trace_warning = f" Trace niet beschikbaar: {exc}"
+
+        action_name = "Klik kleur" if click else "Move kleur"
+        self.status.set(
+            f"{action_name} start voor blob van {_format_pixels(blob.area_px)} PX."
+            f"{trace_warning}"
+        )
+        root.withdraw()
+        self.after(
+            140,
+            lambda: self._launch_colour_mouse_worker(
+                click=click,
+                bounds=bounds,
+                blob_pixels=blob.area_px,
+            ),
+        )
+
+    def _launch_colour_mouse_worker(
+        self,
+        *,
+        click: bool,
+        bounds: tuple[int, int, int, int],
+        blob_pixels: int,
+    ) -> None:
+        def run() -> None:
+            action_name = "Klik kleur" if click else "Move kleur"
+            try:
+                if click:
+                    mouse.move_and_click_target(
+                        *bounds,
+                        button="left",
+                        require_external=True,
+                    )
+                else:
+                    mouse.move_to_target(
+                        *bounds,
+                        require_external=True,
+                        keep_pending_click=False,
+                    )
+                engine = mouse.last_execution_status().engine
+                self._mouse_results.put(
+                    (
+                        True,
+                        f"{action_name} gelukt via {engine} op "
+                        f"{_format_pixels(blob_pixels)} PX blob.",
+                    )
+                )
+            except Exception as exc:
+                self._mouse_results.put((False, f"{action_name} mislukt: {exc}"))
+
+        threading.Thread(
+            target=run,
+            name="vision-colour-mouse-test",
+            daemon=True,
+        ).start()
+        self.after(25, self._poll_colour_mouse_worker)
+
+    def _poll_colour_mouse_worker(self) -> None:
+        try:
+            _success, message = self._mouse_results.get_nowait()
+        except Empty:
+            self.after(25, self._poll_colour_mouse_worker)
+            return
+
+        if self._trace_overlay is not None:
+            self._trace_overlay.finish()
+            restore_delay = 950
+        else:
+            restore_delay = 0
+        self.after(restore_delay, lambda: self._restore_after_mouse_action(message))
+
+    def _restore_after_mouse_action(self, message: str) -> None:
+        root = self.winfo_toplevel()
+        root.deiconify()
+        try:
+            if self._tester_window_state == "zoomed":
+                root.state("zoomed")
+        except tk.TclError:
+            pass
+        root.lift()
+        self._trace_overlay = None
+        self._mouse_action_running = False
+        self.move_colour_button.configure(state="normal")
+        self.click_colour_button.configure(state="normal")
+        self.status.set(message)
+        self.live.set(self._resume_live_after_mouse)
+        if self.live.get():
+            self.after(120, self._capture)
+
     def _view_changed(self) -> None:
         self._sync_zoom_state()
         self._apply_view()
@@ -586,10 +812,26 @@ class ColourPage(ctk.CTkFrame):
             self.after_cancel(self._save_job)
         self._save_job = self.after(180, self._save_preferences)
 
+    def _trace_changed(self) -> None:
+        if self._save_job is not None:
+            self.after_cancel(self._save_job)
+        self._save_job = self.after(180, self._save_preferences)
+        self.status.set(
+            "Fading trace staat aan voor testbewegingen."
+            if self.mouse_trace.get()
+            else "Fading trace staat uit."
+        )
+
     def _save_preferences(self) -> None:
         self._save_job = None
         try:
-            save_preferences({"auto_resize": self.auto_resize.get(), "zoom_percent": self.zoom.get()})
+            save_preferences(
+                {
+                    "auto_resize": self.auto_resize.get(),
+                    "zoom_percent": self.zoom.get(),
+                    "mouse_trace": self.mouse_trace.get(),
+                }
+            )
         except OSError:
             pass
 
