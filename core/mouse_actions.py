@@ -12,9 +12,10 @@ from .targeting import (
     validate_area_edge_padding,
     validate_image_edge_padding,
 )
-from .vision.api import find_image, wait_for_image
+from .vision.api import find_image
 from .vision.areas import get_region
-from .vision.models import Hit
+from .vision.colour_detection import find_colour
+from .vision.models import ColourBlob, Hit
 
 
 # =============================================================================
@@ -38,6 +39,7 @@ class MouseActionResult:
     bounds: TargetBounds | None = None
     engine: str = "none"
     fallback_used: bool = False
+    blob_pixels: int | None = None
     error: str | None = None
 
     def __bool__(self) -> bool:
@@ -65,11 +67,6 @@ def _validate_button(button: str) -> MouseButton:
     raise ValueError("button must be 'left' or 'right'")
 
 
-def _validate_timeout(timeout_seconds: float | None) -> None:
-    if timeout_seconds is not None and timeout_seconds <= 0:
-        raise ValueError("timeout_seconds must be greater than zero")
-
-
 def _validate_target_shift(maximum_target_shift: float) -> None:
     if not math.isfinite(float(maximum_target_shift)) or maximum_target_shift < 0:
         raise ValueError("maximum_target_shift must be a non-negative number")
@@ -80,18 +77,35 @@ def _find_target_image(
     *,
     area_name: str,
     bot_id: int,
-    wait: bool,
-    timeout_seconds: float | None,
 ) -> Hit | None:
-    _validate_timeout(timeout_seconds)
-    if wait:
-        return wait_for_image(
-            image_name,
-            area=area_name,
-            bot_id=bot_id,
-            timeout_s=timeout_seconds,
-        )
     return find_image(image_name, area=area_name, bot_id=bot_id)
+
+
+def _validate_blob_settings(
+    minimum_blob_pixels: int,
+    maximum_blob_pixels: int | None,
+    blob_edge_padding: int,
+) -> None:
+    for name, value in (
+        ("minimum_blob_pixels", minimum_blob_pixels),
+        ("blob_edge_padding", blob_edge_padding),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise TypeError(f"{name} must be a whole number")
+    if minimum_blob_pixels < 1:
+        raise ValueError("minimum_blob_pixels must be at least 1")
+    if blob_edge_padding < 0:
+        raise ValueError("blob_edge_padding cannot be negative")
+    if maximum_blob_pixels is not None:
+        if isinstance(maximum_blob_pixels, bool) or not isinstance(
+            maximum_blob_pixels,
+            int,
+        ):
+            raise TypeError("maximum_blob_pixels must be a whole number or None")
+        if maximum_blob_pixels < minimum_blob_pixels:
+            raise ValueError(
+                "maximum_blob_pixels cannot be smaller than minimum_blob_pixels"
+            )
 
 
 def _image_bounds(hit: Hit, image_edge_padding: float) -> TargetBounds:
@@ -102,6 +116,19 @@ def _image_bounds(hit: Hit, image_edge_padding: float) -> TargetBounds:
         hit.x + hit.width,
         hit.y + hit.height,
         image_edge_padding=image_edge_padding,
+    )
+
+
+def _colour_bounds(blob: ColourBlob, blob_edge_padding: int) -> TargetBounds:
+    """Return an axis-aligned square guaranteed to fit in the blob's safe circle."""
+    safe_x, safe_y = blob.safe_point
+    safe_radius = max(0.0, float(blob.safe_radius) - blob_edge_padding)
+    half_side = max(0, int(math.floor(safe_radius / math.sqrt(2.0))))
+    return (
+        safe_x - half_side,
+        safe_y - half_side,
+        safe_x + half_side + 1,
+        safe_y + half_side + 1,
     )
 
 
@@ -145,6 +172,7 @@ def _failure(
     target_name: str | None = None,
     bounds: TargetBounds | None = None,
     error: str | None = None,
+    blob_pixels: int | None = None,
     include_execution_status: bool = False,
 ) -> MouseActionResult:
     status = (
@@ -161,6 +189,7 @@ def _failure(
         bounds=bounds,
         engine=status.engine,
         fallback_used=status.fallback_used,
+        blob_pixels=blob_pixels,
         error=error,
     )
 
@@ -171,6 +200,7 @@ def _success(
     *,
     target_name: str | None = None,
     bounds: TargetBounds | None = None,
+    blob_pixels: int | None = None,
 ) -> MouseActionResult:
     position = mouse.position()
     status = mouse.last_execution_status()
@@ -185,6 +215,7 @@ def _success(
             bounds=bounds,
             engine=status.engine,
             fallback_used=status.fallback_used,
+            blob_pixels=blob_pixels,
             error="Final mouse position is outside target bounds",
         )
     return MouseActionResult(
@@ -196,6 +227,7 @@ def _success(
         bounds=bounds,
         engine=status.engine,
         fallback_used=status.fallback_used,
+        blob_pixels=blob_pixels,
         error=status.error,
     )
 
@@ -206,6 +238,7 @@ def _operational_failure(
     error: BaseException,
     *,
     bounds: TargetBounds | None = None,
+    blob_pixels: int | None = None,
 ) -> MouseActionResult:
     return _failure(
         action,
@@ -213,6 +246,7 @@ def _operational_failure(
         target_name=target_name,
         bounds=bounds,
         error=str(error),
+        blob_pixels=blob_pixels,
         include_execution_status=True,
     )
 
@@ -236,20 +270,15 @@ def move_to_image(
     area_name: str = DEFAULT_AREA_NAME,
     bot_id: int = 1,
     image_edge_padding: float = 20,
-    wait: bool = False,
-    timeout_seconds: float | None = None,
     require_external_mouse: bool = True,
 ) -> MouseActionResult:
     """Move to an image and prepare one short-lived separate click."""
     validate_image_edge_padding(image_edge_padding)
-    _validate_timeout(timeout_seconds)
     try:
         hit = _find_target_image(
             image_name,
             area_name=area_name,
             bot_id=bot_id,
-            wait=wait,
-            timeout_seconds=timeout_seconds,
         )
         if hit is None:
             return _failure(
@@ -291,8 +320,6 @@ def click_image(
     bot_id: int = 1,
     button: MouseButton = "left",
     image_edge_padding: float = 20,
-    wait: bool = False,
-    timeout_seconds: float | None = None,
     confirm_before_click: bool = False,
     maximum_target_shift: float = 12,
     require_external_mouse: bool = True,
@@ -300,7 +327,6 @@ def click_image(
     """Find, move and click as one serialized action."""
     selected_button = _validate_button(button)
     validate_image_edge_padding(image_edge_padding)
-    _validate_timeout(timeout_seconds)
     _validate_target_shift(maximum_target_shift)
 
     bounds: TargetBounds | None = None
@@ -309,8 +335,6 @@ def click_image(
             image_name,
             area_name=area_name,
             bot_id=bot_id,
-            wait=wait,
-            timeout_seconds=timeout_seconds,
         )
         if hit is None:
             return _failure(
@@ -331,8 +355,6 @@ def click_image(
                     image_name,
                     area_name=area_name,
                     bot_id=bot_id,
-                    wait=False,
-                    timeout_seconds=None,
                 )
                 if confirmed_hit is None:
                     return _failure(
@@ -371,6 +393,139 @@ def click_image(
             image_name,
             error,
             bounds=bounds,
+        )
+
+
+# =============================================================================
+# COLOUR ACTIONS: MOVE TO COLOUR AND CLICK COLOUR
+# =============================================================================
+
+# Voorbeeld in scripts:
+# result = mouse_actions.move_to_colour(
+#     colour_name="cyan",
+#     area_name="Bot_Area_Full",
+#     minimum_blob_pixels=500,
+#     maximum_blob_pixels=15000,
+# )
+def move_to_colour(
+    colour_name: str,
+    *,
+    area_name: str = DEFAULT_AREA_NAME,
+    bot_id: int = 1,
+    minimum_blob_pixels: int = 20,
+    maximum_blob_pixels: int | None = None,
+    blob_edge_padding: int = 1,
+    require_external_mouse: bool = True,
+) -> MouseActionResult:
+    """Move to the safest inner zone of the largest valid colour blob."""
+    _validate_blob_settings(
+        minimum_blob_pixels,
+        maximum_blob_pixels,
+        blob_edge_padding,
+    )
+    bounds: TargetBounds | None = None
+    blob: ColourBlob | None = None
+    try:
+        blob = find_colour(
+            colour_name,
+            area=area_name,
+            bot_id=bot_id,
+            minimum_area_px=minimum_blob_pixels,
+            maximum_area_px=maximum_blob_pixels,
+        )
+        if blob is None:
+            return _failure(
+                "move_to_colour",
+                f"Geen geldige kleurblob gevonden: {colour_name}",
+                target_name=colour_name,
+            )
+        bounds = _colour_bounds(blob, blob_edge_padding)
+        with mouse.action_guard():
+            mouse.move_to_target(
+                *bounds,
+                require_external=require_external_mouse,
+                keep_pending_click=True,
+            )
+            return _success(
+                "move_to_colour",
+                f"Muis staat in een kleurblob van {blob.area_px} pixels.",
+                target_name=colour_name,
+                bounds=bounds,
+                blob_pixels=blob.area_px,
+            )
+    except EXPECTED_ACTION_ERRORS as error:
+        return _operational_failure(
+            "move_to_colour",
+            colour_name,
+            error,
+            bounds=bounds,
+            blob_pixels=None if blob is None else blob.area_px,
+        )
+
+
+# Voorbeeld in scripts:
+# result = mouse_actions.click_colour(
+#     colour_name="cyan",
+#     area_name="Bot_Area_Full",
+#     button="left",
+#     minimum_blob_pixels=500,
+#     maximum_blob_pixels=15000,
+# )
+def click_colour(
+    colour_name: str,
+    *,
+    area_name: str = DEFAULT_AREA_NAME,
+    bot_id: int = 1,
+    button: MouseButton = "left",
+    minimum_blob_pixels: int = 20,
+    maximum_blob_pixels: int | None = None,
+    blob_edge_padding: int = 1,
+    require_external_mouse: bool = True,
+) -> MouseActionResult:
+    """Find the largest valid colour blob, move and click atomically."""
+    selected_button = _validate_button(button)
+    _validate_blob_settings(
+        minimum_blob_pixels,
+        maximum_blob_pixels,
+        blob_edge_padding,
+    )
+    bounds: TargetBounds | None = None
+    blob: ColourBlob | None = None
+    try:
+        blob = find_colour(
+            colour_name,
+            area=area_name,
+            bot_id=bot_id,
+            minimum_area_px=minimum_blob_pixels,
+            maximum_area_px=maximum_blob_pixels,
+        )
+        if blob is None:
+            return _failure(
+                "click_colour",
+                f"Geen geldige kleurblob gevonden: {colour_name}",
+                target_name=colour_name,
+            )
+        bounds = _colour_bounds(blob, blob_edge_padding)
+        with mouse.action_guard():
+            mouse.move_and_click_target(
+                *bounds,
+                button=selected_button,
+                require_external=require_external_mouse,
+            )
+            return _success(
+                "click_colour",
+                f"Kleurblob van {blob.area_px} pixels geklikt met {selected_button}.",
+                target_name=colour_name,
+                bounds=bounds,
+                blob_pixels=blob.area_px,
+            )
+    except EXPECTED_ACTION_ERRORS as error:
+        return _operational_failure(
+            "click_colour",
+            colour_name,
+            error,
+            bounds=bounds,
+            blob_pixels=None if blob is None else blob.area_px,
         )
 
 
@@ -528,6 +683,8 @@ __all__ = [
     "MouseButton",
     "move_to_image",
     "click_image",
+    "move_to_colour",
+    "click_colour",
     "move_to_area",
     "click_in_area",
     "click",
