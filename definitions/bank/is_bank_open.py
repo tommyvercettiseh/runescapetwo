@@ -1,12 +1,13 @@
 from core import vision
-from core.definition_config import get_definition
+
+
+BANK_DEPOSIT_IMAGE = "Bank_Deposit"
+BANK_AREA = "Bot_Area"
 
 
 def is_bank_open(bot_id: int = 1) -> bool:
-    config = get_definition("bank", "is_bank_open")
-
     return vision.find_image(
-        image_name=str(config["image"]),
-        area=str(config["area"]),
+        image_name=BANK_DEPOSIT_IMAGE,
+        area=BANK_AREA,
         bot_id=bot_id,
     ) is not None
