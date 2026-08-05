@@ -67,7 +67,7 @@ class ImagePage(ttk.Frame):
             background=COLOURS["surface_raised"],
             foreground=COLOURS["text"],
             selectbackground=COLOURS["accent_dark"],
-            selectforeground=COLOURS["accent"],
+            selectforeground=COLOURS["text"],
             highlightbackground=COLOURS["border"],
             highlightcolor=COLOURS["accent"],
             borderwidth=0,
