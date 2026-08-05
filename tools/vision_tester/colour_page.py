@@ -9,7 +9,6 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageTk
 
 from core.vision.colour_detection import (
-    blobs_from_mask,
     build_mask_from_ranges,
     count_mask_pixels,
     hsv_ranges_around,
@@ -17,7 +16,7 @@ from core.vision.colour_detection import (
 )
 from core.vision.colour_presets import HSVRange
 from core.vision.screenshots import capture_area
-from .colour_debug import isolate_colour
+from .colour_debug import filter_mask_by_blob_size, isolate_colour
 from .common import COLOURS, LiveToggle, PreviewLabel, SourceBar
 
 
@@ -196,23 +195,21 @@ class ColourPage(ttk.Frame):
         started = time.perf_counter() if started is None else started
         mask = build_mask_from_ranges(self.capture, self.ranges)
         maximum = self.maximum.get() or None
-        origin = (self.region[0], self.region[1]) if self.region else (0, 0)
-        blobs = blobs_from_mask(
+        filtered_mask, valid_blob_count = filter_mask_by_blob_size(
             mask,
-            origin=origin,
             minimum_area_px=max(1, self.minimum.get()),
             maximum_area_px=maximum,
         )
 
-        selected_pixels = count_mask_pixels(mask)
-        total_pixels = max(1, mask.size)
-        self.mask_view.show(cv2.cvtColor(mask, cv2.COLOR_GRAY2RGB))
-        self.isolated_view.show(isolate_colour(self.capture, mask))
+        selected_pixels = count_mask_pixels(filtered_mask)
+        total_pixels = max(1, filtered_mask.size)
+        self.mask_view.show(cv2.cvtColor(filtered_mask, cv2.COLOR_GRAY2RGB))
+        self.isolated_view.show(isolate_colour(self.capture, filtered_mask))
         elapsed = (time.perf_counter() - started) * 1000.0
         self.status.set(
             f"Bot {self.source.bot_id.get()}  •  {self.source.area.get()}  •  "
             f"{selected_pixels} px geselecteerd ({selected_pixels / total_pixels * 100.0:.2f}%)  •  "
-            f"{len(blobs)} geldige blobs  •  {elapsed:.1f} ms"
+            f"{valid_blob_count} geldige blobs  •  {elapsed:.1f} ms"
         )
 
     def _toggle_pipette(self) -> None:
