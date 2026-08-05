@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import sys
 import time
 import tkinter as tk
 from pathlib import Path
+from queue import Empty, SimpleQueue
 from tkinter import messagebox, simpledialog
 
 import customtkinter as ctk
 import cv2
 import numpy as np
 from PIL import Image, ImageTk
+from pynput.keyboard import Key as KeyboardKey
+from pynput.keyboard import Listener as KeyboardListener
 
 from core.vision.areas import load_areas
 from core.vision.color_matching import calculate_color_score
@@ -405,6 +409,9 @@ class ColourPage(ctk.CTkFrame):
     def _once(self) -> None:
         self.live.set(False)
         self._capture()
+
+    def capture_hotkey(self) -> None:
+        self._once()
 
     def _tick(self) -> None:
         if self.live.get():
@@ -805,6 +812,9 @@ class TemplatePage(ctk.CTkFrame):
         self.live.set(False)
         self._capture()
 
+    def capture_hotkey(self) -> None:
+        self._once()
+
     def _tick(self) -> None:
         if self.live.get():
             self._capture()
@@ -1080,6 +1090,9 @@ class SensorPage(ctk.CTkFrame):
         self.live.set(False)
         self._measure()
 
+    def capture_hotkey(self) -> None:
+        self._once()
+
     def _tick(self) -> None:
         if self.live.get():
             self._measure()
@@ -1119,6 +1132,10 @@ class VisionTester(ctk.CTk):
         self.grid_rowconfigure(1, weight=1)
         self.pages: dict[str, ctk.CTkFrame] = {}
         self.current_page: ctk.CTkFrame | None = None
+        self._hotkey_events: SimpleQueue[str] = SimpleQueue()
+        self._hotkey_listener: KeyboardListener | None = None
+        self._last_f2_at = 0.0
+        self._closing = False
 
         header = _card(self)
         header.grid(row=0, column=0, sticky="ew", padx=24, pady=(18, 10))
@@ -1150,7 +1167,7 @@ class VisionTester(ctk.CTk):
             text_color=TEXT,
         )
         navigation.grid(row=0, column=1)
-        _label(header, "●  LIVE ENGINE", size=11, bold=True, text_color=ACCENT_HOVER).grid(
+        _label(header, "F2 CAPTURE   •   ● LIVE ENGINE", size=11, bold=True, text_color=ACCENT_HOVER).grid(
             row=0,
             column=2,
             sticky="e",
@@ -1170,6 +1187,9 @@ class VisionTester(ctk.CTk):
             page.grid(row=0, column=0, sticky="nsew")
             self.pages[name] = page
         self.after(150, lambda: self._show_page(self.navigation_value.get()))
+        self.protocol("WM_DELETE_WINDOW", self._close)
+        self._start_hotkeys()
+        self.after(50, self._poll_hotkeys)
 
     def _show_page(self, name: str) -> None:
         page = self.pages.get(name)
@@ -1180,6 +1200,51 @@ class VisionTester(ctk.CTk):
         page.tkraise()
         self.current_page = page
         page.activate()
+
+    def _start_hotkeys(self) -> None:
+        options = {"on_press": self._global_key_pressed}
+        if sys.platform == "win32":
+            options["win32_event_filter"] = self._windows_key_filter
+        self._hotkey_listener = KeyboardListener(**options)
+        self._hotkey_listener.start()
+
+    def _global_key_pressed(self, key) -> None:
+        if key != KeyboardKey.f2:
+            return
+        self._queue_capture_hotkey()
+
+    def _queue_capture_hotkey(self) -> None:
+        now = time.monotonic()
+        if now - self._last_f2_at < 0.4:
+            return
+        self._last_f2_at = now
+        self._hotkey_events.put("capture")
+
+    def _windows_key_filter(self, message, data):
+        if int(data.vkCode) != 0x71:  # Windows virtual-key code for F2
+            return True
+        if int(message) in (0x0100, 0x0104):  # KEYDOWN and SYSKEYDOWN
+            self._queue_capture_hotkey()
+        if self._hotkey_listener is not None:
+            self._hotkey_listener.suppress_event()
+        return False
+
+    def _poll_hotkeys(self) -> None:
+        if self._closing:
+            return
+        try:
+            while self._hotkey_events.get_nowait() == "capture":
+                if self.current_page is not None:
+                    self.current_page.capture_hotkey()
+        except Empty:
+            pass
+        self.after(50, self._poll_hotkeys)
+
+    def _close(self) -> None:
+        self._closing = True
+        if self._hotkey_listener is not None:
+            self._hotkey_listener.stop()
+        self.destroy()
 
 
 def main() -> None:
