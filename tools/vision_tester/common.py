@@ -12,16 +12,16 @@ from core.vision.areas import load_areas
 
 
 COLOURS = {
-    "background": "#0b1020",
-    "surface": "#111827",
-    "surface_raised": "#182235",
-    "border": "#26344d",
-    "text": "#e8eef9",
-    "muted": "#91a0b8",
-    "accent": "#5eead4",
-    "accent_dark": "#153f43",
-    "blue": "#60a5fa",
-    "danger": "#fb7185",
+    "background": "#f3f7fc",
+    "surface": "#ffffff",
+    "surface_raised": "#f7faff",
+    "border": "#d9e3f0",
+    "text": "#17243d",
+    "muted": "#71809a",
+    "accent": "#42cfe8",
+    "accent_dark": "#dff7fc",
+    "blue": "#2f80ed",
+    "danger": "#e05267",
 }
 
 
@@ -53,7 +53,7 @@ def configure_style(root: tk.Tk) -> None:
     style.configure("Surface.TLabel", background=COLOURS["surface"], foreground=COLOURS["text"])
     style.configure("Muted.TLabel", background=COLOURS["background"], foreground=COLOURS["muted"])
     style.configure("SurfaceMuted.TLabel", background=COLOURS["surface"], foreground=COLOURS["muted"])
-    style.configure("Title.TLabel", font=("Segoe UI Semibold", 20), foreground="#f8fafc")
+    style.configure("Title.TLabel", font=("Segoe UI Semibold", 20), foreground=COLOURS["text"])
     style.configure("Subtitle.TLabel", foreground=COLOURS["muted"], font=("Segoe UI", 10))
     style.configure(
         "Card.TLabelframe",
@@ -75,22 +75,36 @@ def configure_style(root: tk.Tk) -> None:
         background=COLOURS["surface_raised"],
         foreground=COLOURS["text"],
         bordercolor=COLOURS["border"],
-        padding=(12, 8),
+        padding=(13, 9),
         relief="flat",
     )
     style.map(
         "TButton",
-        background=[("active", "#22304a"), ("pressed", COLOURS["accent_dark"])],
+        background=[("active", "#eaf1fa"), ("pressed", COLOURS["accent_dark"])],
         bordercolor=[("focus", COLOURS["accent"])],
     )
     style.configure(
         "Accent.TButton",
         background=COLOURS["accent"],
-        foreground="#071a1d",
+        foreground="#073b47",
         bordercolor=COLOURS["accent"],
         font=("Segoe UI Semibold", 10),
     )
-    style.map("Accent.TButton", background=[("active", "#99f6e4"), ("pressed", "#2dd4bf")])
+    style.map("Accent.TButton", background=[("active", "#79dff1"), ("pressed", "#2bb9d3")])
+    style.configure(
+        "Icon.TButton",
+        background=COLOURS["surface_raised"],
+        bordercolor=COLOURS["border"],
+        padding=(11, 8),
+    )
+    style.configure(
+        "IconActive.TButton",
+        background=COLOURS["accent_dark"],
+        bordercolor=COLOURS["accent"],
+        padding=(11, 8),
+    )
+    style.map("Icon.TButton", background=[("active", "#eaf1fa")])
+    style.map("IconActive.TButton", background=[("active", "#c9f0f8")])
     style.configure(
         "Toggle.TCheckbutton",
         background=COLOURS["surface_raised"],
@@ -104,8 +118,8 @@ def configure_style(root: tk.Tk) -> None:
     )
     style.map(
         "Toggle.TCheckbutton",
-        background=[("selected", COLOURS["accent_dark"]), ("active", "#22304a")],
-        foreground=[("selected", COLOURS["accent"]), ("active", COLOURS["text"])],
+        background=[("selected", COLOURS["accent_dark"]), ("active", "#eaf1fa")],
+        foreground=[("selected", "#087f95"), ("active", COLOURS["text"])],
         bordercolor=[("selected", COLOURS["accent"]), ("focus", COLOURS["accent"])],
         indicatorcolor=[("selected", COLOURS["accent"]), ("!selected", COLOURS["muted"])],
     )
@@ -135,7 +149,7 @@ def configure_style(root: tk.Tk) -> None:
         bordercolor=COLOURS["border"],
         padding=6,
     )
-    style.configure("TNotebook", background=COLOURS["background"], borderwidth=0, tabmargins=(18, 0, 0, 0))
+    style.configure("TNotebook", background=COLOURS["background"], borderwidth=0, tabmargins=(22, 0, 0, 0))
     style.configure(
         "TNotebook.Tab",
         background=COLOURS["background"],
@@ -147,7 +161,7 @@ def configure_style(root: tk.Tk) -> None:
     style.map(
         "TNotebook.Tab",
         background=[("selected", COLOURS["surface"])],
-        foreground=[("selected", COLOURS["accent"]), ("active", COLOURS["text"])],
+        foreground=[("selected", "#087f95"), ("active", COLOURS["text"])],
     )
     style.configure("Horizontal.TPanedwindow", background=COLOURS["background"])
     style.configure("TScrollbar", background=COLOURS["surface_raised"], troughcolor=COLOURS["surface"])
@@ -227,7 +241,7 @@ class SourceBar(ttk.Frame):
         self.bot_id = tk.IntVar(value=1)
         self.area = tk.StringVar(value=default_area)
 
-        ttk.Label(self, text="BOT", style="SurfaceMuted.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(self, text="BOT ID", style="SurfaceMuted.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Combobox(
             self,
             textvariable=self.bot_id,
@@ -236,7 +250,7 @@ class SourceBar(ttk.Frame):
             width=6,
         ).grid(row=1, column=0, sticky="w", padx=(0, 10))
 
-        ttk.Label(self, text="AREA ZOEKEN", style="SurfaceMuted.TLabel").grid(row=0, column=1, sticky="w")
+        ttk.Label(self, text="AREA", style="SurfaceMuted.TLabel").grid(row=0, column=1, sticky="w")
         self.area_box = FilterCombobox(
             self,
             textvariable=self.area,
