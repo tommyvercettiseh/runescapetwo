@@ -51,6 +51,30 @@ def isolate_colour(screenshot_rgb: np.ndarray, mask: np.ndarray) -> np.ndarray:
     return isolated
 
 
+def filter_mask_by_blob_size(
+    mask: np.ndarray,
+    *,
+    minimum_area_px: int,
+    maximum_area_px: int | None,
+) -> tuple[np.ndarray, int]:
+    """Keep only connected colour regions inside the configured pixel range."""
+    minimum = max(1, int(minimum_area_px))
+    maximum = None if maximum_area_px is None else max(1, int(maximum_area_px))
+    count, labels, stats, _centroids = cv2.connectedComponentsWithStats(
+        (mask > 0).astype(np.uint8),
+        connectivity=8,
+    )
+    filtered = np.zeros(mask.shape, dtype=np.uint8)
+    valid_count = 0
+    for label in range(1, count):
+        area_px = int(stats[label, cv2.CC_STAT_AREA])
+        if area_px < minimum or (maximum is not None and area_px > maximum):
+            continue
+        filtered[labels == label] = 255
+        valid_count += 1
+    return filtered, valid_count
+
+
 def dominant_colours(
     screenshot_rgb: np.ndarray,
     *,
