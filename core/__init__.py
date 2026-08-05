@@ -5,7 +5,7 @@ from .profile import active_profile_name, load_profile
 
 
 def __getattr__(name: str) -> ModuleType:
-    if name in {"keyboard", "mouse", "vision"}:
+    if name in {"keyboard", "mouse", "mouse_actions", "vision"}:
         module = import_module(f"{__name__}.{name}")
         globals()[name] = module
         return module
@@ -13,6 +13,7 @@ def __getattr__(name: str) -> ModuleType:
 
 __all__ = [
     "mouse",
+    "mouse_actions",
     "keyboard",
     "vision",
     "load_profile",
