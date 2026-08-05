@@ -14,6 +14,7 @@ from PIL import Image, ImageTk
 from pynput.keyboard import Key as KeyboardKey
 from pynput.keyboard import Listener as KeyboardListener
 
+from core import mouse
 from core.vision.areas import load_areas
 from core.vision.color_matching import calculate_color_score
 from core.vision.colour_detection import (
@@ -43,6 +44,11 @@ from .preferences import load_preferences, save_preferences
 from .sensor_checks import SensorCheck, load_sensor_checks
 from .sensor_view import analyse_sensor_frame, sensor_description
 from .template_capture import TemplateCaptureOverlay
+from .template_target import (
+    MIN_X_PADDING_PERCENT,
+    horizontal_target_bounds,
+    normalize_x_padding_percent,
+)
 
 
 BG = "#0b0906"
@@ -598,11 +604,13 @@ class TemplatePage(ctk.CTkFrame):
         self.shape = tk.DoubleVar(value=85.0)
         self.colour = tk.DoubleVar(value=60.0)
         self.maximum = tk.StringVar(value="30")
+        self.x_padding = tk.StringVar(value="20")
         self.status = tk.StringVar(value="Selecteer een template of maak een nieuwe screenshot.")
         self.templates: list[str] = []
         self.rows: dict[str, ctk.CTkButton] = {}
         self.screenshot: np.ndarray | None = None
         self.region = None
+        self.best_valid_bounds: tuple[int, int, int, int] | None = None
         self._job: str | None = None
         self._build()
         self.after(100, self._tick)
@@ -678,7 +686,29 @@ class TemplatePage(ctk.CTkFrame):
         center.grid_rowconfigure(2, weight=1)
         center.grid_columnconfigure(0, weight=1)
         _label(center, "LIVE AREA", size=12, bold=True).grid(row=0, column=0, sticky="w", padx=14, pady=(14, 0))
-        _label(center, "Groen is geldig · rood faalt op kleur", muted=True, size=11).grid(row=1, column=0, sticky="w", padx=14, pady=(0, 10))
+        target_actions = ctk.CTkFrame(center, fg_color="transparent")
+        target_actions.grid(row=0, column=0, sticky="e", padx=14, pady=(8, 0))
+        _label(target_actions, "X PADDING ≥", muted=True, size=10).grid(row=0, column=0, padx=(0, 5))
+        x_padding_entry = ctk.CTkEntry(
+            target_actions,
+            textvariable=self.x_padding,
+            width=48,
+            height=34,
+            corner_radius=7,
+            fg_color=CARD_ALT,
+            border_color=BORDER,
+            text_color=TEXT,
+        )
+        x_padding_entry.grid(row=0, column=1, padx=(0, 4))
+        x_padding_entry.bind("<KeyRelease>", lambda _event: self._schedule())
+        _label(target_actions, "%", muted=True, size=10).grid(row=0, column=2, padx=(0, 8))
+        _button(
+            target_actions,
+            "Muis naar image",
+            self._move_to_image,
+            width=150,
+        ).grid(row=0, column=3)
+        _label(center, "Groen geldig · rood faalt · goud is de veilige muiszone", muted=True, size=11).grid(row=1, column=0, sticky="w", padx=14, pady=(0, 10))
         self.preview = ImageView(center)
         self.preview.grid(row=2, column=0, sticky="nsew", padx=12)
         self.results = ctk.CTkTextbox(
@@ -793,6 +823,7 @@ class TemplatePage(ctk.CTkFrame):
 
     def _select(self, name: str) -> None:
         self.selected = name
+        self.best_valid_bounds = None
         self._draw_templates()
         try:
             settings = load_settings(name)
@@ -848,6 +879,7 @@ class TemplatePage(ctk.CTkFrame):
 
     def _analyse(self) -> None:
         self._job = None
+        self.best_valid_bounds = None
         if self.screenshot is None or not self.selected:
             return
         started = time.perf_counter()
@@ -887,6 +919,34 @@ class TemplatePage(ctk.CTkFrame):
                 template_rgb,
                 self.screenshot[best_y : best_y + height, best_x : best_x + width],
             )
+            valid_rows = [row for row in rows if row[0]]
+            if valid_rows:
+                _valid, _shape, _colour, target_x, target_y = max(
+                    valid_rows,
+                    key=lambda row: (row[1], row[2]),
+                )
+                padding_percent = self._x_padding_percent()
+                local_bounds = horizontal_target_bounds(
+                    target_x,
+                    target_y,
+                    target_x + width,
+                    target_y + height,
+                    x_padding_percent=padding_percent,
+                )
+                origin_x, origin_y = self.region[0], self.region[1]
+                self.best_valid_bounds = (
+                    local_bounds[0] + origin_x,
+                    local_bounds[1] + origin_y,
+                    local_bounds[2] + origin_x,
+                    local_bounds[3] + origin_y,
+                )
+                cv2.rectangle(
+                    visual,
+                    (local_bounds[0], local_bounds[1]),
+                    (local_bounds[2], local_bounds[3]),
+                    (209, 166, 75),
+                    1,
+                )
             self.preview.show(visual)
             lines = ["STATUS         SHAPE    COLOUR      X      Y"]
             lines.extend(
@@ -912,6 +972,38 @@ class TemplatePage(ctk.CTkFrame):
         except Exception as exc:
             self.live.set(False)
             self.status.set(f"Fout: {exc}")
+
+    def _x_padding_percent(self) -> float:
+        try:
+            value = float(self.x_padding.get().strip().replace(",", "."))
+        except ValueError:
+            value = MIN_X_PADDING_PERCENT
+        return normalize_x_padding_percent(value)
+
+    def _move_to_image(self) -> None:
+        self.live.set(False)
+        if self.best_valid_bounds is None:
+            self._capture()
+        if self.best_valid_bounds is None:
+            self.status.set("Geen geldige image gevonden om naartoe te bewegen.")
+            return
+
+        padding_percent = self._x_padding_percent()
+        self.x_padding.set(f"{padding_percent:g}")
+        left, top, right, bottom = self.best_valid_bounds
+        try:
+            mouse.move_to_target(left, top, right, bottom)
+            error = mouse.last_engine_error()
+            if error:
+                self.status.set(f"Muis bewogen via fallback · Mouse Engine: {error}")
+            else:
+                x, y = mouse.position()
+                self.status.set(
+                    f"Muis naar {self.selected} bewogen · ({x}, {y}) · "
+                    f"X-padding {padding_percent:g}% · niet geklikt"
+                )
+        except Exception as exc:
+            self.status.set(f"Muis bewegen mislukt: {exc}")
 
     def _save(self) -> None:
         if not self.selected:
