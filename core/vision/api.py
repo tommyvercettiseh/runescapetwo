@@ -137,7 +137,13 @@ def click_image(
     if hit is None:
         return False
 
-    point = hit.random_point(int(profile["click_padding_px"]))
-    mouse.move_to(*point)
-    mouse.click(button)
+    padding = int(profile["click_padding_px"])
+    mouse.move_and_click_target(
+        hit.x,
+        hit.y,
+        hit.x + hit.width,
+        hit.y + hit.height,
+        padding_px=padding,
+        button=button,
+    )
     return True
