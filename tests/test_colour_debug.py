@@ -3,6 +3,7 @@ import numpy as np
 from tools.vision_tester.colour_debug import (
     dominant_colours,
     editor_sample_from_ranges,
+    filter_mask_by_blob_size,
     isolate_colour,
 )
 
@@ -23,6 +24,22 @@ def test_isolate_colour_keeps_only_masked_pixels() -> None:
         [[255, 0, 0], [0, 0, 0]],
         [[0, 0, 0], [255, 255, 255]],
     ]
+
+
+def test_filter_mask_by_blob_size_removes_regions_outside_limits() -> None:
+    mask = np.zeros((5, 8), dtype=np.uint8)
+    mask[0, 0] = 255
+    mask[1:3, 2:4] = 255
+    mask[1:4, 5:8] = 255
+
+    filtered, count = filter_mask_by_blob_size(
+        mask,
+        minimum_area_px=3,
+        maximum_area_px=5,
+    )
+
+    assert count == 1
+    assert np.count_nonzero(filtered) == 4
 
 
 def test_dominant_colours_reports_pixel_counts_and_percentages() -> None:
