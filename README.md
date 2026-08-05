@@ -211,12 +211,12 @@ Op Windows kun je ook dubbelklikken op `Start Unified Vision Tester.bat`, of de 
 De Unified Vision Tester heeft drie subpagina's:
 
 - **Colour testing** voor areas, pipetpresets, maskers en exacte blobpixels.
-- **Image testing** voor meerdere geselecteerde templates op één screenshot per frame.
+- **Image testing** voor templatecaptures, live thresholds, methodekeuze en productiepresets.
 - **Sensor checker** voor live regels zoals `low_hp`, `in_combat` en `blue_target_found`.
 
-Typ een deel van een area-, preset-, template- of sensornaam om de lijst direct te filteren. De liveknop blijft zichtbaar aan of uit staan. In de kleurtester blijft het pipet actief voor meerdere kleurmetingen totdat je het zelf uitschakelt. Dominante kleuren worden als kleurvlakken met RGB-, HSV- en percentagewaarden getoond.
+Typ een deel van een area-, template- of sensornaam om de lijst direct te filteren. De liveknop blijft zichtbaar aan of uit staan. In de kleurtester blijft het pipet actief voor meerdere kleurmetingen totdat je het zelf uitschakelt. Auto resize staat standaard aan; schakel dit uit om de preview handmatig tussen 10 en 100 procent te zoomen. Deze voorkeur wordt buiten de repository opgeslagen.
 
-Gebruik **Nieuwe kleur** om een preset toe te voegen. Je kunt een kleur met het pipet kiezen of de HSV-waarden handmatig aanpassen. Laad een bestaande preset om deze met **Wijzig opslaan** bij te werken of te verwijderen.
+In de Template Tester kun je een nieuwe template rechtstreeks uit een fullscreen screenshot knippen. Shape- en colour-thresholds, OpenCV-methode, area en max hits zijn live aanpasbaar. Sla de gekozen productie-instellingen daarna per template op in `config/templates_meta.json`.
 
 De Sensor checker ondersteunt drie soorten checks:
 
