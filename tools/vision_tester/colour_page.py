@@ -107,7 +107,12 @@ class ColourPage(ttk.Frame):
             ttk.Label(card, text=subtitle, style="SurfaceMuted.TLabel").pack(
                 anchor="w", pady=(2, 10)
             )
-            view = PreviewLabel(card, fallback_width=650, fallback_height=650)
+            view = PreviewLabel(
+                card,
+                fallback_width=650,
+                fallback_height=650,
+                allow_upscale=True,
+            )
             view.pack(fill="both", expand=True)
             views.append(view)
 
@@ -226,8 +231,10 @@ class ColourPage(ttk.Frame):
     def _pick(self, event) -> None:
         if self.capture is None or not self.pipette_active.get():
             return
-        x = int(event.x / max(self.capture_view.scale, 1e-9))
-        y = int(event.y / max(self.capture_view.scale, 1e-9))
+        coordinates = self.capture_view.image_coordinates(event.x, event.y)
+        if coordinates is None:
+            return
+        x, y = coordinates
         height, width = self.capture.shape[:2]
         if not 0 <= x < width or not 0 <= y < height:
             return
