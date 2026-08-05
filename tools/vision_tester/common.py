@@ -217,23 +217,29 @@ class FilterCombobox(ttk.Combobox):
         self.after_idle(lambda: self.selection_range(0, "end"))
 
 
-def _rounded_rectangle(canvas: tk.Canvas, width: int, height: int, radius: int, **kwargs):
-    radius = min(radius, width // 2, height // 2)
+def _rounded_rectangle(
+    canvas: tk.Canvas,
+    box_width: int,
+    box_height: int,
+    radius: int,
+    **kwargs,
+):
+    radius = min(radius, box_width // 2, box_height // 2)
     return canvas.create_polygon(
         radius,
         0,
-        width - radius,
+        box_width - radius,
         0,
-        width,
+        box_width,
         radius,
-        width,
-        height - radius,
-        width - radius,
-        height,
+        box_width,
+        box_height - radius,
+        box_width - radius,
+        box_height,
         radius,
-        height,
+        box_height,
         0,
-        height - radius,
+        box_height - radius,
         0,
         radius,
         smooth=True,
