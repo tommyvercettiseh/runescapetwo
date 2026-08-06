@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from definitions.bank.is_bank_all_selected import is_bank_all_selected
 from definitions.bank.is_bank_closed import is_bank_closed
 from definitions.bank.is_bank_open import is_bank_open
 from definitions.bank.is_bank_visible import is_bank_visible
@@ -34,6 +35,12 @@ DEFINITIONS: tuple[DefinitionEntry, ...] = (
         name="Is bank open",
         function=is_bank_open,
         description="Controleert of Bank_Deposit zichtbaar is in Bot_Area.",
+    ),
+    DefinitionEntry(
+        category="Bank",
+        name="Is bank all selected",
+        function=is_bank_all_selected,
+        description="Controleert of BankAllSelected zichtbaar is in Bot_Area.",
     ),
     DefinitionEntry(
         category="Bank",
