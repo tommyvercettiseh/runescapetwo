@@ -5,7 +5,7 @@ SCREEN_CROSS_IMAGE = "ScreenCross"
 SCREEN_AREA = "Bot_Area"
 
 SCREEN_BUTTON = "left"
-SCREEN_EDGE_PADDING = 2
+SCREEN_EDGE_PADDING = 20
 
 
 def click_close_screen(bot_id: int = 1):
