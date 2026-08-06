@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from definitions.bank.find_bank import find_bank
 from definitions.bank.is_bank_open import is_bank_open
+from definitions.bank.is_bank_visible import is_bank_visible
 
 
 DefinitionFunction = Callable[[int], Any]
@@ -21,9 +21,9 @@ class DefinitionEntry:
 DEFINITIONS: tuple[DefinitionEntry, ...] = (
     DefinitionEntry(
         category="Bank",
-        name="Find bank",
-        function=find_bank,
-        description="Zoekt de grootste geldige cyan bankblob in Bot_Area.",
+        name="Is bank visible",
+        function=is_bank_visible,
+        description="Controleert een cyan bankblob binnen de ingestelde pixelgrenzen.",
     ),
     DefinitionEntry(
         category="Bank",
