@@ -10,6 +10,11 @@ ROOT = Path(__file__).resolve().parents[2]
 AREAS_FILE = ROOT / "config" / "areas.json"
 
 _SCREEN_ALIASES = {"screen", "fullscreen", "full", "full_screen"}
+_AREA_ALIASES = {
+    # The 28 Inventory_Slot_* regions live inside this canonical crop.
+    # Keep the older generic `inventory` placeholder available separately.
+    "inventoryarea": "Inventory_Area_Pattern",
+}
 
 
 def load_areas() -> dict[str, Any]:
@@ -42,6 +47,15 @@ def _name_candidates(name: str) -> tuple[str, ...]:
 def _find_area_value(name: str, areas: dict[str, Any]) -> tuple[str, Any]:
     if name in areas:
         return name, areas[name]
+
+    normalized = _normalize_name(name)
+    aliased_name = _AREA_ALIASES.get(normalized)
+    if aliased_name is not None:
+        if aliased_name not in areas:
+            raise KeyError(
+                f"Area alias '{name}' points to missing area: {aliased_name}"
+            )
+        return aliased_name, areas[aliased_name]
 
     candidates = set(_name_candidates(name))
     for stored_name, value in areas.items():
