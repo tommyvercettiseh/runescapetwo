@@ -31,6 +31,13 @@ ACTION_NAMES = (
     "Drop inventory",
 )
 
+BAR_COLOURS = {
+    "neutral": "#6B7280",
+    "running": "#2563EB",
+    "success": "#15803D",
+    "failure": "#B91C1C",
+}
+
 
 def format_result(result: Any) -> str:
     if isinstance(result, bool):
@@ -38,12 +45,30 @@ def format_result(result: Any) -> str:
     if result is None:
         return "RESULT: None"
     if is_dataclass(result):
-        return "\n".join(f"{key}: {value}" for key, value in asdict(result).items())
+        return "\n".join(
+            f"{key}: {value}" for key, value in asdict(result).items()
+        )
     if isinstance(result, dict):
         return "\n".join(f"{key}: {value}" for key, value in result.items())
     if isinstance(result, (list, tuple, set)):
         return "\n".join(map(str, result)) or "Empty result."
     return repr(result)
+
+
+def result_success(result: Any) -> bool | None:
+    if isinstance(result, bool):
+        return result
+
+    success = getattr(result, "success", None)
+    if isinstance(success, bool):
+        return success
+
+    if isinstance(result, dict):
+        success = result.get("success")
+        if isinstance(success, bool):
+            return success
+
+    return None
 
 
 def parse_images(text: str) -> list[str]:
@@ -60,8 +85,8 @@ class UnifiedTester(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("RuneScape Two - Unified Tester")
-        self.geometry("900x680")
-        self.minsize(800, 580)
+        self.geometry("900x700")
+        self.minsize(800, 600)
 
         self.bot_id_var = tk.IntVar(value=1)
         self.status_var = tk.StringVar(value="Ready.")
@@ -75,6 +100,7 @@ class UnifiedTester(tk.Tk):
         self.dry_run_var = tk.BooleanVar(value=True)
 
         self._running = False
+        self._result_bars: dict[tk.Text, tk.Label] = {}
         self._worker_results: SimpleQueue[
             tuple[tk.Text, str, float, Any, Exception | None]
         ] = SimpleQueue()
@@ -91,6 +117,7 @@ class UnifiedTester(tk.Tk):
 
         header = ttk.Frame(root)
         header.grid(row=0, column=0, sticky="ew", pady=(0, 12))
+
         ttk.Label(
             header,
             text="Unified Tester",
@@ -104,6 +131,7 @@ class UnifiedTester(tk.Tk):
             textvariable=self.bot_id_var,
             width=6,
         ).pack(side="left")
+
         ttk.Button(
             header,
             text="Emergency stop",
@@ -144,13 +172,28 @@ class UnifiedTester(tk.Tk):
         )
         parent.rowconfigure(row, weight=1)
         parent.columnconfigure(1, weight=1)
-        frame.rowconfigure(0, weight=1)
+        frame.rowconfigure(1, weight=1)
         frame.columnconfigure(0, weight=1)
+
+        bar = tk.Label(
+            frame,
+            text="READY.",
+            anchor="w",
+            bg=BAR_COLOURS["neutral"],
+            fg="white",
+            font=("Segoe UI", 10, "bold"),
+            padx=10,
+            pady=6,
+        )
+        bar.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+
         text = tk.Text(frame, wrap="word", state="disabled")
-        text.grid(row=0, column=0, sticky="nsew")
+        text.grid(row=1, column=0, sticky="nsew")
         scrollbar = ttk.Scrollbar(frame, command=text.yview)
-        scrollbar.grid(row=0, column=1, sticky="ns")
+        scrollbar.grid(row=1, column=1, sticky="ns")
         text.configure(yscrollcommand=scrollbar.set)
+
+        self._result_bars[text] = bar
         return text
 
     def _build_sensor_tab(self) -> None:
@@ -362,6 +405,10 @@ class UnifiedTester(tk.Tk):
     def _on_sensor_category(self, _event: tk.Event) -> None:
         self._load_sensors(self.sensor_category_var.get())
 
+    def _set_result_bar(self, target: tk.Text, text: str, state: str) -> None:
+        bar = self._result_bars[target]
+        bar.configure(text=text, bg=BAR_COLOURS[state])
+
     def _set_result(self, target: tk.Text, value: str) -> None:
         target.configure(state="normal")
         target.delete("1.0", "end")
@@ -391,6 +438,7 @@ class UnifiedTester(tk.Tk):
             return
 
         self._set_running(True)
+        self._set_result_bar(target, "RUNNING.", "running")
         self.status_var.set(f"Running {label}")
 
         def worker() -> None:
@@ -427,9 +475,17 @@ class UnifiedTester(tk.Tk):
                 target,
                 f"ERROR\n\n{type(error).__name__}: {error}",
             )
+            self._set_result_bar(target, "ERROR.", "failure")
             self.status_var.set(f"Failed after {elapsed * 1000:.1f} ms.")
         else:
             self._set_result(target, format_result(result))
+            success = result_success(result)
+            if success is True:
+                self._set_result_bar(target, "TRUE.", "success")
+            elif success is False:
+                self._set_result_bar(target, "FALSE.", "failure")
+            else:
+                self._set_result_bar(target, "DONE.", "neutral")
             self.status_var.set(f"Done in {elapsed * 1000:.1f} ms.")
 
         self._set_running(False)
