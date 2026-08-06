@@ -30,6 +30,8 @@ SLOT_COLOURS = {
 
 class UnifiedTester(BaseUnifiedTester):
     def __init__(self) -> None:
+        super().__init__()
+
         self.inventory_image_var = tk.StringVar(value="Item_Axe")
         self.inventory_summary_var = tk.StringVar(
             value="Occupied: 0/28. Full: FALSE. Empty: TRUE."
@@ -42,7 +44,6 @@ class UnifiedTester(BaseUnifiedTester):
             tuple[float, InventoryCheckResult | None, Exception | None]
         ] = SimpleQueue()
 
-        super().__init__()
         self.geometry("900x720")
         self.minsize(800, 620)
         self._add_inventory_tab()
