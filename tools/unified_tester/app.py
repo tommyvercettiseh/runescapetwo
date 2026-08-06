@@ -15,6 +15,7 @@ from actions.bank.find_bank import find_bank
 from actions.bank.open_bank import open_bank
 from actions.inventory.drop_inventory import drop_inventory
 from core import mouse_actions
+from definitions.bank.is_bank_all_selected import is_bank_all_selected
 from definitions.bank.is_bank_closed import is_bank_closed
 from definitions.bank.is_bank_open import is_bank_open
 from definitions.bank.is_bank_visible import is_bank_visible
@@ -33,15 +34,15 @@ ACTION_NAMES = (
 
 def format_result(result: Any) -> str:
     if isinstance(result, bool):
-        return f"RESULTAAT: {'TRUE' if result else 'FALSE'}"
+        return f"RESULT: {'TRUE' if result else 'FALSE'}"
     if result is None:
-        return "RESULTAAT: None"
+        return "RESULT: None"
     if is_dataclass(result):
         return "\n".join(f"{key}: {value}" for key, value in asdict(result).items())
     if isinstance(result, dict):
         return "\n".join(f"{key}: {value}" for key, value in result.items())
     if isinstance(result, (list, tuple, set)):
-        return "\n".join(map(str, result)) or "Leeg resultaat"
+        return "\n".join(map(str, result)) or "Empty result."
     return repr(result)
 
 
@@ -63,7 +64,7 @@ class UnifiedTester(tk.Tk):
         self.minsize(800, 580)
 
         self.bot_id_var = tk.IntVar(value=1)
-        self.status_var = tk.StringVar(value="Klaar.")
+        self.status_var = tk.StringVar(value="Ready.")
         self.sensor_category_var = tk.StringVar()
         self.sensor_var = tk.StringVar()
         self.action_var = tk.StringVar(value="Bank inventory")
@@ -74,7 +75,9 @@ class UnifiedTester(tk.Tk):
         self.dry_run_var = tk.BooleanVar(value=True)
 
         self._running = False
-        self._worker_results: SimpleQueue[tuple[tk.Text, str, float, Any, Exception | None]] = SimpleQueue()
+        self._worker_results: SimpleQueue[
+            tuple[tk.Text, str, float, Any, Exception | None]
+        ] = SimpleQueue()
 
         self._build_ui()
         self._load_sensor_categories()
@@ -88,15 +91,29 @@ class UnifiedTester(tk.Tk):
 
         header = ttk.Frame(root)
         header.grid(row=0, column=0, sticky="ew", pady=(0, 12))
-        ttk.Label(header, text="Unified Tester", font=("Segoe UI", 17, "bold")).pack(side="left")
+        ttk.Label(
+            header,
+            text="Unified Tester",
+            font=("Segoe UI", 17, "bold"),
+        ).pack(side="left")
         ttk.Label(header, text="Bot ID").pack(side="left", padx=(28, 8))
-        ttk.Spinbox(header, from_=1, to=4, textvariable=self.bot_id_var, width=6).pack(side="left")
-        ttk.Button(header, text="Emergency stop", command=self._emergency_stop).pack(
-            side="right"
-        )
-        ttk.Button(header, text="Reset stop", command=self._reset_emergency_stop).pack(
-            side="right", padx=(0, 8)
-        )
+        ttk.Spinbox(
+            header,
+            from_=1,
+            to=4,
+            textvariable=self.bot_id_var,
+            width=6,
+        ).pack(side="left")
+        ttk.Button(
+            header,
+            text="Emergency stop",
+            command=self._emergency_stop,
+        ).pack(side="right")
+        ttk.Button(
+            header,
+            text="Reset stop",
+            command=self._reset_emergency_stop,
+        ).pack(side="right", padx=(0, 8))
 
         self.tabs = ttk.Notebook(root)
         self.tabs.grid(row=1, column=0, sticky="nsew")
@@ -117,8 +134,14 @@ class UnifiedTester(tk.Tk):
         )
 
     def _result_box(self, parent: ttk.Frame, row: int) -> tk.Text:
-        frame = ttk.LabelFrame(parent, text="Resultaat", padding=8)
-        frame.grid(row=row, column=0, columnspan=3, sticky="nsew", pady=(14, 0))
+        frame = ttk.LabelFrame(parent, text="Result", padding=8)
+        frame.grid(
+            row=row,
+            column=0,
+            columnspan=3,
+            sticky="nsew",
+            pady=(14, 0),
+        )
         parent.rowconfigure(row, weight=1)
         parent.columnconfigure(1, weight=1)
         frame.rowconfigure(0, weight=1)
@@ -131,8 +154,11 @@ class UnifiedTester(tk.Tk):
         return text
 
     def _build_sensor_tab(self) -> None:
-        ttk.Label(self.sensor_tab, text="Categorie").grid(
-            row=0, column=0, sticky="w", pady=5
+        ttk.Label(self.sensor_tab, text="Category").grid(
+            row=0,
+            column=0,
+            sticky="w",
+            pady=5,
         )
         self.sensor_category_box = ttk.Combobox(
             self.sensor_tab,
@@ -140,7 +166,11 @@ class UnifiedTester(tk.Tk):
             state="readonly",
         )
         self.sensor_category_box.grid(
-            row=0, column=1, sticky="ew", padx=(12, 0), pady=5
+            row=0,
+            column=1,
+            sticky="ew",
+            padx=(12, 0),
+            pady=5,
         )
         self.sensor_category_box.bind(
             "<<ComboboxSelected>>",
@@ -148,7 +178,10 @@ class UnifiedTester(tk.Tk):
         )
 
         ttk.Label(self.sensor_tab, text="Sensor").grid(
-            row=1, column=0, sticky="w", pady=5
+            row=1,
+            column=0,
+            sticky="w",
+            pady=5,
         )
         self.sensor_box = ttk.Combobox(
             self.sensor_tab,
@@ -156,7 +189,11 @@ class UnifiedTester(tk.Tk):
             state="readonly",
         )
         self.sensor_box.grid(
-            row=1, column=1, sticky="ew", padx=(12, 0), pady=5
+            row=1,
+            column=1,
+            sticky="ew",
+            padx=(12, 0),
+            pady=5,
         )
 
         self.sensor_run_button = ttk.Button(
@@ -184,7 +221,10 @@ class UnifiedTester(tk.Tk):
         )
         for row, label in enumerate(labels):
             ttk.Label(self.action_tab, text=label).grid(
-                row=row, column=0, sticky="w", pady=5
+                row=row,
+                column=0,
+                sticky="w",
+                pady=5,
             )
 
         self.action_box = ttk.Combobox(
@@ -194,7 +234,11 @@ class UnifiedTester(tk.Tk):
             state="readonly",
         )
         self.action_box.grid(
-            row=0, column=1, sticky="ew", padx=(12, 0), pady=5
+            row=0,
+            column=1,
+            sticky="ew",
+            padx=(12, 0),
+            pady=5,
         )
         self.action_box.bind(
             "<<ComboboxSelected>>",
@@ -206,7 +250,11 @@ class UnifiedTester(tk.Tk):
             textvariable=self.exclude_images_var,
         )
         self.exclude_entry.grid(
-            row=1, column=1, sticky="ew", padx=(12, 0), pady=5
+            row=1,
+            column=1,
+            sticky="ew",
+            padx=(12, 0),
+            pady=5,
         )
 
         self.optional_exclude_entry = ttk.Entry(
@@ -214,7 +262,11 @@ class UnifiedTester(tk.Tk):
             textvariable=self.optional_exclude_images_var,
         )
         self.optional_exclude_entry.grid(
-            row=2, column=1, sticky="ew", padx=(12, 0), pady=5
+            row=2,
+            column=1,
+            sticky="ew",
+            padx=(12, 0),
+            pady=5,
         )
 
         self.pattern_box = ttk.Combobox(
@@ -232,7 +284,11 @@ class UnifiedTester(tk.Tk):
             state="readonly",
         )
         self.pattern_box.grid(
-            row=3, column=1, sticky="ew", padx=(12, 0), pady=5
+            row=3,
+            column=1,
+            sticky="ew",
+            padx=(12, 0),
+            pady=5,
         )
 
         self.selection_box = ttk.Combobox(
@@ -242,14 +298,24 @@ class UnifiedTester(tk.Tk):
             state="readonly",
         )
         self.selection_box.grid(
-            row=4, column=1, sticky="ew", padx=(12, 0), pady=5
+            row=4,
+            column=1,
+            sticky="ew",
+            padx=(12, 0),
+            pady=5,
         )
 
         ttk.Checkbutton(
             self.action_tab,
             text="Dry run",
             variable=self.dry_run_var,
-        ).grid(row=5, column=1, sticky="w", padx=(12, 0), pady=5)
+        ).grid(
+            row=5,
+            column=1,
+            sticky="w",
+            padx=(12, 0),
+            pady=5,
+        )
 
         self.action_run_button = ttk.Button(
             self.action_tab,
@@ -268,11 +334,17 @@ class UnifiedTester(tk.Tk):
         ttk.Label(
             self.action_tab,
             text=(
-                "Protected images moeten gevonden worden, anders stopt de action "
-                "zonder verdere clicks. Namen zijn komma-gescheiden."
+                "Protected images must be found. Otherwise, the action stops. "
+                "Separate names with commas."
             ),
             wraplength=720,
-        ).grid(row=6, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        ).grid(
+            row=6,
+            column=0,
+            columnspan=3,
+            sticky="w",
+            pady=(8, 0),
+        )
         self.action_result = self._result_box(self.action_tab, 7)
 
     def _load_sensor_categories(self) -> None:
@@ -299,7 +371,7 @@ class UnifiedTester(tk.Tk):
     def _bot_id(self) -> int:
         bot_id = int(self.bot_id_var.get())
         if bot_id < 1:
-            raise ValueError("Bot ID moet positief zijn")
+            raise ValueError("Bot ID must be positive.")
         return bot_id
 
     def _set_running(self, running: bool) -> None:
@@ -315,11 +387,11 @@ class UnifiedTester(tk.Tk):
         function: Callable[[], Any],
     ) -> None:
         if self._running:
-            messagebox.showinfo("Bezig", "Er loopt al een test.")
+            messagebox.showinfo("Busy", "A test is already running.")
             return
 
         self._set_running(True)
-        self.status_var.set(f"Bezig met {label}...")
+        self.status_var.set(f"Running {label}")
 
         def worker() -> None:
             started = time.perf_counter()
@@ -343,7 +415,9 @@ class UnifiedTester(tk.Tk):
 
     def _poll_worker(self) -> None:
         try:
-            target, _label, elapsed, result, error = self._worker_results.get_nowait()
+            target, _label, elapsed, result, error = (
+                self._worker_results.get_nowait()
+            )
         except Empty:
             self.after(25, self._poll_worker)
             return
@@ -351,12 +425,12 @@ class UnifiedTester(tk.Tk):
         if error is not None:
             self._set_result(
                 target,
-                f"FOUT\n\n{type(error).__name__}: {error}",
+                f"ERROR\n\n{type(error).__name__}: {error}",
             )
-            self.status_var.set(f"Mislukt na {elapsed * 1000:.1f} ms")
+            self.status_var.set(f"Failed after {elapsed * 1000:.1f} ms.")
         else:
             self._set_result(target, format_result(result))
-            self.status_var.set(f"Klaar in {elapsed * 1000:.1f} ms")
+            self.status_var.set(f"Done in {elapsed * 1000:.1f} ms.")
 
         self._set_running(False)
 
@@ -399,8 +473,9 @@ class UnifiedTester(tk.Tk):
             "executed": False,
             "bank_visible": is_bank_visible(bot_id),
             "bank_open": is_bank_open(bot_id),
+            "bank_all_selected": is_bank_all_selected(bot_id),
             "bank_closed": is_bank_closed(bot_id),
-            "note": "Dry run: geen muis- of keyboardactie uitgevoerd.",
+            "note": "Dry run. No input sent.",
         }
 
     def _run_action(self) -> None:
@@ -417,8 +492,8 @@ class UnifiedTester(tk.Tk):
 
         if not dry_run:
             if not messagebox.askyesno(
-                "Action uitvoeren",
-                f"Echt uitvoeren: {action}?",
+                "Run action",
+                f"Run {action}?",
             ):
                 return
 
@@ -449,18 +524,18 @@ class UnifiedTester(tk.Tk):
         elif action == "Click bank":
             call = lambda: click_bank(bot_id)
         else:
-            messagebox.showerror("Action", "Onbekende action")
+            messagebox.showerror("Action", "Unknown action.")
             return
 
         self._execute(self.action_result, action, call)
 
     def _emergency_stop(self) -> None:
         mouse_actions.emergency_stop()
-        self.status_var.set("Emergency stop geactiveerd.")
+        self.status_var.set("Emergency stop active.")
 
     def _reset_emergency_stop(self) -> None:
         mouse_actions.reset_emergency_stop()
-        self.status_var.set("Emergency stop gereset.")
+        self.status_var.set("Emergency stop reset.")
 
 
 if __name__ == "__main__":
