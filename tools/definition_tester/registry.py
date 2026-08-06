@@ -39,7 +39,7 @@ DEFINITIONS: tuple[DefinitionEntry, ...] = (
         category="Bank",
         name="Is bank closed",
         function=is_bank_closed,
-        description="Controleert of Bank_Deposit en ScreenCross beide verdwenen zijn.",
+        description="Controleert of Bank_Deposit niet zichtbaar is in Bot_Area.",
     ),
     DefinitionEntry(
         category="Interface",
