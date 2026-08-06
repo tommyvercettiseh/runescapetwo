@@ -26,45 +26,45 @@ class DefinitionEntry:
 DEFINITIONS: tuple[DefinitionEntry, ...] = (
     DefinitionEntry(
         category="Bank",
-        name="Is bank visible",
+        name="Bank visible.",
         function=is_bank_visible,
-        description="Controleert een cyan bankblob binnen de ingestelde pixelgrenzen.",
+        description="Detects the bank object.",
     ),
     DefinitionEntry(
         category="Bank",
-        name="Is bank open",
+        name="Bank open.",
         function=is_bank_open,
-        description="Controleert of Bank_Deposit zichtbaar is in Bot_Area.",
+        description="Detects Bank_Deposit.",
     ),
     DefinitionEntry(
         category="Bank",
-        name="Is bank all selected",
+        name="Bank All selected.",
         function=is_bank_all_selected,
-        description="Controleert of BankAllSelected zichtbaar is in Bot_Area.",
+        description="Detects BankAllSelected.",
     ),
     DefinitionEntry(
         category="Bank",
-        name="Is bank closed",
+        name="Bank closed.",
         function=is_bank_closed,
-        description="Controleert of Bank_Deposit niet zichtbaar is in Bot_Area.",
+        description="Checks whether the bank is closed.",
     ),
     DefinitionEntry(
         category="Interface",
-        name="Is screen open",
+        name="Screen open.",
         function=is_screen_open,
-        description="Controleert of ScreenCross zichtbaar is in Bot_Area.",
+        description="Detects ScreenCross.",
     ),
     DefinitionEntry(
         category="Inventory",
-        name="Is inventory full",
+        name="Inventory full.",
         function=is_inventory_full,
-        description="Controleert of alle 28 inventory-slots bezet zijn.",
+        description="Checks all 28 slots.",
     ),
     DefinitionEntry(
         category="Inventory",
-        name="Is inventory empty",
+        name="Inventory empty.",
         function=is_inventory_empty,
-        description="Controleert of alle 28 inventory-slots leeg zijn.",
+        description="Checks all 28 slots.",
     ),
 )
 
@@ -81,4 +81,4 @@ def get_definition(category: str, name: str) -> DefinitionEntry:
     for entry in DEFINITIONS:
         if entry.category == category and entry.name == name:
             return entry
-    raise KeyError(f"Definition niet geregistreerd: {category} / {name}")
+    raise KeyError(f"Definition not registered: {category} / {name}")
