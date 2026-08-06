@@ -136,14 +136,14 @@ class UnifiedTester(BaseUnifiedTester):
             column = (number - 1) % 4
             label = tk.Label(
                 grid_frame,
-                text=f"{number:02d}\nEMPTY",
+                text=f"{number:02d}\nEMPTY\nBG --%",
                 bg=SLOT_COLOURS["empty"],
                 fg="black",
                 relief="solid",
                 borderwidth=1,
-                font=("Segoe UI", 10, "bold"),
+                font=("Segoe UI", 9, "bold"),
                 padx=8,
-                pady=8,
+                pady=6,
             )
             label.grid(
                 row=row,
@@ -169,6 +169,10 @@ class UnifiedTester(BaseUnifiedTester):
             SLOT_COLOURS["image"],
             "white",
         )
+        ttk.Label(
+            legend,
+            text="BG = detected inventory-background percentage.",
+        ).pack(side="left", padx=(8, 0))
 
     def _legend_item(
         self,
@@ -263,29 +267,36 @@ class UnifiedTester(BaseUnifiedTester):
 
         for slot in result.slots:
             label = self._inventory_slot_labels[slot.number]
+            background = slot.background_percentage * 100.0
             if slot.number in image_slots:
                 label.configure(
-                    text=f"{slot.number:02d}\nIMAGE",
+                    text=f"{slot.number:02d}\nIMAGE\nBG {background:.0f}%",
                     bg=SLOT_COLOURS["image"],
                     fg="white",
                 )
-            elif slot.occupied:
+            elif result.is_slot_occupied(slot.number):
                 label.configure(
-                    text=f"{slot.number:02d}\nOCCUPIED",
+                    text=f"{slot.number:02d}\nOCCUPIED\nBG {background:.0f}%",
                     bg=SLOT_COLOURS["occupied"],
                     fg="white",
                 )
             else:
                 label.configure(
-                    text=f"{slot.number:02d}\nEMPTY",
+                    text=f"{slot.number:02d}\nEMPTY\nBG {background:.0f}%",
                     bg=SLOT_COLOURS["empty"],
                     fg="black",
                 )
 
+        occupied_slots_text = (
+            ", ".join(map(str, result.occupied_slots))
+            if result.occupied_slots
+            else "None"
+        )
         self.inventory_summary_var.set(
             f"Occupied: {result.occupied_count}/28. "
             f"Full: {'TRUE' if result.full else 'FALSE'}. "
-            f"Empty: {'TRUE' if result.empty else 'FALSE'}."
+            f"Empty: {'TRUE' if result.empty else 'FALSE'}. "
+            f"Slots: {occupied_slots_text}."
         )
 
         image_slots_text = (
@@ -294,10 +305,16 @@ class UnifiedTester(BaseUnifiedTester):
             else "None"
         )
         prefix = "Demo. " if result.demo else ""
-        self.inventory_image_summary_var.set(
-            f"{prefix}{result.image_name or 'No image'} slots: "
-            f"{image_slots_text}."
-        )
+        if result.image_error:
+            self.inventory_image_summary_var.set(
+                f"{prefix}{result.image_name or 'Image'} error: "
+                f"{result.image_error}. Occupancy result is still valid."
+            )
+        else:
+            self.inventory_image_summary_var.set(
+                f"{prefix}{result.image_name or 'No image'} slots: "
+                f"{image_slots_text}."
+            )
 
         if result.full:
             self._set_inventory_bar("FULL.", "success")
