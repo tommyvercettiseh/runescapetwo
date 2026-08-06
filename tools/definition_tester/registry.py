@@ -3,8 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from definitions.bank.is_bank_closed import is_bank_closed
 from definitions.bank.is_bank_open import is_bank_open
 from definitions.bank.is_bank_visible import is_bank_visible
+from definitions.interface.is_screen_open import is_screen_open
 
 
 DefinitionFunction = Callable[[int], Any]
@@ -30,6 +32,18 @@ DEFINITIONS: tuple[DefinitionEntry, ...] = (
         name="Is bank open",
         function=is_bank_open,
         description="Controleert of Bank_Deposit zichtbaar is in Bot_Area.",
+    ),
+    DefinitionEntry(
+        category="Bank",
+        name="Is bank closed",
+        function=is_bank_closed,
+        description="Controleert of Bank_Deposit en ScreenCross beide verdwenen zijn.",
+    ),
+    DefinitionEntry(
+        category="Interface",
+        name="Is screen open",
+        function=is_screen_open,
+        description="Controleert of ScreenCross zichtbaar is in Bot_Area.",
     ),
 )
 
