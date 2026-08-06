@@ -125,12 +125,6 @@ def _wait_for_inventory_change(
     return "timeout", current
 
 
-def _click_error(result: object) -> str:
-    message = getattr(result, "message", None)
-    error = getattr(result, "error", None)
-    return str(message or error or "Slot click failed.")
-
-
 def bank_inventory(
     bot_id: int = 1,
     *,
@@ -251,7 +245,7 @@ def bank_inventory(
         if not click_result:
             return BankInventoryResult(
                 success=False,
-                message=_click_error(click_result),
+                message="Slot click failed.",
                 bank_open=True,
                 clicks=clicks,
                 excluded_slots=tuple(sorted(excluded)),
