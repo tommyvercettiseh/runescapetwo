@@ -1,5 +1,4 @@
-from core import mouse
-from core.vision.areas import get_region
+from core import mouse_actions
 
 
 SLOT_PREFIX = "Inventory_Slot_"
@@ -10,20 +9,14 @@ CLICK_PADDING = 6
 def click_inventory_slot(
     slot: int,
     bot_id: int = 1,
-) -> bool:
+) -> mouse_actions.MouseActionResult:
     if slot < 1 or slot > TOTAL_SLOTS:
         raise ValueError(f"slot must be between 1 and {TOTAL_SLOTS}")
 
-    x, y, width, height = get_region(
-        f"{SLOT_PREFIX}{slot}",
+    return mouse_actions.click_in_area(
+        area_name=f"{SLOT_PREFIX}{slot}",
         bot_id=bot_id,
+        button="left",
+        area_edge_padding=CLICK_PADDING,
+        require_external_mouse=True,
     )
-
-    mouse.move_and_click_target(
-        x,
-        y,
-        x + width,
-        y + height,
-        padding_px=CLICK_PADDING,
-    )
-    return True
