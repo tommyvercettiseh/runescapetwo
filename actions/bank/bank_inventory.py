@@ -6,6 +6,7 @@ import time
 
 from core import mouse
 from core.vision.areas import get_region
+from definitions.bank.is_bank_all_selected import is_bank_all_selected
 from definitions.bank.is_bank_open import is_bank_open
 from definitions.inventory.get_inventory_item_slots import get_inventory_item_slots
 from definitions.inventory.get_inventory_state import InventorySlot, get_inventory_state
@@ -167,6 +168,17 @@ def bank_inventory(
             dry_run=dry_run,
         )
 
+    if not is_bank_all_selected(bot_id):
+        return BankInventoryResult(
+            success=False,
+            message=(
+                "Bank inventory gestopt: bank quantity 'All' is niet geselecteerd "
+                "of BankAllSelected kon niet worden gevonden."
+            ),
+            bank_open=True,
+            dry_run=dry_run,
+        )
+
     while True:
         if not is_bank_open(bot_id):
             return BankInventoryResult(
@@ -277,7 +289,7 @@ def bank_inventory(
                 success=False,
                 message=(
                     "Bank inventory gestopt: de inventory veranderde niet na de "
-                    "click. Controleer bank quantity 'All', focus en slotdetectie."
+                    "click. Controleer focus, BankAllSelected en slotdetectie."
                 ),
                 bank_open=True,
                 clicks=clicks,
