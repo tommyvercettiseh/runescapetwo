@@ -8,5 +8,5 @@ if not exist ".venv\Scripts\python.exe" (
     exit /b 1
 )
 
-".venv\Scripts\python.exe" -m tools.unified_tester.inventory_app
+".venv\Scripts\python.exe" -m tools.unified_tester.scenario_app
 if errorlevel 1 pause
