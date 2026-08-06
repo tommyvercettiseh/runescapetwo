@@ -62,7 +62,7 @@ def format_ranges(ranges) -> str:
 
 
 def apply_basic_theme() -> None:
-    """Give all existing Vision Tester pages the simple Unified Tester look."""
+    """Give the existing Template and Sensor pages a simple light theme."""
     ctk.set_appearance_mode("light")
 
     modern_ui.BG = BASIC_BG
@@ -162,6 +162,14 @@ class BasicSourceControls(ttk.Frame):
 
     def bot(self) -> int:
         return int(self.bot_id.get())
+
+
+class BasicProgressbar(ttk.Progressbar):
+    def __init__(self, parent, **kwargs):
+        super().__init__(parent, maximum=100, mode="determinate", **kwargs)
+
+    def set(self, value: float) -> None:
+        self["value"] = min(100.0, max(0.0, float(value) * 100.0))
 
 
 class PresetColourPage(modern_ui.ColourPage):
@@ -295,26 +303,22 @@ class PresetColourPage(modern_ui.ColourPage):
         maximum_entry.grid(row=0, column=3, padx=(5, 12))
         maximum_entry.bind("<KeyRelease>", lambda _event: self._render())
 
-        self.pipette_button = modern_ui._button(
+        self.pipette_button = ttk.Button(
             controls,
-            "Pipette",
-            self._toggle_pipette,
-            width=78,
+            text="Pipette",
+            command=self._toggle_pipette,
         )
         self.pipette_button.grid(row=0, column=4, padx=(0, 5))
-        self.move_colour_button = modern_ui._button(
+        self.move_colour_button = ttk.Button(
             controls,
-            "Move colour",
-            lambda: self._start_colour_mouse_action(click=False),
-            width=92,
+            text="Move colour",
+            command=lambda: self._start_colour_mouse_action(click=False),
         )
         self.move_colour_button.grid(row=0, column=5, padx=5)
-        self.click_colour_button = modern_ui._button(
+        self.click_colour_button = ttk.Button(
             controls,
-            "Click colour",
-            lambda: self._start_colour_mouse_action(click=True),
-            primary=True,
-            width=92,
+            text="Click colour",
+            command=lambda: self._start_colour_mouse_action(click=True),
         )
         self.click_colour_button.grid(row=0, column=6, padx=5)
 
@@ -338,19 +342,13 @@ class PresetColourPage(modern_ui.ColourPage):
             text=f"Zoom {self.zoom.get()}%",
         )
         self.zoom_label.grid(row=0, column=9, padx=(10, 4))
-        self.zoom_slider = ctk.CTkSlider(
+        self.zoom_slider = ttk.Scale(
             controls,
             from_=10,
             to=100,
-            number_of_steps=90,
             variable=self.zoom,
             command=self._zoom_changed,
-            width=105,
-            height=14,
-            progress_color=BASIC_BLUE,
-            button_color=BASIC_BLUE,
-            button_hover_color=BASIC_BLUE_HOVER,
-            fg_color="#d1d5db",
+            length=105,
         )
         self.zoom_slider.grid(row=0, column=10, padx=(0, 12))
 
@@ -371,13 +369,7 @@ class PresetColourPage(modern_ui.ColourPage):
             command=self._reset_blob_history,
         ).grid(row=0, column=14, padx=(8, 0))
 
-        self.blob_meter = ctk.CTkProgressBar(
-            controls,
-            height=6,
-            corner_radius=2,
-            fg_color="#d1d5db",
-            progress_color=BASIC_GREEN,
-        )
+        self.blob_meter = BasicProgressbar(controls)
         self.blob_meter.grid(
             row=1,
             column=0,
@@ -433,6 +425,18 @@ class PresetColourPage(modern_ui.ColourPage):
             relief="sunken",
             padding=(7, 3),
         ).grid(row=4, column=0, sticky="ew", padx=10, pady=(0, 8))
+
+    def _toggle_pipette(self) -> None:
+        self.pipette = not self.pipette
+        self.pipette_button.configure(
+            text="Pipette ON" if self.pipette else "Pipette"
+        )
+        self.capture_view.configure(cursor="crosshair" if self.pipette else "")
+        self.status.set(
+            "Pipette active. Click in Live area."
+            if self.pipette
+            else "Pipette disabled."
+        )
 
     def _preset_search_changed(self, *_args) -> None:
         self._refresh_preset_box()
@@ -613,17 +617,24 @@ class VisionTester(tk.Tk):
         self.tabs = ttk.Notebook(root)
         self.tabs.grid(row=1, column=0, sticky="nsew")
 
-        self.colour_page = PresetColourPage(self.tabs)
-        self.template_page = modern_ui.TemplatePage(self.tabs)
-        self.sensor_page = modern_ui.SensorPage(self.tabs)
+        self.colour_host = tk.Frame(self.tabs, background=BASIC_BG)
+        self.template_host = tk.Frame(self.tabs, background=BASIC_BG)
+        self.sensor_host = tk.Frame(self.tabs, background=BASIC_BG)
+        self.tabs.add(self.colour_host, text="Colour")
+        self.tabs.add(self.template_host, text="Template")
+        self.tabs.add(self.sensor_host, text="Sensor")
+
+        self.colour_page = PresetColourPage(self.colour_host)
+        self.template_page = modern_ui.TemplatePage(self.template_host)
+        self.sensor_page = modern_ui.SensorPage(self.sensor_host)
+        self.colour_page.pack(fill="both", expand=True)
+        self.template_page.pack(fill="both", expand=True)
+        self.sensor_page.pack(fill="both", expand=True)
         self.pages = [
             self.colour_page,
             self.template_page,
             self.sensor_page,
         ]
-        self.tabs.add(self.colour_page, text="Colour")
-        self.tabs.add(self.template_page, text="Template")
-        self.tabs.add(self.sensor_page, text="Sensor")
         self.tabs.bind("<<NotebookTabChanged>>", self._tab_changed)
 
         self.protocol("WM_DELETE_WINDOW", self._close)
