@@ -1,7 +1,7 @@
 import time
 
 from actions.interface.click_close_screen import click_close_screen
-from definitions.bank.is_bank_closed import is_bank_closed
+from definitions.bank.is_bank_open import is_bank_open
 
 
 BANK_CLOSE_TIMEOUT = 3.0
@@ -16,7 +16,7 @@ def close_bank(
     if seconds <= 0:
         raise ValueError("seconds must be greater than 0")
 
-    if is_bank_closed(bot_id):
+    if not is_bank_open(bot_id):
         return True
 
     if not click_close_screen(bot_id):
@@ -26,9 +26,8 @@ def close_bank(
     confirmations = 0
 
     while time.monotonic() < deadline:
-        if is_bank_closed(bot_id):
+        if not is_bank_open(bot_id):
             confirmations += 1
-
             if confirmations >= BANK_CLOSED_CONFIRMATIONS:
                 return True
         else:
