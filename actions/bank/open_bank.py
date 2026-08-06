@@ -7,6 +7,7 @@ from definitions.bank.is_bank_open import is_bank_open
 
 BANK_OPEN_TIMEOUT = 6.0
 BANK_CHECK_INTERVAL = 0.20
+BANK_OPEN_CONFIRMATIONS = 2
 
 
 def open_bank(
@@ -26,10 +27,15 @@ def open_bank(
         return False
 
     deadline = time.monotonic() + seconds
+    confirmations = 0
 
     while time.monotonic() < deadline:
         if is_bank_open(bot_id):
-            return True
+            confirmations += 1
+            if confirmations >= BANK_OPEN_CONFIRMATIONS:
+                return True
+        else:
+            confirmations = 0
 
         time.sleep(BANK_CHECK_INTERVAL)
 
