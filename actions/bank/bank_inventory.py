@@ -128,7 +128,7 @@ def _wait_for_inventory_change(
 def _click_error(result: object) -> str:
     message = getattr(result, "message", None)
     error = getattr(result, "error", None)
-    return str(message or error or "Inventory-slot kon niet worden aangeklikt")
+    return str(message or error or "Slot click failed.")
 
 
 def bank_inventory(
@@ -163,7 +163,7 @@ def bank_inventory(
     if not is_bank_open(bot_id):
         return BankInventoryResult(
             success=False,
-            message="Bank inventory gestopt: de bank is niet open.",
+            message="Bank closed.",
             bank_open=False,
             dry_run=dry_run,
         )
@@ -171,10 +171,7 @@ def bank_inventory(
     if not is_bank_all_selected(bot_id):
         return BankInventoryResult(
             success=False,
-            message=(
-                "Bank inventory gestopt: bank quantity 'All' is niet geselecteerd "
-                "of BankAllSelected kon niet worden gevonden."
-            ),
+            message="Bank All is not selected.",
             bank_open=True,
             dry_run=dry_run,
         )
@@ -183,7 +180,7 @@ def bank_inventory(
         if not is_bank_open(bot_id):
             return BankInventoryResult(
                 success=False,
-                message="Bank inventory gestopt: de bank sloot tijdens de action.",
+                message="Bank closed.",
                 bank_open=False,
                 dry_run=dry_run,
                 clicks=clicks,
@@ -205,10 +202,7 @@ def bank_inventory(
         if missing:
             return BankInventoryResult(
                 success=False,
-                message=(
-                    "Bank inventory gestopt: niet alle beschermde images zijn "
-                    "gevonden. Er is niets verder aangeklikt."
-                ),
+                message="Protected image missing.",
                 bank_open=True,
                 dry_run=dry_run,
                 clicks=clicks,
@@ -221,7 +215,7 @@ def bank_inventory(
         if not candidates:
             return BankInventoryResult(
                 success=True,
-                message="Inventory bevat alleen nog uitgesloten items.",
+                message="Banking complete.",
                 bank_open=True,
                 dry_run=dry_run,
                 clicks=clicks,
@@ -233,7 +227,7 @@ def bank_inventory(
         if dry_run:
             return BankInventoryResult(
                 success=True,
-                message="Dry run geslaagd; er is niets aangeklikt.",
+                message="Dry run complete.",
                 bank_open=True,
                 dry_run=True,
                 clicks=0,
@@ -245,7 +239,7 @@ def bank_inventory(
         if clicks >= max_clicks:
             return BankInventoryResult(
                 success=False,
-                message="Bank inventory gestopt: maximaal aantal clicks bereikt.",
+                message="Click limit reached.",
                 bank_open=True,
                 clicks=clicks,
                 excluded_slots=tuple(sorted(excluded)),
@@ -257,7 +251,7 @@ def bank_inventory(
         if not click_result:
             return BankInventoryResult(
                 success=False,
-                message=f"Bank inventory gestopt: {_click_error(click_result)}",
+                message=_click_error(click_result),
                 bank_open=True,
                 clicks=clicks,
                 excluded_slots=tuple(sorted(excluded)),
@@ -276,7 +270,7 @@ def bank_inventory(
         if status == "bank_closed":
             return BankInventoryResult(
                 success=False,
-                message="Bank inventory gestopt: de bank sloot na de click.",
+                message="Bank closed.",
                 bank_open=False,
                 clicks=clicks,
                 excluded_slots=tuple(sorted(excluded)),
@@ -287,10 +281,7 @@ def bank_inventory(
         if status == "timeout":
             return BankInventoryResult(
                 success=False,
-                message=(
-                    "Bank inventory gestopt: de inventory veranderde niet na de "
-                    "click. Controleer focus, BankAllSelected en slotdetectie."
-                ),
+                message="Inventory unchanged. Check All.",
                 bank_open=True,
                 clicks=clicks,
                 excluded_slots=tuple(sorted(excluded)),
