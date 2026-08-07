@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tkinter as tk
+from tkinter import ttk
 
 import customtkinter as ctk
 
@@ -11,6 +12,8 @@ from . import enhanced_ui, unified_plus
 
 
 CONTROL_MASK = 0x0004
+BLOB_MIN_LIMIT = 5000
+BLOB_MAX_LIMIT = 10000
 
 
 class BrowserToleranceColourPage(unified_plus.ToleranceColourPage):
@@ -22,6 +25,7 @@ class BrowserToleranceColourPage(unified_plus.ToleranceColourPage):
         self._active_colour_names: set[str] = set()
         self._browser_ready = False
         self._browser_applying = False
+        self._blob_slider_job: str | None = None
         self.colour_scroll: ctk.CTkScrollableFrame | None = None
         self.area_scroll: ctk.CTkScrollableFrame | None = None
         self.colour_rows: dict[str, ctk.CTkButton] = {}
@@ -30,10 +34,9 @@ class BrowserToleranceColourPage(unified_plus.ToleranceColourPage):
 
     def _build(self) -> None:
         super()._build()
+        self._simplify_existing_controls()
 
-        # Keep the existing Colour tester intact and prepend two Template-style
-        # browser columns: Colours | Areas | existing tester.
-        existing = list(self.grid_slaves())
+        existing = [child for child in self.grid_slaves() if child.winfo_manager() == "grid"]
         for child in existing:
             info = child.grid_info()
             child.grid_configure(column=int(info.get("column", 0)) + 2)
@@ -47,6 +50,120 @@ class BrowserToleranceColourPage(unified_plus.ToleranceColourPage):
         self._browser_ready = True
         self._draw_colour_browser()
         self._draw_area_browser()
+
+    def _simplify_existing_controls(self) -> None:
+        """Sidebars own Area/Colour selection; keep only useful capture controls."""
+        try:
+            toolbar = self.source.master
+            self.source.grid_remove()
+            compact = ttk.Frame(toolbar)
+            compact.grid(row=0, column=0, sticky="w")
+            ttk.Label(compact, text="Bot ID").pack(side="left")
+            ttk.Spinbox(
+                compact,
+                from_=1,
+                to=4,
+                textvariable=self.source.bot_id,
+                width=4,
+            ).pack(side="left", padx=(6, 14))
+            if hasattr(self.source, "show_area_overlay"):
+                ttk.Checkbutton(
+                    compact,
+                    text="Show area overlay",
+                    variable=self.source.show_area_overlay,
+                ).pack(side="left")
+        except (AttributeError, tk.TclError):
+            pass
+
+        # Remove the old Search / Current preset / HSV summary bar completely.
+        for child in list(self.grid_slaves()):
+            try:
+                if isinstance(child, ttk.LabelFrame) and str(child.cget("text")) == "Colour preset":
+                    child.grid_remove()
+            except tk.TclError:
+                pass
+
+        self._replace_blob_entries_with_sliders()
+
+    def _replace_blob_entries_with_sliders(self) -> None:
+        controls = None
+        for child in self.grid_slaves():
+            try:
+                if isinstance(child, ttk.LabelFrame) and str(child.cget("text")) == "Detection":
+                    controls = child
+                    break
+            except tk.TclError:
+                continue
+        if controls is None:
+            return
+
+        # Remove only the two old labels/entries occupying columns 0..3.
+        for widget in list(controls.grid_slaves()):
+            info = widget.grid_info()
+            if int(info.get("row", 0)) == 0 and int(info.get("column", 0)) <= 3:
+                widget.destroy()
+
+        try:
+            minimum = max(1, int(self.minimum.get() or 1))
+        except ValueError:
+            minimum = 20
+        try:
+            maximum = max(0, int(self.maximum.get() or 0))
+        except ValueError:
+            maximum = 0
+
+        self.blob_min_slider_value = tk.DoubleVar(value=min(BLOB_MIN_LIMIT, minimum))
+        self.blob_max_slider_value = tk.DoubleVar(value=min(BLOB_MAX_LIMIT, maximum))
+        self.blob_min_slider_text = tk.StringVar(value=f"Min {minimum} px")
+        self.blob_max_slider_text = tk.StringVar(value="Max ∞" if maximum == 0 else f"Max {maximum} px")
+
+        min_group = ttk.Frame(controls)
+        min_group.grid(row=0, column=0, columnspan=2, sticky="ew", padx=(0, 10))
+        ttk.Label(min_group, textvariable=self.blob_min_slider_text, width=11).pack(side="left")
+        ttk.Scale(
+            min_group,
+            from_=1,
+            to=BLOB_MIN_LIMIT,
+            variable=self.blob_min_slider_value,
+            command=self._blob_min_changed,
+            length=145,
+        ).pack(side="left", fill="x", expand=True, padx=(5, 0))
+
+        max_group = ttk.Frame(controls)
+        max_group.grid(row=0, column=2, columnspan=2, sticky="ew", padx=(0, 12))
+        ttk.Label(max_group, textvariable=self.blob_max_slider_text, width=11).pack(side="left")
+        ttk.Scale(
+            max_group,
+            from_=0,
+            to=BLOB_MAX_LIMIT,
+            variable=self.blob_max_slider_value,
+            command=self._blob_max_changed,
+            length=145,
+        ).pack(side="left", fill="x", expand=True, padx=(5, 0))
+
+    def _schedule_blob_render(self) -> None:
+        if self._blob_slider_job is not None:
+            try:
+                self.after_cancel(self._blob_slider_job)
+            except tk.TclError:
+                pass
+        self._blob_slider_job = self.after(45, self._render)
+
+    def _blob_min_changed(self, value) -> None:
+        minimum = max(1, round(float(value)))
+        self.minimum.set(str(minimum))
+        self.blob_min_slider_text.set(f"Min {minimum} px")
+        self._schedule_blob_render()
+
+    def _blob_max_changed(self, value) -> None:
+        maximum = max(0, round(float(value)))
+        if maximum <= 20:
+            maximum = 0
+            self.blob_max_slider_text.set("Max ∞")
+        else:
+            self.blob_max_slider_text.set(f"Max {maximum} px")
+        self.maximum.set(str(maximum))
+        self._schedule_blob_render()
 
     # ------------------------------------------------------------------
     # Template-style Colour browser
@@ -62,15 +179,12 @@ class BrowserToleranceColourPage(unified_plus.ToleranceColourPage):
             pady=(5, 8),
         )
         sidebar.grid_propagate(False)
-        sidebar.grid_rowconfigure(2, weight=1)
+        sidebar.grid_rowconfigure(3, weight=1)
         sidebar.grid_columnconfigure(0, weight=1)
 
-        enhanced_ui.modern_ui._label(
-            sidebar,
-            "COLOURS",
-            size=12,
-            bold=True,
-        ).grid(row=0, column=0, sticky="w", padx=14, pady=(14, 8))
+        enhanced_ui.modern_ui._label(sidebar, "COLOURS", size=12, bold=True).grid(
+            row=0, column=0, sticky="w", padx=14, pady=(14, 8)
+        )
 
         search = ctk.CTkEntry(
             sidebar,
@@ -82,9 +196,17 @@ class BrowserToleranceColourPage(unified_plus.ToleranceColourPage):
             border_color=enhanced_ui.modern_ui.BORDER,
             text_color=enhanced_ui.modern_ui.TEXT,
         )
-        search.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 10))
+        search.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 7))
         search.bind("<KeyRelease>", self._colour_filter_changed)
         search.bind("<Escape>", self._clear_colour_filter)
+
+        enhanced_ui.modern_ui._button(
+            sidebar,
+            "New colour",
+            self._new_colour_from_browser,
+            primary=True,
+            width=205,
+        ).grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 9))
 
         self.colour_scroll = ctk.CTkScrollableFrame(
             sidebar,
@@ -92,7 +214,7 @@ class BrowserToleranceColourPage(unified_plus.ToleranceColourPage):
             scrollbar_button_color=enhanced_ui.modern_ui.BORDER,
             scrollbar_button_hover_color=enhanced_ui.modern_ui.GOLD,
         )
-        self.colour_scroll.grid(row=2, column=0, sticky="nsew", padx=8, pady=(0, 8))
+        self.colour_scroll.grid(row=3, column=0, sticky="nsew", padx=8, pady=(0, 8))
         self.colour_scroll.grid_columnconfigure(0, weight=1)
 
         enhanced_ui.modern_ui._label(
@@ -102,20 +224,25 @@ class BrowserToleranceColourPage(unified_plus.ToleranceColourPage):
             size=10,
             wraplength=210,
             justify="left",
-        ).grid(row=3, column=0, sticky="w", padx=14, pady=(0, 12))
+        ).grid(row=4, column=0, sticky="w", padx=14, pady=(0, 12))
+
+    def _new_colour_from_browser(self) -> None:
+        previous = self.current_preset.get().strip()
+        super()._new_preset()
+        name = self.current_preset.get().strip()
+        if not name or name == previous:
+            return
+        self._active_colour_names = {name}
+        self._draw_colour_browser()
+        self.status.set(f"Nieuwe colour '{name}' klaar. Pipet een kleur; wijzigingen worden automatisch opgeslagen.")
 
     def _all_colour_names(self) -> list[str]:
         return sorted(list_colour_presets(), key=str.casefold)
 
     def _filtered_colour_names(self) -> list[str]:
-        terms = [
-            term
-            for term in self.colour_filter.get().strip().casefold().split()
-            if term
-        ]
+        terms = [term for term in self.colour_filter.get().strip().casefold().split() if term]
         return [
-            name
-            for name in self._all_colour_names()
+            name for name in self._all_colour_names()
             if all(term in name.casefold() for term in terms)
         ]
 
@@ -134,24 +261,12 @@ class BrowserToleranceColourPage(unified_plus.ToleranceColourPage):
                 anchor="w",
                 height=34,
                 corner_radius=7,
-                fg_color=(
-                    enhanced_ui.modern_ui.ACCENT_SOFT
-                    if selected
-                    else "transparent"
-                ),
+                fg_color=enhanced_ui.modern_ui.ACCENT_SOFT if selected else "transparent",
                 hover_color=enhanced_ui.modern_ui.ACCENT_SOFT,
-                text_color=(
-                    enhanced_ui.modern_ui.ACCENT_HOVER
-                    if selected
-                    else enhanced_ui.modern_ui.TEXT
-                ),
+                text_color=enhanced_ui.modern_ui.ACCENT_HOVER if selected else enhanced_ui.modern_ui.TEXT,
             )
-            # We handle Button-1 ourselves so the modifier state is available.
             button.configure(command=lambda: None)
-            button.bind(
-                "<Button-1>",
-                lambda event, value=name: self._colour_clicked(event, value),
-            )
+            button.bind("<Button-1>", lambda event, value=name: self._colour_clicked(event, value))
             button.grid(row=row, column=0, sticky="ew", pady=1)
             self.colour_rows[name] = button
 
@@ -193,12 +308,9 @@ class BrowserToleranceColourPage(unified_plus.ToleranceColourPage):
         sidebar.grid_rowconfigure(2, weight=1)
         sidebar.grid_columnconfigure(0, weight=1)
 
-        enhanced_ui.modern_ui._label(
-            sidebar,
-            "AREAS",
-            size=12,
-            bold=True,
-        ).grid(row=0, column=0, sticky="w", padx=14, pady=(14, 8))
+        enhanced_ui.modern_ui._label(sidebar, "AREAS", size=12, bold=True).grid(
+            row=0, column=0, sticky="w", padx=14, pady=(14, 8)
+        )
 
         search = ctk.CTkEntry(
             sidebar,
@@ -236,14 +348,9 @@ class BrowserToleranceColourPage(unified_plus.ToleranceColourPage):
         return sorted(load_areas(), key=str.casefold)
 
     def _filtered_area_names(self) -> list[str]:
-        terms = [
-            term
-            for term in self.area_filter.get().strip().casefold().split()
-            if term
-        ]
+        terms = [term for term in self.area_filter.get().strip().casefold().split() if term]
         return [
-            name
-            for name in self._all_area_names()
+            name for name in self._all_area_names()
             if all(term in name.casefold() for term in terms)
         ]
 
@@ -264,39 +371,23 @@ class BrowserToleranceColourPage(unified_plus.ToleranceColourPage):
                 anchor="w",
                 height=34,
                 corner_radius=7,
-                fg_color=(
-                    enhanced_ui.modern_ui.ACCENT_SOFT
-                    if selected
-                    else "transparent"
-                ),
+                fg_color=enhanced_ui.modern_ui.ACCENT_SOFT if selected else "transparent",
                 hover_color=enhanced_ui.modern_ui.ACCENT_SOFT,
-                text_color=(
-                    enhanced_ui.modern_ui.ACCENT_HOVER
-                    if selected
-                    else enhanced_ui.modern_ui.TEXT
-                ),
+                text_color=enhanced_ui.modern_ui.ACCENT_HOVER if selected else enhanced_ui.modern_ui.TEXT,
             )
             button.grid(row=row, column=0, sticky="ew", pady=1)
             self.area_rows[name] = button
 
     def _select_area(self, name: str) -> None:
         self.source.area.set(name)
-        try:
-            self.source.area_box.configure(values=self._all_area_names())
-        except (AttributeError, tk.TclError):
-            pass
         self._draw_area_browser()
         self.status.set(f"Area geselecteerd: {name}.")
         self.after_idle(self._capture)
 
     def _area_filter_changed(self, _event=None) -> None:
-        matches = self._filtered_area_names()
-        try:
-            self.source.area_box.configure(values=matches or self._all_area_names())
-        except (AttributeError, tk.TclError):
-            pass
         self._draw_area_browser()
         current = self.source.area.get()
+        matches = self._filtered_area_names()
         if current and current in matches:
             return
         if len(matches) == 1:
@@ -304,10 +395,6 @@ class BrowserToleranceColourPage(unified_plus.ToleranceColourPage):
 
     def _clear_area_filter(self, _event=None) -> None:
         self.area_filter.set("")
-        try:
-            self.source.area_box.configure(values=self._all_area_names())
-        except (AttributeError, tk.TclError):
-            pass
         self._draw_area_browser()
 
     # ------------------------------------------------------------------
@@ -333,7 +420,7 @@ class BrowserToleranceColourPage(unified_plus.ToleranceColourPage):
             self.ranges = ()
             self._reset_blob_history()
             self._render()
-            self.status.set("Geen colour preset actief.")
+            self.status.set("Geen colour actief.")
             return
 
         self._browser_applying = True
@@ -363,6 +450,20 @@ class BrowserToleranceColourPage(unified_plus.ToleranceColourPage):
         finally:
             self._browser_applying = False
 
+    def _pick(self, event) -> None:
+        before = len(self.base_colours)
+        super()._pick(event)
+        if len(self.base_colours) == before:
+            return
+        # With the old preset toolbar removed, a single active colour saves on
+        # each successful pipette pick. Multi-select remains read-only/composite.
+        if len(self._active_colour_names) == 1:
+            super()._save_current_preset()
+            name = self.current_preset.get().strip()
+            if name:
+                self._active_colour_names = {name}
+                self._draw_colour_browser()
+
     def _load_current_preset(self) -> None:
         super()._load_current_preset()
         if self._browser_ready and not self._browser_applying:
@@ -379,9 +480,7 @@ class BrowserToleranceColourPage(unified_plus.ToleranceColourPage):
 
     def _save_current_preset(self) -> None:
         if len(self._active_colour_names) > 1:
-            self.status.set(
-                "Meerdere colours zijn actief. Laat één colour actief om die preset te bewerken/op te slaan."
-            )
+            self.status.set("Meerdere colours zijn actief; deze combinatie wordt niet als één preset opgeslagen.")
             return
         super()._save_current_preset()
         self._draw_colour_browser()
