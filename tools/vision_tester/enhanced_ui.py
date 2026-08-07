@@ -17,6 +17,33 @@ SAFE_BORDER_COLOUR = (50, 210, 90)
 PIPETTE_MARKER_COLOUR = (255, 255, 255)
 
 
+def _draw_area_guides(rgb: np.ndarray) -> np.ndarray:
+    visual = rgb.copy()
+    height, width = visual.shape[:2]
+    if width <= 0 or height <= 0:
+        return visual
+
+    cv2.rectangle(
+        visual,
+        (0, 0),
+        (width - 1, height - 1),
+        AREA_BORDER_COLOUR,
+        1,
+    )
+    if width > PIPETTE_EDGE_PADDING * 2 and height > PIPETTE_EDGE_PADDING * 2:
+        cv2.rectangle(
+            visual,
+            (PIPETTE_EDGE_PADDING, PIPETTE_EDGE_PADDING),
+            (
+                width - 1 - PIPETTE_EDGE_PADDING,
+                height - 1 - PIPETTE_EDGE_PADDING,
+            ),
+            SAFE_BORDER_COLOUR,
+            1,
+        )
+    return visual
+
+
 class ZoomImageView(tk.Canvas):
     """Canvas image view with deep zoom, panning and source-pixel mapping."""
 
@@ -41,6 +68,7 @@ class ZoomImageView(tk.Canvas):
         self.image_offset = (0, 0)
         self.display_size = (0, 0)
         self.source_origin = (0.0, 0.0)
+        self.show_area_guides = False
         self._photo: ImageTk.PhotoImage | None = None
         self._last_rgb: np.ndarray | None = None
         self._job: str | None = None
@@ -52,13 +80,14 @@ class ZoomImageView(tk.Canvas):
         self.bind("<B3-Motion>", self._pan_move)
 
     def show(self, rgb: np.ndarray) -> None:
+        prepared = _draw_area_guides(rgb) if self.show_area_guides else rgb
         shape_changed = (
             self._last_rgb is None
-            or self._last_rgb.shape[:2] != rgb.shape[:2]
+            or self._last_rgb.shape[:2] != prepared.shape[:2]
         )
-        self._last_rgb = rgb
+        self._last_rgb = prepared
         if shape_changed:
-            height, width = rgb.shape[:2]
+            height, width = prepared.shape[:2]
             self._centre = (width / 2.0, height / 2.0)
         self._draw()
 
@@ -195,31 +224,8 @@ def _draw_clean_overlay(
     safe_bounds: tuple[int, int, int, int] | None = None,
 ) -> np.ndarray:
     """Draw guides only; never draw text into the pipette image."""
-    visual = self.capture.copy()
+    visual = _draw_area_guides(self.capture)
     height, width = visual.shape[:2]
-    if width <= 0 or height <= 0:
-        return visual
-
-    # The red line is the exact captured area boundary. The green line is the
-    # safe interior where the pipette may sample without touching the edge.
-    cv2.rectangle(
-        visual,
-        (0, 0),
-        (width - 1, height - 1),
-        AREA_BORDER_COLOUR,
-        1,
-    )
-    if width > PIPETTE_EDGE_PADDING * 2 and height > PIPETTE_EDGE_PADDING * 2:
-        cv2.rectangle(
-            visual,
-            (PIPETTE_EDGE_PADDING, PIPETTE_EDGE_PADDING),
-            (
-                width - 1 - PIPETTE_EDGE_PADDING,
-                height - 1 - PIPETTE_EDGE_PADDING,
-            ),
-            SAFE_BORDER_COLOUR,
-            1,
-        )
 
     if blob is not None:
         pad = modern_ui.BLOB_BOX_PADDING
@@ -287,9 +293,6 @@ def _safe_pick(self, event) -> None:
         )
         return
 
-    # Store only the source-pixel location. Sampling itself remains delegated
-    # to the original implementation, which reads self.capture (raw pixels),
-    # never the displayed overlay.
     self._last_pipette_point = (x, y)
     _original_pick(self, event)
 
@@ -299,6 +302,7 @@ _original_colour_build = preset_ui.PresetColourPage._build
 
 def _build_with_deep_zoom(self) -> None:
     _original_colour_build(self)
+    self.capture_view.show_area_guides = True
     self.zoom_slider.configure(
         from_=MIN_ZOOM_PERCENT,
         to=MAX_ZOOM_PERCENT,
@@ -306,7 +310,6 @@ def _build_with_deep_zoom(self) -> None:
     self.zoom_label.configure(text=f"Zoom {self.zoom.get()}%")
 
 
-# Install the visual behaviour before the tester creates its pages.
 modern_ui.ImageView = ZoomImageView
 modern_ui.ColourPage._draw_blob_overlay = _draw_clean_overlay
 modern_ui.ColourPage._pick = _safe_pick
