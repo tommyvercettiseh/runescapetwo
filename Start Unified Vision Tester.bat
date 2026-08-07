@@ -1,5 +1,12 @@
 @echo off
 setlocal
+
+if /i not "%~1"=="--minimized" (
+  start "" /min "%ComSpec%" /c ""%~f0" --minimized"
+  exit /b 0
+)
+shift
+
 cd /d "%~dp0"
 
 set "PYTHON_LAUNCHER="
@@ -16,7 +23,12 @@ if not exist ".venv\Scripts\python.exe" (
 
 call ".venv\Scripts\activate.bat" || goto :error
 python -m pip install --quiet --disable-pip-version-check -r requirements.txt || goto :error
-python -m tools.vision_tester.app
+
+if exist ".venv\Scripts\pythonw.exe" (
+  start "" ".venv\Scripts\pythonw.exe" -m tools.vision_tester.app
+) else (
+  start "" python -m tools.vision_tester.app
+)
 exit /b 0
 
 :no_python
