@@ -1,51 +1,31 @@
 from __future__ import annotations
 
+import ctypes
+import sys
 import tkinter as tk
+from tkinter import ttk
 
 import cv2
 import numpy as np
 from PIL import Image, ImageTk
 
+from core.vision.areas import load_areas
+from core.vision.colour_detection import hsv_ranges_around, sample_hsv
 from . import modern_ui, preset_ui
 
 
 MIN_ZOOM_PERCENT = 25
 MAX_ZOOM_PERCENT = 1600
 PIPETTE_EDGE_PADDING = 6
-AREA_BORDER_COLOUR = (220, 55, 55)
-SAFE_BORDER_COLOUR = (50, 210, 90)
-PIPETTE_MARKER_COLOUR = (255, 255, 255)
-
-
-def _draw_area_guides(rgb: np.ndarray) -> np.ndarray:
-    visual = rgb.copy()
-    height, width = visual.shape[:2]
-    if width <= 0 or height <= 0:
-        return visual
-
-    cv2.rectangle(
-        visual,
-        (0, 0),
-        (width - 1, height - 1),
-        AREA_BORDER_COLOUR,
-        1,
-    )
-    if width > PIPETTE_EDGE_PADDING * 2 and height > PIPETTE_EDGE_PADDING * 2:
-        cv2.rectangle(
-            visual,
-            (PIPETTE_EDGE_PADDING, PIPETTE_EDGE_PADDING),
-            (
-                width - 1 - PIPETTE_EDGE_PADDING,
-                height - 1 - PIPETTE_EDGE_PADDING,
-            ),
-            SAFE_BORDER_COLOUR,
-            1,
-        )
-    return visual
+AREA_BORDER_HEX = "#dc3737"
+SAFE_BORDER_HEX = "#32d25a"
+MARKER_HEX = "#ffffff"
+TRANSPARENT_KEY = "#010203"
+SAMPLE_SIZES = (1, 3, 5, 7)
 
 
 class ZoomImageView(tk.Canvas):
-    """Canvas image view with deep zoom, panning and source-pixel mapping."""
+    """Canvas image view with deep zoom, panning and exact source-pixel mapping."""
 
     def __init__(
         self,
@@ -68,28 +48,35 @@ class ZoomImageView(tk.Canvas):
         self.image_offset = (0, 0)
         self.display_size = (0, 0)
         self.source_origin = (0.0, 0.0)
-        self.show_area_guides = False
         self._photo: ImageTk.PhotoImage | None = None
         self._last_rgb: np.ndarray | None = None
         self._job: str | None = None
         self._centre: tuple[float, float] | None = None
         self._pan_anchor: tuple[int, int] | None = None
+        self._marker: tuple[int, int, int] | None = None
 
         self.bind("<Configure>", self._schedule)
         self.bind("<ButtonPress-3>", self._pan_start)
         self.bind("<B3-Motion>", self._pan_move)
 
     def show(self, rgb: np.ndarray) -> None:
-        prepared = _draw_area_guides(rgb) if self.show_area_guides else rgb
         shape_changed = (
             self._last_rgb is None
-            or self._last_rgb.shape[:2] != prepared.shape[:2]
+            or self._last_rgb.shape[:2] != rgb.shape[:2]
         )
-        self._last_rgb = prepared
+        self._last_rgb = rgb
         if shape_changed:
-            height, width = prepared.shape[:2]
+            height, width = rgb.shape[:2]
             self._centre = (width / 2.0, height / 2.0)
         self._draw()
+
+    def set_marker(self, x: int, y: int, sample_size: int = 1) -> None:
+        self._marker = (int(x), int(y), max(1, int(sample_size)))
+        self._draw_marker()
+
+    def clear_marker(self) -> None:
+        self._marker = None
+        self.delete("pipette_marker")
 
     def set_view(self, *, auto_resize: bool, zoom_percent: int) -> None:
         self.auto_resize = bool(auto_resize)
@@ -177,6 +164,42 @@ class ZoomImageView(tk.Canvas):
         self._photo = ImageTk.PhotoImage(Image.fromarray(rendered))
         offset_x, offset_y = self.image_offset
         self.create_image(offset_x, offset_y, image=self._photo, anchor="nw")
+        self._draw_marker()
+
+    def _draw_marker(self) -> None:
+        self.delete("pipette_marker")
+        if self._marker is None or self._last_rgb is None:
+            return
+
+        x, y, sample_size = self._marker
+        radius = sample_size // 2
+        source_left = x - radius
+        source_top = y - radius
+        source_right = x + radius + 1
+        source_bottom = y + radius + 1
+        origin_x, origin_y = self.source_origin
+
+        left = self.image_offset[0] + (source_left - origin_x) * self.scale
+        top = self.image_offset[1] + (source_top - origin_y) * self.scale
+        right = self.image_offset[0] + (source_right - origin_x) * self.scale
+        bottom = self.image_offset[1] + (source_bottom - origin_y) * self.scale
+
+        image_left = self.image_offset[0]
+        image_top = self.image_offset[1]
+        image_right = image_left + self.display_size[0]
+        image_bottom = image_top + self.display_size[1]
+        if right <= image_left or bottom <= image_top or left >= image_right or top >= image_bottom:
+            return
+
+        self.create_rectangle(
+            max(image_left, left),
+            max(image_top, top),
+            min(image_right, right),
+            min(image_bottom, bottom),
+            outline=MARKER_HEX,
+            width=1,
+            tags="pipette_marker",
+        )
 
     def image_coordinates(self, x: int, y: int) -> tuple[int, int] | None:
         if self._last_rgb is None:
@@ -218,61 +241,163 @@ class ZoomImageView(tk.Canvas):
         self._draw()
 
 
-def _draw_clean_overlay(
-    self,
-    blob,
-    safe_bounds: tuple[int, int, int, int] | None = None,
-) -> np.ndarray:
-    """Draw guides only; never draw text into the pipette image."""
-    visual = _draw_area_guides(self.capture)
-    height, width = visual.shape[:2]
+class SearchableSourceControls(ttk.Frame):
+    """Compact Colour source controls with live partial area filtering."""
 
-    if blob is not None:
-        pad = modern_ui.BLOB_BOX_PADDING
-        left = max(0, blob.x - pad)
-        top = max(0, blob.y - pad)
-        right = min(width - 1, blob.x + blob.width - 1 + pad)
-        bottom = min(height - 1, blob.y + blob.height - 1 + pad)
-        cv2.rectangle(
-            visual,
-            (left, top),
-            (right, bottom),
-            AREA_BORDER_COLOUR,
-            2,
+    def __init__(self, parent, *, default_area: str = modern_ui.DEFAULT_AREA):
+        super().__init__(parent)
+        self._areas = sorted(load_areas())
+        selected = default_area if default_area in self._areas else (
+            self._areas[0] if self._areas else "game"
         )
+        self.bot_id = tk.StringVar(value="1")
+        self.area = tk.StringVar(value=selected)
+        self.area_search = tk.StringVar()
 
-        if safe_bounds is not None:
-            safe_left, safe_top, safe_right, safe_bottom = safe_bounds
-            cv2.rectangle(
-                visual,
-                (max(0, safe_left), max(0, safe_top)),
-                (
-                    min(width - 1, safe_right - 1),
-                    min(height - 1, safe_bottom - 1),
-                ),
-                SAFE_BORDER_COLOUR,
-                2,
-            )
+        ttk.Label(self, text="Bot ID").grid(row=0, column=0, sticky="w")
+        ttk.Spinbox(
+            self,
+            from_=1,
+            to=4,
+            textvariable=self.bot_id,
+            width=5,
+        ).grid(row=0, column=1, sticky="w", padx=(7, 18))
 
-    picked = getattr(self, "_last_pipette_point", None)
-    if picked is not None:
-        x, y = picked
-        radius = 3
-        cv2.rectangle(
-            visual,
-            (max(0, x - radius), max(0, y - radius)),
-            (min(width - 1, x + radius), min(height - 1, y + radius)),
-            PIPETTE_MARKER_COLOUR,
+        ttk.Label(self, text="Area search").grid(row=0, column=2, sticky="w")
+        search = ttk.Entry(self, textvariable=self.area_search, width=18)
+        search.grid(row=0, column=3, sticky="ew", padx=(7, 14))
+        search.bind("<KeyRelease>", self._filter_areas)
+
+        ttk.Label(self, text="Area").grid(row=0, column=4, sticky="w")
+        self.area_box = ttk.Combobox(
+            self,
+            values=self._areas,
+            textvariable=self.area,
+            width=30,
+            state="readonly",
+        )
+        self.area_box.grid(row=0, column=5, sticky="ew", padx=(7, 0))
+        self.columnconfigure(3, weight=1)
+        self.columnconfigure(5, weight=2)
+
+    def _filter_areas(self, _event=None) -> None:
+        terms = [part for part in self.area_search.get().lower().split() if part]
+        matches = [
+            area for area in self._areas
+            if all(term in area.lower() for term in terms)
+        ]
+        self.area_box.configure(values=matches)
+        if len(matches) == 1:
+            self.area.set(matches[0])
+
+    def bot(self) -> int:
+        return int(self.bot_id.get())
+
+
+class ScreenAreaOverlay:
+    """Click-through red/green area guide drawn at the real desktop coordinates."""
+
+    def __init__(self, master: tk.Misc) -> None:
+        self.master = master
+        self.window = tk.Toplevel(master)
+        self.window.withdraw()
+        self.window.overrideredirect(True)
+        self.window.configure(bg=TRANSPARENT_KEY)
+        self.window.attributes("-topmost", True)
+        self.window.attributes("-transparentcolor", TRANSPARENT_KEY)
+        self.canvas = tk.Canvas(
+            self.window,
+            bg=TRANSPARENT_KEY,
+            highlightthickness=0,
+            bd=0,
+        )
+        self.canvas.pack(fill="both", expand=True)
+        self._capture_excluded = False
+        self._make_click_through_and_exclude_capture()
+
+    def _window_handle(self) -> int:
+        user32 = ctypes.windll.user32
+        handle = int(self.window.winfo_id())
+        parent = int(user32.GetParent(handle))
+        return parent or handle
+
+    def _make_click_through_and_exclude_capture(self) -> None:
+        if sys.platform != "win32":
+            return
+        self.window.update_idletasks()
+        user32 = ctypes.windll.user32
+        handle = self._window_handle()
+        extended_style = int(user32.GetWindowLongW(handle, -20))
+        user32.SetWindowLongW(
+            handle,
+            -20,
+            extended_style | 0x00080000 | 0x00000020 | 0x00000080 | 0x08000000,
+        )
+        try:
+            self._capture_excluded = bool(user32.SetWindowDisplayAffinity(handle, 0x00000011))
+        except Exception:
+            self._capture_excluded = False
+
+    @property
+    def capture_excluded(self) -> bool:
+        return self._capture_excluded
+
+    def hide(self) -> None:
+        try:
+            self.window.withdraw()
+        except tk.TclError:
+            pass
+
+    def show_region(self, region: tuple[int, int, int, int]) -> None:
+        left, top, width, height = map(int, region)
+        if width <= 1 or height <= 1:
+            self.hide()
+            return
+        self.window.geometry(f"{width}x{height}{left:+d}{top:+d}")
+        self.canvas.configure(width=width, height=height)
+        self.canvas.delete("all")
+        self.canvas.create_rectangle(
             1,
+            1,
+            width - 2,
+            height - 2,
+            outline=AREA_BORDER_HEX,
+            width=2,
         )
+        pad = PIPETTE_EDGE_PADDING
+        if width > pad * 2 + 2 and height > pad * 2 + 2:
+            self.canvas.create_rectangle(
+                pad,
+                pad,
+                width - pad - 1,
+                height - pad - 1,
+                outline=SAFE_BORDER_HEX,
+                width=1,
+            )
+        self.window.deiconify()
+        self.window.lift()
 
-    return visual
+    def close(self) -> None:
+        try:
+            self.window.destroy()
+        except tk.TclError:
+            pass
 
 
-_original_pick = modern_ui.ColourPage._pick
+def _raw_preview(self, blob, safe_bounds=None) -> np.ndarray:
+    """Keep Unified preview completely clean; guides live on the real desktop."""
+    return self.capture.copy()
 
 
-def _safe_pick(self, event) -> None:
+def _selected_sample_size(self) -> int:
+    try:
+        value = int(self.pipette_sample_size.get())
+    except (AttributeError, TypeError, ValueError):
+        value = 1
+    return value if value in SAMPLE_SIZES else 1
+
+
+def _pixel_pick(self, event) -> None:
     if self.capture is None or not self.pipette:
         return
     point = self.capture_view.image_coordinates(event.x, event.y)
@@ -282,37 +407,103 @@ def _safe_pick(self, event) -> None:
     x, y = point
     height, width = self.capture.shape[:2]
     padding = PIPETTE_EDGE_PADDING
-    if (
-        x < padding
-        or y < padding
-        or x >= width - padding
-        or y >= height - padding
-    ):
+    if x < padding or y < padding or x >= width - padding or y >= height - padding:
         self.status.set(
-            f"Pipet: kies binnen het groene kader ({padding}px veilige rand)."
+            f"Pipet: kies binnen de groene schermrand ({padding}px padding)."
         )
         return
 
+    sample_size = _selected_sample_size(self)
+    radius = sample_size // 2
+    self.ranges = hsv_ranges_around(
+        sample_hsv(self.capture, x, y, radius=radius),
+        hue_tolerance=5,
+        saturation_tolerance=40,
+        value_tolerance=40,
+    )
+    self.current_blob_px = 0
+    self.observed_min_px = None
+    self.observed_max_px = None
+    self.blob_range_text.set("MIN —   MAX —")
     self._last_pipette_point = (x, y)
-    _original_pick(self, event)
+    self.capture_view.set_marker(x, y, sample_size)
+    self.status.set(f"Pipet: bronpixel ({x}, {y}), sample {sample_size}×{sample_size}.")
+    self._render()
+    self.capture_view.set_marker(x, y, sample_size)
 
 
+_original_capture = modern_ui.ColourPage._capture
+_original_activate = modern_ui.ColourPage.activate
+_original_deactivate = modern_ui.ColourPage.deactivate
 _original_colour_build = preset_ui.PresetColourPage._build
 
 
+def _capture_with_desktop_overlay(self) -> None:
+    overlay = getattr(self, "_screen_area_overlay", None)
+    if overlay is not None and not overlay.capture_excluded:
+        overlay.hide()
+        self.update_idletasks()
+
+    _original_capture(self)
+
+    if self.capture is None:
+        return
+    if overlay is None:
+        try:
+            overlay = ScreenAreaOverlay(self.winfo_toplevel())
+            self._screen_area_overlay = overlay
+        except Exception:
+            overlay = None
+    if overlay is not None:
+        overlay.show_region(self.capture_region)
+
+
+def _activate_with_overlay(self) -> None:
+    _original_activate(self)
+
+
+def _deactivate_with_overlay(self) -> None:
+    _original_deactivate(self)
+    overlay = getattr(self, "_screen_area_overlay", None)
+    if overlay is not None:
+        overlay.hide()
+
+
 def _build_with_deep_zoom(self) -> None:
+    self.pipette_sample_size = tk.IntVar(value=1)
     _original_colour_build(self)
-    self.capture_view.show_area_guides = True
+
     self.zoom_slider.configure(
         from_=MIN_ZOOM_PERCENT,
         to=MAX_ZOOM_PERCENT,
     )
     self.zoom_label.configure(text=f"Zoom {self.zoom.get()}%")
 
+    controls = self.pipette_button.master
+    for child in controls.grid_slaves():
+        info = child.grid_info()
+        column = int(info.get("column", 0))
+        if column >= 5:
+            child.grid_configure(column=column + 2)
+
+    ttk.Label(controls, text="Pipet px").grid(row=0, column=5, padx=(8, 3))
+    sample_box = ttk.Combobox(
+        controls,
+        values=SAMPLE_SIZES,
+        textvariable=self.pipette_sample_size,
+        state="readonly",
+        width=3,
+    )
+    sample_box.grid(row=0, column=6, padx=(0, 5))
+
 
 modern_ui.ImageView = ZoomImageView
-modern_ui.ColourPage._draw_blob_overlay = _draw_clean_overlay
-modern_ui.ColourPage._pick = _safe_pick
+modern_ui.ColourPage._draw_blob_overlay = _raw_preview
+modern_ui.ColourPage._pick = _pixel_pick
+modern_ui.ColourPage._capture = _capture_with_desktop_overlay
+modern_ui.ColourPage.activate = _activate_with_overlay
+modern_ui.ColourPage.deactivate = _deactivate_with_overlay
+preset_ui.BasicSourceControls = SearchableSourceControls
 preset_ui.PresetColourPage._build = _build_with_deep_zoom
 
 VisionTester = preset_ui.VisionTester
