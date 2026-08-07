@@ -23,6 +23,7 @@ class SearchableTemplatePage(enhanced_ui.modern_ui.TemplatePage):
         self.match_state_text = tk.StringVar(value="—  WAITING")
         self.match_state_frame: tk.Frame | None = None
         self.match_state_label: tk.Label | None = None
+        self._match_state: bool | None | object = object()
         super().__init__(parent)
 
     def _build(self) -> None:
@@ -103,6 +104,7 @@ class SearchableTemplatePage(enhanced_ui.modern_ui.TemplatePage):
             pady=(0, 12),
         )
         self.match_state_frame.grid_propagate(False)
+        self.match_state_frame.pack_propagate(False)
 
         self.match_state_label = tk.Label(
             self.match_state_frame,
@@ -111,12 +113,23 @@ class SearchableTemplatePage(enhanced_ui.modern_ui.TemplatePage):
             foreground=STATUS_FG,
             font=("Segoe UI", 13, "bold"),
             anchor="center",
+            bd=0,
+            highlightthickness=0,
         )
         self.match_state_label.pack(fill="both", expand=True)
+        self._match_state = None
 
     def _set_match_state(self, found: bool | None) -> None:
         if self.match_state_frame is None or self.match_state_label is None:
             return
+
+        # Live analysis runs around ten times per second. Reconfiguring the
+        # Tk widgets on every frame causes visible layout/repaint jitter even
+        # when the logical state did not change. Only repaint on a real state
+        # transition.
+        if found is self._match_state:
+            return
+        self._match_state = found
 
         if found is True:
             text = "TRUE  ·  FOUND"
