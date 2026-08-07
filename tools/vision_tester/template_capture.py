@@ -15,6 +15,8 @@ LOUPE_SOURCE_SIZE = 31
 LOUPE_SCALE = 7
 LOUPE_MARGIN = 18
 LOUPE_BORDER = "#42cfe8"
+START_GUIDE = "#ffb6c8"
+SELECTION_PREVIEW_MAX = (320, 210)
 
 
 def normalize_capture_name(value: str) -> str:
@@ -25,7 +27,7 @@ def normalize_capture_name(value: str) -> str:
 
 
 class TemplateCaptureOverlay(tk.Toplevel):
-    """Fullscreen drag-to-crop tool with a pixel loupe for precise templates."""
+    """Fullscreen drag-to-crop tool with loupe and full selection preview."""
 
     def __init__(self, parent: tk.Misc, on_saved: Callable[[str], None]):
         super().__init__(parent)
@@ -34,14 +36,20 @@ class TemplateCaptureOverlay(tk.Toplevel):
         self.screen: Image.Image | None = None
         self.photo: ImageTk.PhotoImage | None = None
         self.loupe_photo: ImageTk.PhotoImage | None = None
+        self.selection_photo: ImageTk.PhotoImage | None = None
         self.scale = 1.0
         self.offset = (0, 0)
         self.start: tuple[int, int] | None = None
         self.selection: tuple[int, int, int, int] | None = None
         self.rectangle: int | None = None
+        self.start_vertical: int | None = None
+        self.start_horizontal: int | None = None
         self.loupe_image_id: int | None = None
         self.loupe_box_id: int | None = None
         self.loupe_text_id: int | None = None
+        self.selection_image_id: int | None = None
+        self.selection_box_id: int | None = None
+        self.selection_text_id: int | None = None
 
         self.withdraw()
         self.parent_window.withdraw()
@@ -64,6 +72,7 @@ class TemplateCaptureOverlay(tk.Toplevel):
         self.canvas.pack(fill="both", expand=True)
         self.bind("<Escape>", lambda _event: self._close())
         self.bind("<Return>", lambda _event: self._save())
+        self.bind("<F2>", lambda _event: self._save())
         self.canvas.bind("<Button-1>", self._start_selection)
         self.canvas.bind("<B1-Motion>", self._drag_selection)
         self.canvas.bind("<ButtonRelease-1>", self._finish_selection)
@@ -90,7 +99,7 @@ class TemplateCaptureOverlay(tk.Toplevel):
         self.canvas.create_rectangle(
             14,
             14,
-            760,
+            870,
             58,
             fill="#07101f",
             outline=LOUPE_BORDER,
@@ -100,7 +109,7 @@ class TemplateCaptureOverlay(tk.Toplevel):
             30,
             36,
             anchor="w",
-            text="Sleep om template te kiezen  •  Loupe volgt cursor  •  ENTER opslaan  •  ESC annuleren",
+            text="Sleep om template te kiezen  •  Loupe + volledige selectie rechts  •  ENTER/F2 opslaan  •  ESC annuleren",
             fill="#ffffff",
             font=("Segoe UI Semibold", 12),
         )
@@ -114,6 +123,17 @@ class TemplateCaptureOverlay(tk.Toplevel):
             min(self.screen.width - 1, max(0, int((x - offset_x) / self.scale))),
             min(self.screen.height - 1, max(0, int((y - offset_y) / self.scale))),
         )
+
+    def _selection_from_cursor(self, event) -> tuple[int, int, int, int] | None:
+        if self.start is None:
+            return self.selection
+        x1, y1 = self._image_point(*self.start)
+        x2, y2 = self._image_point(event.x, event.y)
+        left, right = sorted((x1, x2))
+        top, bottom = sorted((y1, y2))
+        if right <= left or bottom <= top:
+            return None
+        return left, top, right, bottom
 
     def _update_loupe(self, event) -> None:
         if self.screen is None:
@@ -133,8 +153,6 @@ class TemplateCaptureOverlay(tk.Toplevel):
             (crop.width * LOUPE_SCALE, crop.height * LOUPE_SCALE),
             Image.Resampling.NEAREST,
         )
-
-        # Crosshair marks the exact source pixel below the cursor.
         draw = ImageDraw.Draw(zoomed)
         local_x = source_x - left
         local_y = source_y - top
@@ -152,26 +170,12 @@ class TemplateCaptureOverlay(tk.Toplevel):
 
         if self.loupe_image_id is None:
             self.loupe_box_id = self.canvas.create_rectangle(
-                x - 3,
-                y - 3,
-                x + loupe_w + 3,
-                y + loupe_h + 27,
-                fill="#07101f",
-                outline=LOUPE_BORDER,
-                width=2,
+                x - 3, y - 3, x + loupe_w + 3, y + loupe_h + 27,
+                fill="#07101f", outline=LOUPE_BORDER, width=2,
             )
-            self.loupe_image_id = self.canvas.create_image(
-                x,
-                y,
-                image=self.loupe_photo,
-                anchor="nw",
-            )
+            self.loupe_image_id = self.canvas.create_image(x, y, image=self.loupe_photo, anchor="nw")
             self.loupe_text_id = self.canvas.create_text(
-                x,
-                y + loupe_h + 15,
-                anchor="w",
-                text="",
-                fill="#ffffff",
+                x, y + loupe_h + 15, anchor="w", text="", fill="#ffffff",
                 font=("Consolas", 10, "bold"),
             )
         else:
@@ -180,32 +184,100 @@ class TemplateCaptureOverlay(tk.Toplevel):
             self.canvas.itemconfigure(self.loupe_image_id, image=self.loupe_photo)
             self.canvas.coords(self.loupe_text_id, x, y + loupe_h + 15)
 
+        selection_now = self._selection_from_cursor(event)
         selection_text = ""
-        if self.start is not None:
-            start_x, start_y = self._image_point(*self.start)
-            selection_text = f"  •  selectie {abs(source_x - start_x)}×{abs(source_y - start_y)} px"
+        if selection_now is not None:
+            sx1, sy1, sx2, sy2 = selection_now
+            selection_text = f"  •  selectie {sx2 - sx1}×{sy2 - sy1} px"
+            self._update_selection_preview(selection_now, x, y + loupe_h + 46, loupe_w)
+
         self.canvas.itemconfigure(
             self.loupe_text_id,
             text=f"Pixel {source_x}, {source_y}  •  zoom {LOUPE_SCALE}×{selection_text}",
         )
 
-        # Keep loupe above the screenshot and selection rectangle.
-        for item in (self.loupe_box_id, self.loupe_image_id, self.loupe_text_id):
+        for item in (
+            self.loupe_box_id,
+            self.loupe_image_id,
+            self.loupe_text_id,
+            self.selection_box_id,
+            self.selection_image_id,
+            self.selection_text_id,
+        ):
             if item is not None:
                 self.canvas.tag_raise(item)
+
+    def _update_selection_preview(
+        self,
+        selection: tuple[int, int, int, int],
+        x: int,
+        y: int,
+        width_hint: int,
+    ) -> None:
+        if self.screen is None:
+            return
+        x1, y1, x2, y2 = selection
+        crop = self.screen.crop((x1, y1, x2, y2))
+        if crop.width < 1 or crop.height < 1:
+            return
+
+        max_w = max(width_hint, SELECTION_PREVIEW_MAX[0])
+        max_h = SELECTION_PREVIEW_MAX[1]
+        factor = min(max_w / crop.width, max_h / crop.height)
+        factor = max(1.0, factor) if crop.width <= max_w and crop.height <= max_h else factor
+        display_w = max(1, int(crop.width * factor))
+        display_h = max(1, int(crop.height * factor))
+        resampling = Image.Resampling.NEAREST if factor >= 1.0 else Image.Resampling.LANCZOS
+        preview = crop.resize((display_w, display_h), resampling)
+        self.selection_photo = ImageTk.PhotoImage(preview)
+
+        box_right = x + display_w + 3
+        box_bottom = y + display_h + 30
+        if self.selection_image_id is None:
+            self.selection_box_id = self.canvas.create_rectangle(
+                x - 3, y - 3, box_right, box_bottom,
+                fill="#07101f", outline=START_GUIDE, width=2,
+            )
+            self.selection_image_id = self.canvas.create_image(
+                x, y, image=self.selection_photo, anchor="nw"
+            )
+            self.selection_text_id = self.canvas.create_text(
+                x, y + display_h + 16, anchor="w",
+                text="", fill="#ffffff", font=("Consolas", 10, "bold"),
+            )
+        else:
+            self.canvas.coords(self.selection_box_id, x - 3, y - 3, box_right, box_bottom)
+            self.canvas.coords(self.selection_image_id, x, y)
+            self.canvas.itemconfigure(self.selection_image_id, image=self.selection_photo)
+            self.canvas.coords(self.selection_text_id, x, y + display_h + 16)
+
+        self.canvas.itemconfigure(
+            self.selection_text_id,
+            text=f"VOLLEDIGE TEMPLATE  •  {crop.width}×{crop.height} px",
+        )
 
     def _start_selection(self, event) -> None:
         self.start = (event.x, event.y)
         self.selection = None
         if self.rectangle is not None:
             self.canvas.delete(self.rectangle)
+        for item in (self.start_vertical, self.start_horizontal):
+            if item is not None:
+                self.canvas.delete(item)
+
+        canvas_w = max(1, self.canvas.winfo_width())
+        canvas_h = max(1, self.canvas.winfo_height())
+        self.start_vertical = self.canvas.create_line(
+            event.x, 0, event.x, canvas_h,
+            fill=START_GUIDE, width=1, dash=(3, 4),
+        )
+        self.start_horizontal = self.canvas.create_line(
+            0, event.y, canvas_w, event.y,
+            fill=START_GUIDE, width=1, dash=(3, 4),
+        )
         self.rectangle = self.canvas.create_rectangle(
-            event.x,
-            event.y,
-            event.x,
-            event.y,
-            outline=LOUPE_BORDER,
-            width=3,
+            event.x, event.y, event.x, event.y,
+            outline=LOUPE_BORDER, width=3,
         )
 
     def _drag_selection(self, event) -> None:
@@ -215,16 +287,10 @@ class TemplateCaptureOverlay(tk.Toplevel):
         self._update_loupe(event)
 
     def _finish_selection(self, event) -> None:
-        if self.start is None:
+        selection = self._selection_from_cursor(event)
+        if selection is None:
             return
-        x1, y1 = self._image_point(*self.start)
-        x2, y2 = self._image_point(event.x, event.y)
-        self.selection = (
-            min(x1, x2),
-            min(y1, y2),
-            max(x1, x2),
-            max(y1, y2),
-        )
+        self.selection = selection
         self._update_loupe(event)
 
     def _save(self) -> None:
