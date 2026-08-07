@@ -5,6 +5,9 @@ import os
 from pathlib import Path
 
 
+MIN_ZOOM_PERCENT = 25
+MAX_ZOOM_PERCENT = 1600
+
 DEFAULT_PREFERENCES = {
     "auto_resize": True,
     "zoom_percent": 100,
@@ -30,7 +33,7 @@ def load_preferences(path: Path | None = None) -> dict[str, object]:
 
     zoom = data.get("zoom_percent", DEFAULT_PREFERENCES["zoom_percent"])
     try:
-        zoom = min(100, max(10, int(float(zoom))))
+        zoom = min(MAX_ZOOM_PERCENT, max(MIN_ZOOM_PERCENT, int(float(zoom))))
     except (TypeError, ValueError):
         zoom = DEFAULT_PREFERENCES["zoom_percent"]
     return {
