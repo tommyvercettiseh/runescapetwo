@@ -16,7 +16,7 @@ BRIGHT_VALID = np.array((0, 255, 70), dtype=np.uint8)
 
 
 class SearchableTemplatePage(enhanced_ui.modern_ui.TemplatePage):
-    """Keep Template clean while adding a searchable area browser."""
+    """Template tester with Template and Area browsers as the primary navigation."""
 
     def __init__(self, parent):
         self.area_query = tk.StringVar(value="")
@@ -27,23 +27,34 @@ class SearchableTemplatePage(enhanced_ui.modern_ui.TemplatePage):
     def _build(self) -> None:
         super()._build()
         self._install_clean_preview()
-        self._add_area_search()
+        self._simplify_top_toolbar()
         self._add_area_browser()
+
+    def _simplify_top_toolbar(self) -> None:
+        """The Area sidebar owns area selection; keep only the useful actions above."""
+        try:
+            toolbar = self.source.master
+            self.source.grid_remove()
+            actions = None
+            for child in toolbar.grid_slaves(row=0):
+                if child is not self.source:
+                    actions = child
+                    break
+            if actions is not None:
+                actions.grid_configure(column=0, sticky="e", padx=16, pady=10)
+            toolbar.grid_columnconfigure(0, weight=1)
+            toolbar.grid_columnconfigure(1, weight=0)
+        except (AttributeError, tk.TclError):
+            pass
 
     def _install_clean_preview(self) -> None:
         original_show = self.preview.show
 
         def show_clean(visual):
             cleaned = visual.copy()
-
-            # The gold rectangle is only the internal safe mouse target. Keep
-            # the coordinates for mouse movement, but do not draw it.
             if self.screenshot is not None and self.screenshot.shape == cleaned.shape:
                 safe_mask = np.all(cleaned == ORIGINAL_SAFE, axis=2)
                 cleaned[safe_mask] = self.screenshot[safe_mask]
-
-            # Make a valid template match deliberately obvious without adding
-            # another widget that has to repaint during live matching.
             valid_mask = np.all(cleaned == ORIGINAL_VALID, axis=2)
             cleaned[valid_mask] = BRIGHT_VALID
             original_show(cleaned)
@@ -64,38 +75,6 @@ class SearchableTemplatePage(enhanced_ui.modern_ui.TemplatePage):
             for name in self._area_names()
             if all(term in name.casefold() for term in terms)
         ]
-
-    def _add_area_search(self) -> None:
-        source = self.source
-        source.grid_columnconfigure(1, weight=1)
-        source.grid_columnconfigure(2, weight=1)
-
-        enhanced_ui.modern_ui._label(
-            source,
-            "ZOEK AREA",
-            muted=True,
-            size=11,
-        ).grid(row=0, column=2, sticky="w", padx=(12, 0))
-
-        self.area_search_entry = ctk.CTkEntry(
-            source,
-            textvariable=self.area_query,
-            placeholder_text="Zoek deel van area naam",
-            height=38,
-            corner_radius=8,
-            fg_color=enhanced_ui.modern_ui.CARD_ALT,
-            border_color=enhanced_ui.modern_ui.BORDER,
-            text_color=enhanced_ui.modern_ui.TEXT,
-        )
-        self.area_search_entry.grid(
-            row=1,
-            column=2,
-            sticky="ew",
-            padx=(12, 0),
-            pady=(4, 0),
-        )
-        self.area_search_entry.bind("<KeyRelease>", self._filter_areas)
-        self.area_search_entry.bind("<Escape>", self._clear_area_search)
 
     def _add_area_browser(self) -> None:
         content_matches = self.grid_slaves(row=1, column=0)
@@ -188,11 +167,12 @@ class SearchableTemplatePage(enhanced_ui.modern_ui.TemplatePage):
             self.after_idle(self._capture)
 
     def _filter_areas(self, _event=None) -> None:
-        areas = self._area_names()
         matches = self._filtered_area_names()
-        self.source.area_box.configure(values=matches or areas)
+        try:
+            self.source.area_box.configure(values=matches or self._area_names())
+        except (AttributeError, tk.TclError):
+            pass
         self._draw_areas()
-
         current = self.source.area.get()
         if current and current in matches:
             return
@@ -201,14 +181,14 @@ class SearchableTemplatePage(enhanced_ui.modern_ui.TemplatePage):
 
     def _clear_area_search(self, _event=None) -> None:
         self.area_query.set("")
-        self.source.area_box.configure(values=self._area_names())
+        try:
+            self.source.area_box.configure(values=self._area_names())
+        except (AttributeError, tk.TclError):
+            pass
         self._draw_areas()
 
     def _captured(self, name: str) -> None:
-        # Base handler saves matching settings and selects the fresh template.
         super()._captured(name)
-        # Creating a template temporarily pauses Live. Resume it immediately so
-        # the new crop can be verified without another manual click.
         self.live.set(True)
         self.status.set(f"Nieuwe template {name} opgeslagen · Live matching actief.")
         self.after_idle(self._capture)
