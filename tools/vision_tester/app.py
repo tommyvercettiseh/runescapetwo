@@ -1,10 +1,12 @@
 from .template_plus import install_template_plus
 from .area_overlay_toggle import install_area_overlay_toggle
 from .colour_view_cleanup import install_colour_view_cleanup
+from .hotkey_fix import install_hotkey_fix
 
 install_template_plus()
 install_area_overlay_toggle()
 install_colour_view_cleanup()
+install_hotkey_fix()
 
 from . import unified_plus
 from .colour_browser import install_colour_browser
