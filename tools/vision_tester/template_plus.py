@@ -204,6 +204,15 @@ class SearchableTemplatePage(enhanced_ui.modern_ui.TemplatePage):
         self.source.area_box.configure(values=self._area_names())
         self._draw_areas()
 
+    def _captured(self, name: str) -> None:
+        # Base handler saves matching settings and selects the fresh template.
+        super()._captured(name)
+        # Creating a template temporarily pauses Live. Resume it immediately so
+        # the new crop can be verified without another manual click.
+        self.live.set(True)
+        self.status.set(f"Nieuwe template {name} opgeslagen · Live matching actief.")
+        self.after_idle(self._capture)
+
 
 def install_template_plus() -> None:
     if enhanced_ui.modern_ui.TemplatePage is not SearchableTemplatePage:
