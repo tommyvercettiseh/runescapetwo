@@ -6,7 +6,13 @@ install_template_plus()
 install_area_overlay_toggle()
 install_colour_view_cleanup()
 
-from .unified_plus import VisionTester, main
+from . import unified_plus
+from .colour_browser import install_colour_browser
+
+install_colour_browser()
+
+VisionTester = unified_plus.VisionTester
+main = unified_plus.main
 
 
 __all__ = ["VisionTester", "main"]
