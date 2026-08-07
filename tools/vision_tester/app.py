@@ -1,4 +1,4 @@
-from .enhanced_ui import VisionTester, main
+from .unified_plus import VisionTester, main
 
 
 __all__ = ["VisionTester", "main"]
