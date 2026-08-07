@@ -3,36 +3,52 @@ from __future__ import annotations
 import tkinter as tk
 
 import customtkinter as ctk
+import numpy as np
 
 from core.vision.areas import load_areas
 
 from . import enhanced_ui
 
 
-STATUS_WAIT_BG = "#6b7280"
-STATUS_FOUND_BG = "#15803d"
-STATUS_MISSING_BG = "#b91c1c"
-STATUS_FG = "#ffffff"
+ORIGINAL_VALID = np.array((37, 169, 105), dtype=np.uint8)
+ORIGINAL_SAFE = np.array((209, 166, 75), dtype=np.uint8)
+BRIGHT_VALID = np.array((0, 255, 70), dtype=np.uint8)
 
 
 class SearchableTemplatePage(enhanced_ui.modern_ui.TemplatePage):
-    """Keep Template clean while adding clear match state and searchable areas."""
+    """Keep Template clean while adding a searchable area browser."""
 
     def __init__(self, parent):
         self.area_query = tk.StringVar(value="")
-        self.match_state_text = tk.StringVar(value="—  WAITING")
-        self.match_state_frame: tk.Frame | None = None
-        self.match_state_label: tk.Label | None = None
-        self._match_state: bool | None | object = object()
         self.area_scroll: ctk.CTkScrollableFrame | None = None
         self.area_rows: dict[str, ctk.CTkButton] = {}
         super().__init__(parent)
 
     def _build(self) -> None:
         super()._build()
+        self._install_clean_preview()
         self._add_area_search()
         self._add_area_browser()
-        self._add_match_status_bar()
+
+    def _install_clean_preview(self) -> None:
+        original_show = self.preview.show
+
+        def show_clean(visual):
+            cleaned = visual.copy()
+
+            # The gold rectangle is only the internal safe mouse target. Keep
+            # the coordinates for mouse movement, but do not draw it.
+            if self.screenshot is not None and self.screenshot.shape == cleaned.shape:
+                safe_mask = np.all(cleaned == ORIGINAL_SAFE, axis=2)
+                cleaned[safe_mask] = self.screenshot[safe_mask]
+
+            # Make a valid template match deliberately obvious without adding
+            # another widget that has to repaint during live matching.
+            valid_mask = np.all(cleaned == ORIGINAL_VALID, axis=2)
+            cleaned[valid_mask] = BRIGHT_VALID
+            original_show(cleaned)
+
+        self.preview.show = show_clean
 
     def _area_names(self) -> list[str]:
         return sorted(load_areas(), key=str.casefold)
@@ -82,9 +98,6 @@ class SearchableTemplatePage(enhanced_ui.modern_ui.TemplatePage):
         self.area_search_entry.bind("<Escape>", self._clear_area_search)
 
     def _add_area_browser(self) -> None:
-        # The original Template layout is:
-        # Templates | Live Area | Detection.
-        # Insert Areas between Templates and Live Area without redesigning either.
         content_matches = self.grid_slaves(row=1, column=0)
         if not content_matches:
             return
@@ -98,7 +111,6 @@ class SearchableTemplatePage(enhanced_ui.modern_ui.TemplatePage):
                 center = child
             elif column == 2:
                 detection = child
-
         if center is None or detection is None:
             return
 
@@ -115,13 +127,9 @@ class SearchableTemplatePage(enhanced_ui.modern_ui.TemplatePage):
         sidebar.grid_rowconfigure(2, weight=1)
         sidebar.grid_columnconfigure(0, weight=1)
 
-        enhanced_ui.modern_ui._label(
-            sidebar,
-            "AREAS",
-            size=12,
-            bold=True,
-        ).grid(row=0, column=0, sticky="w", padx=14, pady=(14, 8))
-
+        enhanced_ui.modern_ui._label(sidebar, "AREAS", size=12, bold=True).grid(
+            row=0, column=0, sticky="w", padx=14, pady=(14, 8)
+        )
         area_search = ctk.CTkEntry(
             sidebar,
             textvariable=self.area_query,
@@ -144,16 +152,6 @@ class SearchableTemplatePage(enhanced_ui.modern_ui.TemplatePage):
         )
         self.area_scroll.grid(row=2, column=0, sticky="nsew", padx=8, pady=(0, 8))
         self.area_scroll.grid_columnconfigure(0, weight=1)
-
-        enhanced_ui.modern_ui._label(
-            sidebar,
-            "Klik een area om direct opnieuw te testen.",
-            muted=True,
-            size=10,
-            wraplength=210,
-            justify="left",
-        ).grid(row=3, column=0, sticky="w", padx=14, pady=(0, 12))
-
         self._draw_areas()
 
     def _draw_areas(self) -> None:
@@ -173,17 +171,9 @@ class SearchableTemplatePage(enhanced_ui.modern_ui.TemplatePage):
                 anchor="w",
                 height=34,
                 corner_radius=7,
-                fg_color=(
-                    enhanced_ui.modern_ui.ACCENT_SOFT
-                    if selected
-                    else "transparent"
-                ),
+                fg_color=enhanced_ui.modern_ui.ACCENT_SOFT if selected else "transparent",
                 hover_color=enhanced_ui.modern_ui.ACCENT_SOFT,
-                text_color=(
-                    enhanced_ui.modern_ui.ACCENT_HOVER
-                    if selected
-                    else enhanced_ui.modern_ui.TEXT
-                ),
+                text_color=enhanced_ui.modern_ui.ACCENT_HOVER if selected else enhanced_ui.modern_ui.TEXT,
             )
             button.grid(row=row, column=0, sticky="ew", pady=1)
             self.area_rows[name] = button
@@ -193,7 +183,6 @@ class SearchableTemplatePage(enhanced_ui.modern_ui.TemplatePage):
             return
         self.source.area.set(name)
         self._draw_areas()
-        self._set_match_state(None)
         self.status.set(f"Area geselecteerd: {name}. Opnieuw analyseren…")
         if self.selected:
             self.after_idle(self._capture)
@@ -204,14 +193,9 @@ class SearchableTemplatePage(enhanced_ui.modern_ui.TemplatePage):
         self.source.area_box.configure(values=matches or areas)
         self._draw_areas()
 
-        # Keep the current area while it still matches. This avoids jumping to
-        # another area merely because the user is typing a partial search.
         current = self.source.area.get()
         if current and current in matches:
             return
-
-        # Do not silently select a broad first result. Only auto-select when the
-        # partial search has narrowed the list down to one unambiguous area.
         if len(matches) == 1:
             self._select_area(matches[0])
 
@@ -220,90 +204,8 @@ class SearchableTemplatePage(enhanced_ui.modern_ui.TemplatePage):
         self.source.area_box.configure(values=self._area_names())
         self._draw_areas()
 
-    def _add_match_status_bar(self) -> None:
-        toolbar = self.source.master
-        toolbar.grid_columnconfigure(0, weight=1)
-
-        self.match_state_frame = tk.Frame(
-            toolbar,
-            background=STATUS_WAIT_BG,
-            height=42,
-            bd=0,
-            highlightthickness=0,
-        )
-        self.match_state_frame.grid(
-            row=1,
-            column=0,
-            columnspan=2,
-            sticky="ew",
-            padx=16,
-            pady=(0, 12),
-        )
-        self.match_state_frame.grid_propagate(False)
-        self.match_state_frame.pack_propagate(False)
-
-        self.match_state_label = tk.Label(
-            self.match_state_frame,
-            textvariable=self.match_state_text,
-            background=STATUS_WAIT_BG,
-            foreground=STATUS_FG,
-            font=("Segoe UI", 13, "bold"),
-            anchor="center",
-            bd=0,
-            highlightthickness=0,
-        )
-        self.match_state_label.pack(fill="both", expand=True)
-        self._match_state = None
-
-    def _set_match_state(self, found: bool | None) -> None:
-        if self.match_state_frame is None or self.match_state_label is None:
-            return
-
-        # Live analysis runs around ten times per second. Reconfiguring the
-        # widgets every frame causes visible repaint jitter. Only repaint on a
-        # real state transition.
-        if found is self._match_state:
-            return
-        self._match_state = found
-
-        if found is True:
-            text = "TRUE  ·  FOUND"
-            background = STATUS_FOUND_BG
-        elif found is False:
-            text = "FALSE  ·  NOT FOUND"
-            background = STATUS_MISSING_BG
-        else:
-            text = "—  WAITING"
-            background = STATUS_WAIT_BG
-
-        self.match_state_text.set(text)
-        self.match_state_frame.configure(background=background)
-        self.match_state_label.configure(background=background)
-
-    def _select(self, name: str) -> None:
-        self._set_match_state(None)
-        super()._select(name)
-
-    def _capture(self) -> None:
-        if not self.selected:
-            self._set_match_state(None)
-        super()._capture()
-
-    def _analyse(self) -> None:
-        super()._analyse()
-        if self.screenshot is None or not self.selected:
-            self._set_match_state(None)
-            return
-        self._set_match_state(self.best_valid_bounds is not None)
-
-    def _delete(self) -> None:
-        super()._delete()
-        if not self.selected:
-            self._set_match_state(None)
-
 
 def install_template_plus() -> None:
-    """Install the Template-page enhancement before Unified Vision Tester is built."""
     if enhanced_ui.modern_ui.TemplatePage is not SearchableTemplatePage:
         enhanced_ui.modern_ui.TemplatePage = SearchableTemplatePage
 
