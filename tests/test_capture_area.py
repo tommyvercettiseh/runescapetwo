@@ -7,11 +7,11 @@ from core.vision.areas import get_region
 def test_capture_area_uses_one_absolute_region(monkeypatch):
     captured = []
 
-    def fake_screenshot(*, region):
+    def fake_capture_rgb(region):
         captured.append(region)
         return np.zeros((region[3], region[2], 3), dtype=np.uint8)
 
-    monkeypatch.setattr(screenshots.pyautogui, "screenshot", fake_screenshot)
+    monkeypatch.setattr(screenshots, "capture_rgb", fake_capture_rgb)
 
     image, region = screenshots.capture_area("Inventory_Area", bot_id=2)
     expected = get_region("Inventory_Area", bot_id=2)
