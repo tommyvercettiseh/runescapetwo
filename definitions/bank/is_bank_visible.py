@@ -1,11 +1,10 @@
 from core import vision
-
-
-BANK_COLOUR = "cyan"
-BANK_AREA = "Bot_Area"
-
-BANK_MIN_PIXELS = 300
-BANK_MAX_PIXELS = 800
+from definitions.bank.bank_target import (
+    BANK_AREA,
+    BANK_COLOUR,
+    BANK_MAX_PIXELS,
+    BANK_MIN_PIXELS,
+)
 
 
 def is_bank_visible(bot_id: int = 1) -> bool:
