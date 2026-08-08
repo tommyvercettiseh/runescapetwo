@@ -2,11 +2,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
+from definitions.inventory.constants import TOTAL_SLOTS
 from definitions.inventory.get_inventory_item_slots import get_inventory_item_slots
 from definitions.inventory.get_inventory_state import InventorySlot
-
-
-TOTAL_SLOTS = 28
 
 
 def unique_image_names(values: Iterable[str] | None) -> tuple[str, ...]:
@@ -68,7 +66,6 @@ def occupied_slots(
 
 
 __all__ = [
-    "TOTAL_SLOTS",
     "occupied_slots",
     "resolve_inventory_exclusions",
     "unique_image_names",
