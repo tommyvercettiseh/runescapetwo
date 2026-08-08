@@ -35,6 +35,10 @@ from .prayer_stoplight_monitor import install_prayer_stoplight_monitor
 
 install_prayer_stoplight_monitor()
 
+from .sensor_boolean_badge import install_sensor_boolean_badge
+
+install_sensor_boolean_badge()
+
 VisionTester = unified_plus.VisionTester
 main = unified_plus.main
 
