@@ -1,0 +1,15 @@
+{
+  "area": "Hp_Area",
+  "min_saturation": 105,
+  "min_value": 130,
+  "min_colour_pixels": 3,
+  "min_confidence": 0.52,
+  "hue_ranges": {
+    "green": [[39, 85]],
+    "yellow": [[23, 38]],
+    "orange": [[9, 22]],
+    "red": [[0, 8], [170, 179]]
+  },
+  "safe_states": ["green", "yellow"],
+  "low_states": ["orange", "red"]
+}
