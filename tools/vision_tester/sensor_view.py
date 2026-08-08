@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import importlib
 from pathlib import Path
 
 import cv2
@@ -24,12 +25,38 @@ class SensorFrame:
     unit: str
 
 
+def _analyse_python_sensor(screenshot: np.ndarray, check: SensorCheck) -> SensorFrame:
+    module = importlib.import_module(check.value)
+    analyser = getattr(module, "analyse_frame", None)
+    if not callable(analyser):
+        raise ValueError(f"Python sensor '{check.value}' must expose analyse_frame(frame_rgb).")
+
+    data = analyser(screenshot)
+    if not isinstance(data, dict):
+        raise ValueError(f"Python sensor '{check.value}' returned invalid analysis data.")
+
+    detected = data.get("detected")
+    if not isinstance(detected, np.ndarray):
+        detected = screenshot.copy()
+
+    return SensorFrame(
+        detected=detected,
+        found=int(data.get("found", 0)),
+        required=max(1, int(data.get("required", 1))),
+        result=bool(data.get("result", False)),
+        unit=str(data.get("unit", "value")),
+    )
+
+
 def analyse_sensor_frame(
     screenshot: np.ndarray,
     check: SensorCheck,
     *,
     origin: tuple[int, int] = (0, 0),
 ) -> SensorFrame:
+    if check.kind == "python_bool":
+        return _analyse_python_sensor(screenshot, check)
+
     if check.kind in ("colour_exists", "colour_blob"):
         preset = load_colour_preset(check.value)
         mask = build_mask_from_ranges(screenshot, preset.ranges)
@@ -86,6 +113,8 @@ def analyse_sensor_frame(
 
 
 def sensor_description(check: SensorCheck) -> str:
+    if check.kind == "python_bool":
+        return f"Python boolean sensor '{check.name}' uit {check.value}. Area: {check.area}."
     if check.kind == "colour_exists":
         return f"Zoekt kleur '{check.value}' in {check.area}."
     if check.kind == "colour_blob":
