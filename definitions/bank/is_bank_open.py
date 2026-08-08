@@ -1,8 +1,5 @@
 from core import vision
-
-
-BANK_DEPOSIT_IMAGE = "Bank_Deposit"
-BANK_AREA = "Bot_Area"
+from definitions.bank.bank_target import BANK_AREA, BANK_DEPOSIT_IMAGE
 
 
 def is_bank_open(bot_id: int = 1) -> bool:
