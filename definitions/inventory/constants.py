@@ -1,0 +1,12 @@
+INVENTORY_AREA = "Inventory_Area"
+SLOT_PREFIX = "Inventory_Slot_"
+TOTAL_SLOTS = 28
+INVENTORY_COLUMNS = 4
+
+
+__all__ = [
+    "INVENTORY_AREA",
+    "INVENTORY_COLUMNS",
+    "SLOT_PREFIX",
+    "TOTAL_SLOTS",
+]
