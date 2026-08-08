@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 
 from definitions.inventory.constants import TOTAL_SLOTS
 from definitions.inventory.get_inventory_item_slots import get_inventory_item_slots
 from definitions.inventory.get_inventory_state import InventorySlot
+
+
+ItemSlotsGetter = Callable[[str, int], set[int]]
 
 
 def unique_image_names(values: Iterable[str] | None) -> tuple[str, ...]:
@@ -36,19 +39,20 @@ def resolve_inventory_exclusions(
     explicit_slots: Iterable[int] = (),
     protected_images: Iterable[str] = (),
     optional_images: Iterable[str] = (),
+    item_slots_getter: ItemSlotsGetter = get_inventory_item_slots,
 ) -> tuple[set[int], tuple[str, ...]]:
     """Resolve protected slots and report required images that were not found."""
     excluded = validate_inventory_slots(explicit_slots)
     missing: list[str] = []
 
     for image_name in unique_image_names(protected_images):
-        slots = get_inventory_item_slots(image_name, bot_id)
+        slots = item_slots_getter(image_name, bot_id)
         if not slots:
             missing.append(image_name)
         excluded.update(slots)
 
     for image_name in unique_image_names(optional_images):
-        excluded.update(get_inventory_item_slots(image_name, bot_id))
+        excluded.update(item_slots_getter(image_name, bot_id))
 
     return excluded, tuple(missing)
 
@@ -66,6 +70,7 @@ def occupied_slots(
 
 
 __all__ = [
+    "ItemSlotsGetter",
     "occupied_slots",
     "resolve_inventory_exclusions",
     "unique_image_names",
