@@ -7,6 +7,7 @@ from tkinter import messagebox, ttk
 
 from PIL import Image, ImageDraw, ImageTk
 
+from core.vision.api import find_image
 from core.vision.colour_detection import analyse_colour_image
 from core.vision.colour_presets import list_colour_presets
 from core.vision.screenshots import capture_area
@@ -33,6 +34,7 @@ class ActionStudio(tk.Tk):
         self.inputs: dict[str, tk.Variable] = {}
         self.preview_photo: ImageTk.PhotoImage | None = None
         self.item_paths: list[Path] = []
+        self.live_blob_sizes: list[int] = []
 
         self.search_var = tk.StringVar()
         self.bot_var = tk.IntVar(value=1)
@@ -84,12 +86,12 @@ class ActionStudio(tk.Tk):
         self.settings_box.grid(row=1, column=0, sticky="ew")
         self.settings_box.columnconfigure(1, weight=1)
 
-        self.content = ttk.Frame(right)
-        self.content.grid(row=2, column=0, sticky="nsew", pady=(10, 0))
-        self.content.columnconfigure(0, weight=1)
-        self.content.rowconfigure(0, weight=1)
+        content = ttk.Frame(right)
+        content.grid(row=2, column=0, sticky="nsew", pady=(10, 0))
+        content.columnconfigure(0, weight=1)
+        content.rowconfigure(0, weight=1)
 
-        self.live_box = ttk.LabelFrame(self.content, text="Live controleren", padding=12)
+        self.live_box = ttk.LabelFrame(content, text="Live controleren", padding=12)
         self.live_box.grid(row=0, column=0, sticky="nsew")
         self.live_box.columnconfigure(0, weight=1)
         self.live_box.rowconfigure(1, weight=1)
@@ -114,7 +116,8 @@ class ActionStudio(tk.Tk):
 
         side = ttk.Frame(preview_wrap)
         side.grid(row=0, column=1, sticky="nsew")
-        ttk.Label(side, text="Gevonden groottes", font=("Segoe UI", 10, "bold")).pack(anchor="w")
+        self.found_title = ttk.Label(side, text="Gevonden groottes", font=("Segoe UI", 10, "bold"))
+        self.found_title.pack(anchor="w")
         self.blob_list = tk.Listbox(side, height=12, exportselection=False)
         self.blob_list.pack(fill="both", expand=True, pady=(6, 8))
         self.use_smallest_button = ttk.Button(
@@ -157,14 +160,9 @@ class ActionStudio(tk.Tk):
 
     def _display_name(self, path: Path) -> str:
         relative = path.relative_to(ROOT)
-        if relative.parts[0] == "actions":
-            icon = "ACTION"
-        elif relative.parts[0] == "definitions":
-            icon = "SENSOR"
-        else:
-            icon = "SENSOR"
+        kind = "ACTION" if relative.parts[0] == "actions" else "SENSOR"
         group = relative.parent.name.replace("_", " ").upper()
-        return f"{group:14}  {path.stem}   [{icon}]"
+        return f"{group:14}  {path.stem}   [{kind}]"
 
     def _draw_items(self) -> None:
         query = self.search_var.get().strip().casefold()
@@ -179,9 +177,8 @@ class ActionStudio(tk.Tk):
 
     def _on_select(self, _event=None) -> None:
         selection = self.item_list.curselection()
-        if not selection:
-            return
-        self._load_path(self.visible_paths[int(selection[0])])
+        if selection:
+            self._load_path(self.visible_paths[int(selection[0])])
 
     def _load_path(self, path: Path) -> None:
         self.selected_path = path
@@ -206,7 +203,7 @@ class ActionStudio(tk.Tk):
         if not self.fields:
             ttk.Label(
                 self.settings_box,
-                text="Hier zijn nog geen simpele instellingen gevonden. De Python-logica blijft ongemoeid.",
+                text="Geen eenvoudige instellingen om hier aan te passen. De Python-logica blijft ongemoeid.",
             ).grid(row=0, column=0, columnspan=2, sticky="w")
             self.save_button.configure(state="disabled")
             return
@@ -217,38 +214,23 @@ class ActionStudio(tk.Tk):
                 row=row, column=0, sticky="w", padx=(0, 12), pady=4
             )
 
-            var: tk.Variable
-            widget: tk.Widget
             if field.kind == "colour":
                 var = tk.StringVar(value=str(field.value))
                 widget = ttk.Combobox(
-                    self.settings_box,
-                    textvariable=var,
-                    values=list_colour_presets(),
-                    state="readonly",
+                    self.settings_box, textvariable=var, values=list_colour_presets(), state="readonly"
                 )
             elif field.kind == "area":
                 var = tk.StringVar(value=str(field.value))
                 widget = ttk.Combobox(
-                    self.settings_box,
-                    textvariable=var,
-                    values=self._area_names(),
-                    state="readonly",
+                    self.settings_box, textvariable=var, values=self._area_names(), state="readonly"
                 )
             elif field.kind == "image":
                 var = tk.StringVar(value=str(field.value))
-                widget = ttk.Combobox(
-                    self.settings_box,
-                    textvariable=var,
-                    values=self._image_names(),
-                )
+                widget = ttk.Combobox(self.settings_box, textvariable=var, values=self._image_names())
             elif field.kind == "choice":
                 var = tk.StringVar(value=str(field.value))
                 widget = ttk.Combobox(
-                    self.settings_box,
-                    textvariable=var,
-                    values=("left", "right"),
-                    state="readonly",
+                    self.settings_box, textvariable=var, values=("left", "right"), state="readonly"
                 )
             else:
                 var = tk.StringVar(value=str(field.value))
@@ -286,8 +268,7 @@ class ActionStudio(tk.Tk):
             return
         try:
             for field in self.fields:
-                value = self._current_value(field)
-                update_literal(path, field.name, value)
+                update_literal(path, field.name, self._current_value(field))
         except (ValueError, OSError, KeyError) as exc:
             messagebox.showerror("Niet opgeslagen", str(exc), parent=self)
             return
@@ -303,16 +284,24 @@ class ActionStudio(tk.Tk):
         self.preview_label.configure(image="", text="Klik op ‘Meet live’")
         self.preview_photo = None
         self.blob_list.delete(0, "end")
-        self.live_blob_sizes: list[int] = []
+        self.live_blob_sizes = []
         self.use_smallest_button.configure(state="disabled")
         self.use_largest_button.configure(state="disabled")
 
-        has_colour = self._field_by_kind("colour") is not None and self._field_by_kind("area") is not None
-        self.live_button.configure(state="normal" if has_colour else "disabled")
-        if not has_colour:
-            self.live_result_var.set("Live blobmeting is alleen nodig bij kleuracties.")
+        has_area = self._field_by_kind("area") is not None
+        has_target = self._field_by_kind("colour") is not None or self._field_by_kind("image") is not None
+        enabled = has_area and has_target
+        self.live_button.configure(state="normal" if enabled else "disabled")
+        if not enabled:
+            self.live_result_var.set("Voor deze action is geen vision-test nodig.")
 
     def _measure_live(self) -> None:
+        if self._field_by_kind("colour") is not None:
+            self._measure_colour_live()
+        elif self._field_by_kind("image") is not None:
+            self._measure_image_live()
+
+    def _measure_colour_live(self) -> None:
         colour_field = self._field_by_kind("colour")
         area_field = self._field_by_kind("area")
         if colour_field is None or area_field is None:
@@ -322,7 +311,7 @@ class ActionStudio(tk.Tk):
             colour = str(self._current_value(colour_field))
             area = str(self._current_value(area_field))
             screenshot, region = capture_area(area, bot_id=int(self.bot_var.get()))
-            mask, all_blobs, total_pixels = analyse_colour_image(
+            _, all_blobs, total_pixels = analyse_colour_image(
                 screenshot,
                 colour,
                 origin=(region[0], region[1]),
@@ -342,8 +331,8 @@ class ActionStudio(tk.Tk):
             blob for blob in all_blobs
             if blob.area_px >= minimum and (maximum is None or blob.area_px <= maximum)
         ]
-        self.live_blob_sizes = sorted((blob.area_px for blob in all_blobs))
-
+        self.live_blob_sizes = sorted(blob.area_px for blob in all_blobs)
+        self.found_title.configure(text="Gevonden groottes")
         self.blob_list.delete(0, "end")
         for blob in sorted(all_blobs, key=lambda b: b.area_px):
             marker = "✓" if blob in valid else "×"
@@ -352,14 +341,41 @@ class ActionStudio(tk.Tk):
         self.live_result_var.set(
             f"{len(valid)} geldig · {len(all_blobs)} gevonden · {total_pixels} kleurpixels totaal"
         )
-        self._show_preview(screenshot, region, all_blobs, valid)
+        self._show_colour_preview(screenshot, region, all_blobs, valid)
         state = "normal" if self.live_blob_sizes else "disabled"
         if min_field:
             self.use_smallest_button.configure(state=state)
         if max_field:
             self.use_largest_button.configure(state=state)
 
-    def _show_preview(self, screenshot, region, blobs, valid) -> None:
+    def _measure_image_live(self) -> None:
+        image_field = self._field_by_kind("image")
+        area_field = self._field_by_kind("area")
+        if image_field is None or area_field is None:
+            return
+
+        try:
+            image_name = str(self._current_value(image_field))
+            area = str(self._current_value(area_field))
+            screenshot, region = capture_area(area, bot_id=int(self.bot_var.get()))
+            hit = find_image(image_name, area=area, bot_id=int(self.bot_var.get()))
+        except Exception as exc:
+            messagebox.showerror("Live meten mislukt", str(exc), parent=self)
+            return
+
+        self.found_title.configure(text="Image match")
+        self.blob_list.delete(0, "end")
+        if hit is None:
+            self.live_result_var.set("Geen match gevonden")
+            self.blob_list.insert("end", "×  Geen match")
+        else:
+            self.live_result_var.set("✓ Image gevonden")
+            self.blob_list.insert("end", f"✓  Shape {hit.shape_score:.1%}")
+            self.blob_list.insert("end", f"✓  Colour {hit.color_score:.1%}")
+            self.blob_list.insert("end", f"    {hit.width} × {hit.height} px")
+        self._show_image_preview(screenshot, region, hit)
+
+    def _show_colour_preview(self, screenshot, region, blobs, valid) -> None:
         image = Image.fromarray(screenshot).convert("RGB")
         draw = ImageDraw.Draw(image)
         valid_ids = {id(blob) for blob in valid}
@@ -370,12 +386,29 @@ class ActionStudio(tk.Tk):
             y1 = blob.y - origin_y
             x2 = x1 + blob.width
             y2 = y1 + blob.height
-            width = 3 if id(blob) in valid_ids else 1
-            draw.rectangle((x1, y1, x2, y2), outline="lime" if id(blob) in valid_ids else "white", width=width)
-            draw.text((x1 + 3, y1 + 3), f"{blob.area_px}px", fill="lime" if id(blob) in valid_ids else "white")
+            is_valid = id(blob) in valid_ids
+            draw.rectangle(
+                (x1, y1, x2, y2),
+                outline="lime" if is_valid else "white",
+                width=3 if is_valid else 1,
+            )
+            draw.text((x1 + 3, y1 + 3), f"{blob.area_px}px", fill="lime" if is_valid else "white")
+        self._set_preview(image)
 
-        max_width, max_height = 720, 430
-        image.thumbnail((max_width, max_height), Image.Resampling.LANCZOS)
+    def _show_image_preview(self, screenshot, region, hit) -> None:
+        image = Image.fromarray(screenshot).convert("RGB")
+        if hit is not None:
+            draw = ImageDraw.Draw(image)
+            x1 = hit.x - region[0]
+            y1 = hit.y - region[1]
+            x2 = x1 + hit.width
+            y2 = y1 + hit.height
+            draw.rectangle((x1, y1, x2, y2), outline="lime", width=3)
+            draw.text((x1 + 3, y1 + 3), f"{hit.shape_score:.0%}", fill="lime")
+        self._set_preview(image)
+
+    def _set_preview(self, image: Image.Image) -> None:
+        image.thumbnail((720, 430), Image.Resampling.LANCZOS)
         self.preview_photo = ImageTk.PhotoImage(image)
         self.preview_label.configure(image=self.preview_photo, text="")
 
@@ -395,8 +428,7 @@ class ActionStudio(tk.Tk):
 
 
 def main() -> None:
-    app = ActionStudio()
-    app.mainloop()
+    ActionStudio().mainloop()
 
 
 if __name__ == "__main__":
