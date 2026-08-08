@@ -39,20 +39,21 @@ def resolve_inventory_exclusions(
     explicit_slots: Iterable[int] = (),
     protected_images: Iterable[str] = (),
     optional_images: Iterable[str] = (),
-    item_slots_getter: ItemSlotsGetter = get_inventory_item_slots,
+    item_slots_getter: ItemSlotsGetter | None = None,
 ) -> tuple[set[int], tuple[str, ...]]:
     """Resolve protected slots and report required images that were not found."""
+    getter = item_slots_getter or get_inventory_item_slots
     excluded = validate_inventory_slots(explicit_slots)
     missing: list[str] = []
 
     for image_name in unique_image_names(protected_images):
-        slots = item_slots_getter(image_name, bot_id)
+        slots = getter(image_name, bot_id)
         if not slots:
             missing.append(image_name)
         excluded.update(slots)
 
     for image_name in unique_image_names(optional_images):
-        excluded.update(item_slots_getter(image_name, bot_id))
+        excluded.update(getter(image_name, bot_id))
 
     return excluded, tuple(missing)
 
