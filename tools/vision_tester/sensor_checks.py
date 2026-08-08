@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import importlib
 import json
 import os
 from pathlib import Path
@@ -9,7 +10,7 @@ from core import vision
 
 ROOT = Path(__file__).resolve().parents[2]
 SENSOR_CHECKS_FILE = ROOT / "config" / "sensor_checks.json"
-SUPPORTED_KINDS = ("colour_exists", "colour_blob", "image_exists")
+SUPPORTED_KINDS = ("colour_exists", "colour_blob", "image_exists", "python_bool")
 
 
 @dataclass(frozen=True)
@@ -31,7 +32,7 @@ def _parse(name: str, raw: object) -> SensorCheck:
     value = str(raw.get("value", "")).strip()
     area = str(raw.get("area", "game")).strip() or "game"
     if not value:
-        raise ValueError(f"Sensor '{name}' needs a colour or template value")
+        raise ValueError(f"Sensor '{name}' needs a value")
     return SensorCheck(
         name=str(name).strip(),
         kind=kind,
@@ -66,6 +67,16 @@ def save_sensor_checks(checks: dict[str, SensorCheck]) -> None:
     os.replace(temporary, SENSOR_CHECKS_FILE)
 
 
+def _load_python_sensor(module_name: str):
+    module = importlib.import_module(module_name)
+    evaluator = getattr(module, module_name.rsplit(".", 1)[-1], None)
+    if not callable(evaluator):
+        raise ValueError(
+            f"Python sensor '{module_name}' must expose function '{module_name.rsplit('.', 1)[-1]}()'."
+        )
+    return evaluator
+
+
 def evaluate_sensor(check: SensorCheck, *, bot_id: int) -> bool:
     if check.kind == "colour_exists":
         return vision.colour_exists(
@@ -86,4 +97,6 @@ def evaluate_sensor(check: SensorCheck, *, bot_id: int) -> bool:
         )
     if check.kind == "image_exists":
         return vision.image_exists(check.value, area=check.area, bot_id=bot_id)
+    if check.kind == "python_bool":
+        return bool(_load_python_sensor(check.value)(bot_id=bot_id))
     raise ValueError(f"Unsupported sensor kind: {check.kind}")
