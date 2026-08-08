@@ -36,7 +36,7 @@ def _build_colour_browser_manual(self) -> None:
     button.configure(text="Add new colour", command=self._new_colour_from_browser)
     sidebar = button.master
 
-    # Move the browser list/help one row down to make room for an explicit save.
+    # Move the browser list/help one row down to make room for explicit saving.
     for child in list(sidebar.grid_slaves()):
         if child is button:
             continue
@@ -50,7 +50,7 @@ def _build_colour_browser_manual(self) -> None:
 
     save = ctk.CTkButton(
         sidebar,
-        text="Save colour",
+        text="Save updated colour",
         command=self._save_colour_from_browser,
         height=34,
         corner_radius=7,
@@ -82,7 +82,7 @@ def _new_colour_from_browser_manual(self) -> None:
     self._rebuild_ranges()
     self._draw_colour_browser()
     self.status.set(
-        f"Nieuwe colour '{name}'. Pipet kleur(en), stel tolerance in en klik Save colour."
+        f"Nieuwe colour '{name}'. Pipet kleur(en), stel tolerance in en klik Save updated colour."
     )
 
 
@@ -92,23 +92,28 @@ def _pick_manual(self, event) -> None:
 
 
 def _save_colour_from_browser(self) -> None:
-    name = self.current_preset.get().strip()
-    if not name:
-        self.status.set("Geen colournaam actief. Klik eerst Add new colour.")
-        return
-    if len(self._active_colour_names) > 1:
-        self.status.set("Selecteer één colour voordat je opslaat.")
-        return
-    if not self.base_colours:
-        self.status.set("Nog geen kleur gepipet; niets opgeslagen.")
+    active = set(getattr(self, "_active_colour_names", set()))
+    if len(active) != 1:
+        if not active:
+            self.status.set("Selecteer eerst één colour om op te slaan of te updaten.")
+        else:
+            self.status.set("Selecteer precies één colour om te updaten.")
         return
 
-    # Base save persists the HSV ranges and the metadata with base colours + tolerance.
+    name = next(iter(active))
+    if not self.base_colours:
+        self.status.set(f"Colour '{name}' heeft nog geen gepipette kleur; niets opgeslagen.")
+        return
+
+    self.current_preset.set(name)
+
+    # Base save persists both generated HSV ranges and metadata containing
+    # the exact base colours + the current tolerance value.
     _BASE_COLOUR_CLASS._save_current_preset(self)
     self._active_colour_names = {name}
     self._draw_colour_browser()
     self.status.set(
-        f"Colour '{name}' opgeslagen met {len(self.base_colours)} kleur(en) en "
+        f"Colour '{name}' bijgewerkt · {len(self.base_colours)} kleur(en) · "
         f"tolerance {self.colour_tolerance.get()}%."
     )
 
