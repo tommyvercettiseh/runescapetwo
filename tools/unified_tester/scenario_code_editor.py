@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import importlib.util
 import inspect
+import json
 from pathlib import Path
+import re
 import threading
 import time
 import tkinter as tk
@@ -12,6 +14,9 @@ from tkinter import messagebox, ttk
 
 ROOT = Path(__file__).resolve().parents[2]
 ACTIONS_ROOT = ROOT / "actions"
+DEFINITIONS_ROOT = ROOT / "definitions"
+IMAGES_ROOT = ROOT / "assets" / "images"
+AREAS_FILE = ROOT / "config" / "areas.json"
 
 
 def install_scenario_code_editor(tester_class, banking_scenario) -> None:
@@ -19,17 +24,24 @@ def install_scenario_code_editor(tester_class, banking_scenario) -> None:
         self.scenario_tab = ttk.Frame(self.tabs, padding=12)
         self.tabs.insert(2, self.scenario_tab, text="Scenario")
         self.scenario_tab.columnconfigure(1, weight=1)
-        self.scenario_tab.rowconfigure(1, weight=1)
+        self.scenario_tab.rowconfigure(2, weight=1)
 
         self._action_path: Path | None = None
         self._action_dirty = False
         self._action_running = False
         self._action_files: list[Path] = []
+        self._maker_images: list[str] = []
+        self._maker_areas: list[str] = []
+
         self.action_query = tk.StringVar()
         self.action_bot_id = tk.StringVar(value="1")
+        self.maker_type = tk.StringVar(value="Click image")
+        self.maker_name = tk.StringVar()
+        self.maker_image = tk.StringVar()
+        self.maker_area = tk.StringVar(value="Bot_Area")
 
         sidebar = ttk.LabelFrame(self.scenario_tab, text="Actions", padding=8)
-        sidebar.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=(0, 10))
+        sidebar.grid(row=0, column=0, rowspan=3, sticky="nsew", padx=(0, 10))
         sidebar.columnconfigure(0, weight=1)
         sidebar.rowconfigure(1, weight=1)
 
@@ -41,8 +53,52 @@ def install_scenario_code_editor(tester_class, banking_scenario) -> None:
         self.action_list.grid(row=1, column=0, sticky="nsew")
         self.action_list.bind("<<ListboxSelect>>", self._action_selected)
 
+        maker = ttk.LabelFrame(self.scenario_tab, text="New", padding=8)
+        maker.grid(row=0, column=1, sticky="ew", pady=(0, 8))
+        for column in (1, 3):
+            maker.columnconfigure(column, weight=1)
+
+        ttk.Label(maker, text="MAKE").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        ttk.Combobox(
+            maker,
+            textvariable=self.maker_type,
+            values=("Click image", "Image exists"),
+            state="readonly",
+            width=14,
+        ).grid(row=0, column=1, sticky="ew", padx=(0, 8))
+        ttk.Entry(maker, textvariable=self.maker_name).grid(
+            row=0, column=2, columnspan=2, sticky="ew", padx=(0, 8)
+        )
+        ttk.Button(maker, text="Create", command=self._create_simple_action).grid(
+            row=0, column=4, sticky="e"
+        )
+
+        ttk.Label(maker, text="IMAGE").grid(row=1, column=0, sticky="w", padx=(0, 6), pady=(6, 0))
+        self.maker_image_box = ttk.Combobox(maker, textvariable=self.maker_image)
+        self.maker_image_box.grid(row=1, column=1, sticky="ew", padx=(0, 8), pady=(6, 0))
+        self.maker_image_box.bind(
+            "<KeyRelease>",
+            lambda _event: self._filter_maker_combo(
+                self.maker_image_box,
+                self.maker_image,
+                self._maker_images,
+            ),
+        )
+
+        ttk.Label(maker, text="AREA").grid(row=1, column=2, sticky="e", padx=(0, 6), pady=(6, 0))
+        self.maker_area_box = ttk.Combobox(maker, textvariable=self.maker_area)
+        self.maker_area_box.grid(row=1, column=3, sticky="ew", padx=(0, 8), pady=(6, 0))
+        self.maker_area_box.bind(
+            "<KeyRelease>",
+            lambda _event: self._filter_maker_combo(
+                self.maker_area_box,
+                self.maker_area,
+                self._maker_areas,
+            ),
+        )
+
         top = ttk.Frame(self.scenario_tab)
-        top.grid(row=0, column=1, sticky="ew", pady=(0, 8))
+        top.grid(row=1, column=1, sticky="ew", pady=(0, 8))
         top.columnconfigure(0, weight=1)
 
         self.action_path_label = ttk.Label(top, text="Selecteer een action.")
@@ -62,7 +118,7 @@ def install_scenario_code_editor(tester_class, banking_scenario) -> None:
         self.action_run_button.grid(row=0, column=5, padx=(8, 0))
 
         main = ttk.Frame(self.scenario_tab)
-        main.grid(row=1, column=1, sticky="nsew")
+        main.grid(row=2, column=1, sticky="nsew")
         main.columnconfigure(0, weight=1)
         main.rowconfigure(0, weight=4)
         main.rowconfigure(2, weight=1)
@@ -101,7 +157,123 @@ def install_scenario_code_editor(tester_class, banking_scenario) -> None:
         )
         self.action_output.grid(row=2, column=0, sticky="nsew")
 
+        self._refresh_maker_choices()
         self._refresh_actions()
+
+    def _refresh_maker_choices(self) -> None:
+        self._maker_images = sorted(
+            path.stem
+            for path in IMAGES_ROOT.glob("*.png")
+            if path.is_file()
+        )
+        try:
+            areas = json.loads(AREAS_FILE.read_text(encoding="utf-8-sig"))
+            self._maker_areas = sorted(areas) if isinstance(areas, dict) else []
+        except (OSError, json.JSONDecodeError):
+            self._maker_areas = []
+
+        self.maker_image_box.configure(values=self._maker_images)
+        self.maker_area_box.configure(values=self._maker_areas)
+        if not self.maker_image.get() and self._maker_images:
+            self.maker_image.set(self._maker_images[0])
+        if self.maker_area.get() not in self._maker_areas and self._maker_areas:
+            self.maker_area.set("Bot_Area" if "Bot_Area" in self._maker_areas else self._maker_areas[0])
+
+    def _filter_maker_combo(self, widget, variable, values) -> None:
+        query = variable.get().strip().casefold()
+        filtered = [value for value in values if query in value.casefold()]
+        widget.configure(values=filtered)
+
+    def _current_group(self) -> str:
+        path = self._action_path
+        if path is None:
+            return ""
+        try:
+            relative = path.relative_to(ACTIONS_ROOT)
+        except ValueError:
+            return ""
+        parent = relative.parent
+        return "" if str(parent) == "." else str(parent).replace("\\", "/")
+
+    def _safe_function_name(self, value: str) -> str:
+        name = value.strip()
+        if not name:
+            raise ValueError("Vul een naam in, bijvoorbeeld click_bank.")
+        if name.lower().endswith(".py"):
+            name = name[:-3]
+        if "/" in name or "\\" in name:
+            raise ValueError("Gebruik alleen de functienaam; de huidige action-map wordt gebruikt.")
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+            raise ValueError("Naam moet een geldige Python functienaam zijn.")
+        return name
+
+    def _create_simple_action(self) -> None:
+        try:
+            function_name = self._safe_function_name(self.maker_name.get())
+        except ValueError as exc:
+            messagebox.showerror("Create", str(exc), parent=self)
+            return
+
+        image_name = self.maker_image.get().strip()
+        area_name = self.maker_area.get().strip()
+        if image_name not in self._maker_images:
+            messagebox.showerror("Create", "Kies een bestaande image.", parent=self)
+            return
+        if area_name not in self._maker_areas:
+            messagebox.showerror("Create", "Kies een bestaande area.", parent=self)
+            return
+
+        group = self._current_group()
+        maker_type = self.maker_type.get()
+        if maker_type == "Click image":
+            base = ACTIONS_ROOT / group if group else ACTIONS_ROOT
+            content = (
+                "from core import mouse, mouse_actions\n\n\n"
+                f'IMAGE_NAME = "{image_name}"\n'
+                f'AREA_NAME = "{area_name}"\n'
+                'BUTTON = "left"\n'
+                "EDGE_PADDING = 20\n\n\n"
+                f"def {function_name}(bot_id: int = 1):\n"
+                "    result = mouse_actions.move_to_image(\n"
+                "        image_name=IMAGE_NAME,\n"
+                "        area_name=AREA_NAME,\n"
+                "        bot_id=bot_id,\n"
+                "        image_edge_padding=EDGE_PADDING,\n"
+                "    )\n"
+                "    if not result:\n"
+                "        return result\n\n"
+                "    mouse.click(button=BUTTON)\n"
+                "    return True\n"
+            )
+        else:
+            base = DEFINITIONS_ROOT / group if group else DEFINITIONS_ROOT
+            content = (
+                "from core import vision\n\n\n"
+                f'IMAGE_NAME = "{image_name}"\n'
+                f'AREA_NAME = "{area_name}"\n\n\n'
+                f"def {function_name}(bot_id: int = 1) -> bool:\n"
+                "    return vision.find_image(\n"
+                "        image_name=IMAGE_NAME,\n"
+                "        area=AREA_NAME,\n"
+                "        bot_id=bot_id,\n"
+                "    ) is not None\n"
+            )
+
+        path = base / f"{function_name}.py"
+        if path.exists():
+            messagebox.showerror("Create", f"Bestaat al: {path.relative_to(ROOT)}", parent=self)
+            return
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+        except OSError as exc:
+            messagebox.showerror("Create", str(exc), parent=self)
+            return
+
+        self._refresh_actions()
+        self._open_action_file(path, force=True)
+        self.maker_name.set("")
+        self.status_var.set(f"Created locally: {path.relative_to(ROOT)}")
 
     def _refresh_actions(self) -> None:
         self._action_files = sorted(
@@ -245,11 +417,20 @@ def install_scenario_code_editor(tester_class, banking_scenario) -> None:
 
                 value = function(**kwargs)
                 elapsed = (time.perf_counter() - started) * 1000.0
-                if value is False:
-                    state, colour = "FAIL", "#B91C1C"
+                if hasattr(value, "success"):
+                    passed = bool(value.success)
+                    detail = getattr(value, "message", "")
+                elif isinstance(value, bool):
+                    passed = value
+                    detail = ""
                 else:
-                    state, colour = "PASS", "#15803D"
-                output = f"Return: {value!r}\nTime: {elapsed:.1f} ms"
+                    passed = value is not False
+                    detail = ""
+                state, colour = ("PASS", "#15803D") if passed else ("FAIL", "#B91C1C")
+                output = f"Return: {value!r}\n"
+                if detail:
+                    output += f"Message: {detail}\n"
+                output += f"Time: {elapsed:.1f} ms"
             except Exception:
                 state, colour = "ERROR", "#B91C1C"
                 output = traceback.format_exc()
@@ -263,6 +444,11 @@ def install_scenario_code_editor(tester_class, banking_scenario) -> None:
         self._set_action_result(state, colour, output)
 
     tester_class._add_scenario_tab = _add_simple_action_tester
+    tester_class._refresh_maker_choices = _refresh_maker_choices
+    tester_class._filter_maker_combo = _filter_maker_combo
+    tester_class._current_group = _current_group
+    tester_class._safe_function_name = _safe_function_name
+    tester_class._create_simple_action = _create_simple_action
     tester_class._refresh_actions = _refresh_actions
     tester_class._draw_action_list = _draw_action_list
     tester_class._action_selected = _action_selected
