@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import time
 
-from core import mouse
 from core.profile import get_section
 
 from .image_detection import find_all_matches, find_best_match
 from .models import Hit
+from .offsets import get_bot_id
 from .screenshots import capture_area
 from .templates import load_settings, load_template
 
@@ -127,23 +127,28 @@ def click_image(
     button: str = "left",
     wait: bool = False,
 ) -> bool:
-    profile = get_section("vision")
-    hit = (
-        wait_for_image(image_name, area=area, bot_id=bot_id)
-        if wait
-        else find_image(image_name, area=area, bot_id=bot_id)
-    )
+    """Compatibility wrapper around the canonical mouse-actions image click."""
+    settings = load_settings(image_name)
+    selected_area = area or settings.area or "game"
+    resolved_bot_id = get_bot_id() if bot_id is None else int(bot_id)
 
-    if hit is None:
-        return False
+    if wait:
+        hit = wait_for_image(
+            image_name,
+            area=selected_area,
+            bot_id=resolved_bot_id,
+        )
+        if hit is None:
+            return False
 
-    padding = int(profile["click_padding_px"])
-    mouse.move_and_click_target(
-        hit.x,
-        hit.y,
-        hit.x + hit.width,
-        hit.y + hit.height,
-        padding_px=padding,
-        button=button,
+    # Local import avoids a module cycle: mouse_actions itself uses find_image().
+    from core import mouse_actions
+
+    return bool(
+        mouse_actions.click_image(
+            image_name=image_name,
+            area_name=selected_area,
+            bot_id=resolved_bot_id,
+            button=button,
+        )
     )
-    return True
