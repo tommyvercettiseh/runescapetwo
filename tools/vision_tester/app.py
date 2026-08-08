@@ -27,6 +27,10 @@ from .replay_reset import install_replay_reset
 
 install_replay_reset()
 
+from .replay_palette_builder import install_replay_palette_builder
+
+install_replay_palette_builder()
+
 VisionTester = unified_plus.VisionTester
 main = unified_plus.main
 
