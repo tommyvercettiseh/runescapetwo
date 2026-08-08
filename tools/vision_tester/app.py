@@ -31,6 +31,10 @@ from .hp_stoplight_monitor import install_hp_stoplight_monitor
 
 install_hp_stoplight_monitor()
 
+from .prayer_stoplight_monitor import install_prayer_stoplight_monitor
+
+install_prayer_stoplight_monitor()
+
 VisionTester = unified_plus.VisionTester
 main = unified_plus.main
 
