@@ -13,6 +13,7 @@ from definitions.inventory.exclusions import (
     occupied_slots,
     resolve_inventory_exclusions,
 )
+from definitions.inventory.get_inventory_item_slots import get_inventory_item_slots
 from definitions.inventory.get_inventory_state import get_inventory_state
 
 from .click_inventory_slot import click_inventory_slot
@@ -121,6 +122,7 @@ def drop_inventory(
         explicit_slots=exclude_slots or (),
         protected_images=exclude_images or (),
         optional_images=optional_exclude_images or (),
+        item_slots_getter=get_inventory_item_slots,
     )
 
     if missing:
