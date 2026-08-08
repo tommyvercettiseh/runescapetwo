@@ -15,6 +15,10 @@ from .manual_colour_save import install_manual_colour_save
 
 install_manual_colour_save()
 
+from .colour_delete_undo import install_colour_delete_undo
+
+install_colour_delete_undo()
+
 from .colour_recording import install_colour_recording
 
 install_colour_recording()
