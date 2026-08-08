@@ -19,6 +19,10 @@ from .colour_recording import install_colour_recording
 
 install_colour_recording()
 
+from .colour_fire_monitor import install_colour_fire_monitor
+
+install_colour_fire_monitor()
+
 VisionTester = unified_plus.VisionTester
 main = unified_plus.main
 
