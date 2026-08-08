@@ -7,11 +7,8 @@ import numpy as np
 
 from core.vision.areas import get_region
 from core.vision.screenshots import capture_area
+from definitions.inventory.constants import INVENTORY_AREA, SLOT_PREFIX, TOTAL_SLOTS
 
-
-INVENTORY_AREA = "Inventory_Area"
-SLOT_PREFIX = "Inventory_Slot_"
-TOTAL_SLOTS = 28
 
 BACKGROUND_HSV_RANGES = [
     ((8, 38, 44), (21, 87, 100)),
