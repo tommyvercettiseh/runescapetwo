@@ -19,10 +19,6 @@ from .colour_recording import install_colour_recording
 
 install_colour_recording()
 
-from .colour_fire_monitor import install_colour_fire_monitor
-
-install_colour_fire_monitor()
-
 from .replay_reset import install_replay_reset
 
 install_replay_reset()
