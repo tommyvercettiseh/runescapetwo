@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 import sys
 import time
 import tkinter as tk
 from queue import Empty, SimpleQueue
 from tkinter import ttk
-from typing import Callable, Type
+from typing import Type
 
 from pynput.keyboard import Key as KeyboardKey
 from pynput.keyboard import Listener as KeyboardListener
@@ -14,7 +15,7 @@ from . import modern_ui
 
 
 class VisionTesterShell(tk.Tk):
-    """Shared notebook shell for colour, template and sensor tester variants."""
+    """Shared notebook shell with explicit page dependencies."""
 
     def __init__(
         self,
@@ -23,6 +24,8 @@ class VisionTesterShell(tk.Tk):
         background: str,
         muted_text: str,
         theme_setup: Callable[[], None],
+        template_page_type: Type = modern_ui.TemplatePage,
+        sensor_page_type: Type = modern_ui.SensorPage,
     ) -> None:
         theme_setup()
         super().__init__()
@@ -34,6 +37,8 @@ class VisionTesterShell(tk.Tk):
         self._background = background
         self._muted_text = muted_text
         self._colour_page_type = colour_page_type
+        self._template_page_type = template_page_type
+        self._sensor_page_type = sensor_page_type
         self._hotkey_events: SimpleQueue[str] = SimpleQueue()
         self._hotkey_listener: KeyboardListener | None = None
         self._last_f2_at = 0.0
@@ -85,8 +90,8 @@ class VisionTesterShell(tk.Tk):
         self.tabs.add(sensor_host, text="Sensor")
 
         self.colour_page = self._colour_page_type(colour_host)
-        self.template_page = modern_ui.TemplatePage(template_host)
-        self.sensor_page = modern_ui.SensorPage(sensor_host)
+        self.template_page = self._template_page_type(template_host)
+        self.sensor_page = self._sensor_page_type(sensor_host)
 
         self.pages = [
             self.colour_page,
@@ -97,6 +102,15 @@ class VisionTesterShell(tk.Tk):
             page.pack(fill="both", expand=True)
 
         self.tabs.bind("<<NotebookTabChanged>>", self._tab_changed)
+
+    def add_page(self, title: str, page_type: Type):
+        """Add one explicit extra notebook page and include it in lifecycle handling."""
+        host = tk.Frame(self.tabs, background=self._background)
+        self.tabs.add(host, text=title)
+        page = page_type(host)
+        page.pack(fill="both", expand=True)
+        self.pages.append(page)
+        return page
 
     def _selected_page(self):
         try:
