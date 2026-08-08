@@ -1,8 +1,5 @@
 from core import vision
-
-
-SCREEN_CROSS_IMAGE = "ScreenCross"
-SCREEN_AREA = "Bot_Area"
+from definitions.interface.screen_target import SCREEN_AREA, SCREEN_CROSS_IMAGE
 
 
 def is_screen_open(bot_id: int = 1) -> bool:
