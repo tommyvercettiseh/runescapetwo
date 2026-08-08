@@ -14,7 +14,8 @@ def test_core_legacy_areas_are_available_in_canonical_format() -> None:
         "group": "Basic",
     }
     assert get_area("HP_Area") == (601, 77, 23, 24)
-    assert get_area("Inventory_Area") == get_area("inventory")
+    assert get_area("Inventory_Area") == get_area("Inventory_Area_Pattern")
+    assert get_area("Inventory_Area") != get_area("inventory")
     assert get_area("Inventory_Slot_28") == (777, 462, 24, 20)
 
 
@@ -30,6 +31,8 @@ def test_temporary_and_duplicate_legacy_areas_were_not_migrated() -> None:
     areas = load_areas()
 
     assert "Inventory_Area" not in areas
+    assert "Inventory_Area_Pattern" in areas
+    assert "inventory" in areas
     assert "NieuwGebied_1" not in areas
     assert "NieuwGebied_2" not in areas
     assert "NieuwGebied_3" not in areas
