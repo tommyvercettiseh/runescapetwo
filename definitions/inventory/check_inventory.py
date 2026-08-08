@@ -3,11 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from definitions.inventory.constants import TOTAL_SLOTS
 from definitions.inventory.get_inventory_item_slots import get_inventory_item_slots
 from definitions.inventory.get_inventory_state import InventorySlot, get_inventory_state
-
-
-TOTAL_SLOTS = 28
 
 
 @dataclass(frozen=True)
