@@ -1,1 +1,9 @@
-{}
+{
+  "low_prayer": {
+    "kind": "python_bool",
+    "value": "core.sensors.low_prayer",
+    "area": "Prayer_Area",
+    "threshold": 1,
+    "enabled": true
+  }
+}
