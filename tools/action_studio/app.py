@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox
 
-from PIL import Image, ImageDraw, ImageTk
+import customtkinter as ctk
+from PIL import Image, ImageDraw
 
 from core.vision.api import find_image
 from core.vision.colour_detection import analyse_colour_image
@@ -21,20 +22,38 @@ SENSORS_ROOT = ROOT / "core" / "sensors"
 AREAS_FILE = ROOT / "config" / "areas.json"
 IMAGES_ROOT = ROOT / "assets" / "images"
 
+BG = ("#F4F6F8", "#111418")
+CARD = ("#FFFFFF", "#1B2026")
+CARD_ALT = ("#F8FAFC", "#20262D")
+BORDER = ("#DDE3EA", "#313943")
+TEXT = ("#111827", "#F3F4F6")
+MUTED = ("#64748B", "#9CA3AF")
+ACCENT = "#2563EB"
+SUCCESS = "#16A34A"
+DANGER = "#DC2626"
 
-class ActionStudio(tk.Tk):
+
+class ActionStudio(ctk.CTk):
     def __init__(self) -> None:
         super().__init__()
+        ctk.set_appearance_mode("system")
+        ctk.set_default_color_theme("blue")
+
         self.title("RuneScape Studio")
-        self.geometry("1120x760")
-        self.minsize(900, 620)
+        self.geometry("1220x800")
+        self.minsize(980, 650)
+        self.configure(fg_color=BG)
 
         self.selected_path: Path | None = None
         self.fields: list[EditableField] = []
         self.inputs: dict[str, tk.Variable] = {}
-        self.preview_photo: ImageTk.PhotoImage | None = None
+        self.preview_image: ctk.CTkImage | None = None
         self.item_paths: list[Path] = []
+        self.visible_paths: list[Path] = []
         self.live_blob_sizes: list[int] = []
+        self.item_buttons: list[ctk.CTkButton] = []
+        self.field_widgets: dict[str, object] = {}
+        self.combo_values: dict[str, tuple[str, ...]] = {}
 
         self.search_var = tk.StringVar()
         self.bot_var = tk.IntVar(value=1)
@@ -45,104 +64,274 @@ class ActionStudio(tk.Tk):
         self._refresh_items()
 
     def _build_ui(self) -> None:
-        outer = ttk.Frame(self, padding=12)
-        outer.pack(fill="both", expand=True)
-        outer.columnconfigure(1, weight=1)
-        outer.rowconfigure(0, weight=1)
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
 
-        left = ttk.Frame(outer, padding=(0, 0, 12, 0))
-        left.grid(row=0, column=0, sticky="nsew")
-        left.rowconfigure(2, weight=1)
+        self.sidebar = ctk.CTkFrame(
+            self,
+            width=270,
+            corner_radius=0,
+            fg_color=CARD,
+            border_width=0,
+        )
+        self.sidebar.grid(row=0, column=0, sticky="nsew")
+        self.sidebar.grid_propagate(False)
+        self.sidebar.grid_rowconfigure(3, weight=1)
+        self.sidebar.grid_columnconfigure(0, weight=1)
 
-        ttk.Label(left, text="Zoeken").grid(row=0, column=0, sticky="w")
-        search = ttk.Entry(left, textvariable=self.search_var, width=28)
-        search.grid(row=1, column=0, sticky="ew", pady=(4, 10))
-        search.bind("<KeyRelease>", lambda _event: self._draw_items())
+        ctk.CTkLabel(
+            self.sidebar,
+            text="RuneScape Studio",
+            font=ctk.CTkFont(size=19, weight="bold"),
+            text_color=TEXT,
+            anchor="w",
+        ).grid(row=0, column=0, sticky="ew", padx=18, pady=(18, 4))
 
-        self.item_list = tk.Listbox(left, width=34, exportselection=False)
-        self.item_list.grid(row=2, column=0, sticky="nsew")
-        self.item_list.bind("<<ListboxSelect>>", self._on_select)
+        ctk.CTkLabel(
+            self.sidebar,
+            text="Actions & sensors",
+            font=ctk.CTkFont(size=12),
+            text_color=MUTED,
+            anchor="w",
+        ).grid(row=1, column=0, sticky="ew", padx=18, pady=(0, 14))
 
-        right = ttk.Frame(outer)
-        right.grid(row=0, column=1, sticky="nsew")
-        right.columnconfigure(0, weight=1)
-        right.rowconfigure(2, weight=1)
+        self.search_entry = ctk.CTkEntry(
+            self.sidebar,
+            textvariable=self.search_var,
+            placeholder_text="Zoek bijvoorbeeld bank of click...",
+            height=38,
+            corner_radius=10,
+            border_color=BORDER,
+        )
+        self.search_entry.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 12))
+        self.search_var.trace_add("write", lambda *_: self._draw_items())
 
-        header = ttk.Frame(right)
-        header.grid(row=0, column=0, sticky="ew", pady=(0, 10))
-        header.columnconfigure(0, weight=1)
+        self.item_frame = ctk.CTkScrollableFrame(
+            self.sidebar,
+            fg_color="transparent",
+            corner_radius=0,
+        )
+        self.item_frame.grid(row=3, column=0, sticky="nsew", padx=(8, 4), pady=(0, 12))
+        self.item_frame.grid_columnconfigure(0, weight=1)
 
-        self.kind_label = ttk.Label(header, text="")
+        main = ctk.CTkFrame(self, fg_color="transparent", corner_radius=0)
+        main.grid(row=0, column=1, sticky="nsew", padx=18, pady=16)
+        main.grid_columnconfigure(0, weight=1)
+        main.grid_rowconfigure(2, weight=1)
+
+        header = ctk.CTkFrame(main, fg_color="transparent")
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 12))
+        header.grid_columnconfigure(0, weight=1)
+
+        self.kind_label = ctk.CTkLabel(
+            header,
+            text="",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=ACCENT,
+            anchor="w",
+        )
         self.kind_label.grid(row=0, column=0, sticky="w")
-        self.title_label = ttk.Label(header, text="Selecteer iets", font=("Segoe UI", 18, "bold"))
-        self.title_label.grid(row=1, column=0, sticky="w")
 
-        ttk.Label(header, text="Bot").grid(row=0, column=1, rowspan=2, padx=(8, 4))
-        ttk.Spinbox(header, from_=1, to=4, textvariable=self.bot_var, width=4).grid(
-            row=0, column=2, rowspan=2
+        self.title_label = ctk.CTkLabel(
+            header,
+            text="Selecteer iets",
+            font=ctk.CTkFont(size=25, weight="bold"),
+            text_color=TEXT,
+            anchor="w",
         )
+        self.title_label.grid(row=1, column=0, sticky="w", pady=(1, 0))
 
-        self.settings_box = ttk.LabelFrame(right, text="Instellingen", padding=12)
-        self.settings_box.grid(row=1, column=0, sticky="ew")
-        self.settings_box.columnconfigure(1, weight=1)
+        bot_wrap = ctk.CTkFrame(header, fg_color=CARD, corner_radius=10, border_width=1, border_color=BORDER)
+        bot_wrap.grid(row=0, column=1, rowspan=2, sticky="e")
+        ctk.CTkLabel(bot_wrap, text="Bot", text_color=MUTED).pack(side="left", padx=(12, 6), pady=8)
+        self.bot_menu = ctk.CTkOptionMenu(
+            bot_wrap,
+            variable=self.bot_var,
+            values=["1", "2", "3", "4"],
+            width=64,
+            height=30,
+            corner_radius=8,
+        )
+        self.bot_menu.pack(side="left", padx=(0, 8), pady=6)
 
-        content = ttk.Frame(right)
-        content.grid(row=2, column=0, sticky="nsew", pady=(10, 0))
-        content.columnconfigure(0, weight=1)
-        content.rowconfigure(0, weight=1)
+        self.settings_card = ctk.CTkFrame(
+            main,
+            fg_color=CARD,
+            corner_radius=14,
+            border_width=1,
+            border_color=BORDER,
+        )
+        self.settings_card.grid(row=1, column=0, sticky="ew", pady=(0, 12))
+        self.settings_card.grid_columnconfigure(0, weight=1)
 
-        self.live_box = ttk.LabelFrame(content, text="Live controleren", padding=12)
-        self.live_box.grid(row=0, column=0, sticky="nsew")
-        self.live_box.columnconfigure(0, weight=1)
-        self.live_box.rowconfigure(1, weight=1)
+        settings_head = ctk.CTkFrame(self.settings_card, fg_color="transparent")
+        settings_head.grid(row=0, column=0, sticky="ew", padx=16, pady=(14, 8))
+        ctk.CTkLabel(
+            settings_head,
+            text="Instellingen",
+            font=ctk.CTkFont(size=15, weight="bold"),
+            text_color=TEXT,
+        ).pack(side="left")
+        ctk.CTkLabel(
+            settings_head,
+            text="Pas alleen aan wat je nodig hebt",
+            font=ctk.CTkFont(size=12),
+            text_color=MUTED,
+        ).pack(side="left", padx=(10, 0))
 
-        live_top = ttk.Frame(self.live_box)
-        live_top.grid(row=0, column=0, sticky="ew", pady=(0, 8))
-        live_top.columnconfigure(1, weight=1)
-        self.live_button = ttk.Button(live_top, text="Meet live", command=self._measure_live)
+        self.settings_box = ctk.CTkFrame(self.settings_card, fg_color="transparent")
+        self.settings_box.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 14))
+        self.settings_box.grid_columnconfigure(1, weight=1)
+
+        self.live_card = ctk.CTkFrame(
+            main,
+            fg_color=CARD,
+            corner_radius=14,
+            border_width=1,
+            border_color=BORDER,
+        )
+        self.live_card.grid(row=2, column=0, sticky="nsew")
+        self.live_card.grid_columnconfigure(0, weight=1)
+        self.live_card.grid_rowconfigure(1, weight=1)
+
+        live_head = ctk.CTkFrame(self.live_card, fg_color="transparent")
+        live_head.grid(row=0, column=0, sticky="ew", padx=16, pady=(14, 10))
+        live_head.grid_columnconfigure(1, weight=1)
+
+        self.live_button = ctk.CTkButton(
+            live_head,
+            text="Meet live",
+            command=self._measure_live,
+            width=105,
+            height=34,
+            corner_radius=9,
+            font=ctk.CTkFont(weight="bold"),
+        )
         self.live_button.grid(row=0, column=0, sticky="w")
-        ttk.Label(live_top, textvariable=self.live_result_var).grid(
-            row=0, column=1, sticky="w", padx=(10, 0)
+
+        ctk.CTkLabel(
+            live_head,
+            textvariable=self.live_result_var,
+            text_color=MUTED,
+            anchor="w",
+        ).grid(row=0, column=1, sticky="ew", padx=(12, 0))
+
+        live_body = ctk.CTkFrame(self.live_card, fg_color="transparent")
+        live_body.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 14))
+        live_body.grid_columnconfigure(0, weight=3)
+        live_body.grid_columnconfigure(1, weight=1)
+        live_body.grid_rowconfigure(0, weight=1)
+
+        self.preview_panel = ctk.CTkFrame(
+            live_body,
+            fg_color=CARD_ALT,
+            corner_radius=12,
+            border_width=1,
+            border_color=BORDER,
         )
+        self.preview_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
+        self.preview_panel.grid_columnconfigure(0, weight=1)
+        self.preview_panel.grid_rowconfigure(0, weight=1)
 
-        preview_wrap = ttk.Frame(self.live_box)
-        preview_wrap.grid(row=1, column=0, sticky="nsew")
-        preview_wrap.columnconfigure(0, weight=3)
-        preview_wrap.columnconfigure(1, weight=1)
-        preview_wrap.rowconfigure(0, weight=1)
+        self.preview_label = ctk.CTkLabel(
+            self.preview_panel,
+            text="Preview verschijnt hier",
+            text_color=MUTED,
+            anchor="center",
+        )
+        self.preview_label.grid(row=0, column=0, sticky="nsew", padx=8, pady=8)
 
-        self.preview_label = ttk.Label(preview_wrap, anchor="center", text="Preview verschijnt hier")
-        self.preview_label.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
-
-        side = ttk.Frame(preview_wrap)
+        side = ctk.CTkFrame(
+            live_body,
+            fg_color=CARD_ALT,
+            corner_radius=12,
+            border_width=1,
+            border_color=BORDER,
+        )
         side.grid(row=0, column=1, sticky="nsew")
-        self.found_title = ttk.Label(side, text="Gevonden groottes", font=("Segoe UI", 10, "bold"))
-        self.found_title.pack(anchor="w")
-        self.blob_list = tk.Listbox(side, height=12, exportselection=False)
-        self.blob_list.pack(fill="both", expand=True, pady=(6, 8))
-        self.use_smallest_button = ttk.Button(
+        side.grid_columnconfigure(0, weight=1)
+        side.grid_rowconfigure(1, weight=1)
+
+        self.found_title = ctk.CTkLabel(
+            side,
+            text="Gevonden groottes",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=TEXT,
+            anchor="w",
+        )
+        self.found_title.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 8))
+
+        self.result_text = ctk.CTkTextbox(
+            side,
+            corner_radius=9,
+            border_width=1,
+            border_color=BORDER,
+            fg_color=CARD,
+            wrap="none",
+            font=ctk.CTkFont(family="Consolas", size=12),
+        )
+        self.result_text.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 10))
+        self.result_text.configure(state="disabled")
+
+        self.use_smallest_button = ctk.CTkButton(
             side,
             text="Gebruik kleinste als minimum",
             command=self._use_smallest,
+            height=32,
+            corner_radius=8,
             state="disabled",
+            fg_color=("#E8EEF8", "#293241"),
+            text_color=TEXT,
+            hover_color=("#DCE6F5", "#344154"),
         )
-        self.use_smallest_button.pack(fill="x", pady=(0, 5))
-        self.use_largest_button = ttk.Button(
+        self.use_smallest_button.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 6))
+
+        self.use_largest_button = ctk.CTkButton(
             side,
             text="Gebruik grootste als maximum",
             command=self._use_largest,
+            height=32,
+            corner_radius=8,
             state="disabled",
+            fg_color=("#E8EEF8", "#293241"),
+            text_color=TEXT,
+            hover_color=("#DCE6F5", "#344154"),
         )
-        self.use_largest_button.pack(fill="x")
+        self.use_largest_button.grid(row=3, column=0, sticky="ew", padx=12, pady=(0, 12))
 
-        footer = ttk.Frame(right)
-        footer.grid(row=3, column=0, sticky="ew", pady=(10, 0))
-        footer.columnconfigure(0, weight=1)
-        ttk.Label(footer, textvariable=self.status_var).grid(row=0, column=0, sticky="w")
-        ttk.Button(footer, text="Opnieuw laden", command=self._reload_selected).grid(
-            row=0, column=1, padx=(8, 0)
+        footer = ctk.CTkFrame(main, fg_color="transparent")
+        footer.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+        footer.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            footer,
+            textvariable=self.status_var,
+            text_color=MUTED,
+            anchor="w",
+        ).grid(row=0, column=0, sticky="ew")
+
+        ctk.CTkButton(
+            footer,
+            text="Opnieuw laden",
+            command=self._reload_selected,
+            width=110,
+            height=34,
+            corner_radius=9,
+            fg_color=("#E5E7EB", "#2A3038"),
+            text_color=TEXT,
+            hover_color=("#D1D5DB", "#353C46"),
+        ).grid(row=0, column=1, padx=(8, 0))
+
+        self.save_button = ctk.CTkButton(
+            footer,
+            text="Opslaan",
+            command=self._save,
+            state="disabled",
+            width=100,
+            height=34,
+            corner_radius=9,
+            font=ctk.CTkFont(weight="bold"),
         )
-        self.save_button = ttk.Button(footer, text="Opslaan", command=self._save, state="disabled")
         self.save_button.grid(row=0, column=2, padx=(8, 0))
 
     def _refresh_items(self) -> None:
@@ -158,27 +347,54 @@ class ActionStudio(tk.Tk):
         self.item_paths = sorted(paths, key=lambda p: str(p.relative_to(ROOT)).casefold())
         self._draw_items()
 
-    def _display_name(self, path: Path) -> str:
-        relative = path.relative_to(ROOT)
-        kind = "ACTION" if relative.parts[0] == "actions" else "SENSOR"
-        group = relative.parent.name.replace("_", " ").upper()
-        return f"{group:14}  {path.stem}   [{kind}]"
-
     def _draw_items(self) -> None:
+        for button in self.item_buttons:
+            button.destroy()
+        self.item_buttons.clear()
+
         query = self.search_var.get().strip().casefold()
-        self.item_list.delete(0, "end")
-        self.visible_paths: list[Path] = []
+        self.visible_paths = []
+        last_group = None
+        row = 0
+
         for path in self.item_paths:
-            haystack = str(path.relative_to(ROOT)).casefold()
+            relative = path.relative_to(ROOT)
+            group = relative.parent.name.replace("_", " ").upper()
+            kind = "ACTION" if relative.parts[0] == "actions" else "SENSOR"
+            haystack = f"{group} {path.stem} {kind} {relative}".casefold()
             if query and query not in haystack:
                 continue
-            self.visible_paths.append(path)
-            self.item_list.insert("end", self._display_name(path))
 
-    def _on_select(self, _event=None) -> None:
-        selection = self.item_list.curselection()
-        if selection:
-            self._load_path(self.visible_paths[int(selection[0])])
+            if group != last_group:
+                label = ctk.CTkLabel(
+                    self.item_frame,
+                    text=group,
+                    font=ctk.CTkFont(size=11, weight="bold"),
+                    text_color=MUTED,
+                    anchor="w",
+                )
+                label.grid(row=row, column=0, sticky="ew", padx=8, pady=(10 if row else 2, 4))
+                self.item_buttons.append(label)
+                row += 1
+                last_group = group
+
+            prefix = "●" if kind == "ACTION" else "○"
+            button = ctk.CTkButton(
+                self.item_frame,
+                text=f"{prefix}  {path.stem}",
+                command=lambda p=path: self._load_path(p),
+                anchor="w",
+                height=34,
+                corner_radius=8,
+                fg_color="transparent",
+                text_color=TEXT,
+                hover_color=("#E8EEF8", "#293241"),
+                font=ctk.CTkFont(size=13),
+            )
+            button.grid(row=row, column=0, sticky="ew", padx=3, pady=1)
+            self.item_buttons.append(button)
+            self.visible_paths.append(path)
+            row += 1
 
     def _load_path(self, path: Path) -> None:
         self.selected_path = path
@@ -189,57 +405,105 @@ class ActionStudio(tk.Tk):
             return
 
         relative = path.relative_to(ROOT)
-        self.kind_label.configure(text="ACTION" if relative.parts[0] == "actions" else "SENSOR")
+        kind = "ACTION" if relative.parts[0] == "actions" else "SENSOR"
+        self.kind_label.configure(text=kind)
         self.title_label.configure(text=path.stem)
         self.status_var.set(str(relative))
+        self._highlight_selected(path)
         self._draw_settings()
         self._reset_live()
+
+    def _highlight_selected(self, selected: Path) -> None:
+        button_index = 0
+        for widget in self.item_buttons:
+            if not isinstance(widget, ctk.CTkButton):
+                continue
+            path = self.visible_paths[button_index] if button_index < len(self.visible_paths) else None
+            widget.configure(fg_color=("#E8EEF8", "#293241") if path == selected else "transparent")
+            button_index += 1
 
     def _draw_settings(self) -> None:
         for child in self.settings_box.winfo_children():
             child.destroy()
         self.inputs.clear()
+        self.field_widgets.clear()
+        self.combo_values.clear()
 
         if not self.fields:
-            ttk.Label(
+            ctk.CTkLabel(
                 self.settings_box,
-                text="Geen eenvoudige instellingen om hier aan te passen. De Python-logica blijft ongemoeid.",
-            ).grid(row=0, column=0, columnspan=2, sticky="w")
+                text="Geen eenvoudige instellingen om hier aan te passen.",
+                text_color=MUTED,
+                anchor="w",
+            ).grid(row=0, column=0, columnspan=2, sticky="ew", pady=6)
             self.save_button.configure(state="disabled")
             return
 
         for row, field in enumerate(self.fields):
             label = field.label + (f" ({field.unit})" if field.unit else "")
-            ttk.Label(self.settings_box, text=label).grid(
-                row=row, column=0, sticky="w", padx=(0, 12), pady=4
-            )
+            ctk.CTkLabel(
+                self.settings_box,
+                text=label,
+                text_color=TEXT,
+                anchor="w",
+            ).grid(row=row, column=0, sticky="w", padx=(0, 16), pady=5)
 
-            if field.kind == "colour":
-                var = tk.StringVar(value=str(field.value))
-                widget = ttk.Combobox(
-                    self.settings_box, textvariable=var, values=list_colour_presets(), state="readonly"
-                )
-            elif field.kind == "area":
-                var = tk.StringVar(value=str(field.value))
-                widget = ttk.Combobox(
-                    self.settings_box, textvariable=var, values=self._area_names(), state="readonly"
-                )
-            elif field.kind == "image":
-                var = tk.StringVar(value=str(field.value))
-                widget = ttk.Combobox(self.settings_box, textvariable=var, values=self._image_names())
-            elif field.kind == "choice":
-                var = tk.StringVar(value=str(field.value))
-                widget = ttk.Combobox(
-                    self.settings_box, textvariable=var, values=("left", "right"), state="readonly"
-                )
-            else:
-                var = tk.StringVar(value=str(field.value))
-                widget = ttk.Entry(self.settings_box, textvariable=var)
-
-            widget.grid(row=row, column=1, sticky="ew", pady=4)
+            var = tk.StringVar(value=str(field.value))
             self.inputs[field.name] = var
 
+            if field.kind == "colour":
+                values = tuple(list_colour_presets())
+                widget = self._searchable_combo(field.name, var, values)
+            elif field.kind == "area":
+                values = self._area_names()
+                widget = self._searchable_combo(field.name, var, values)
+            elif field.kind == "image":
+                values = self._image_names()
+                widget = self._searchable_combo(field.name, var, values)
+            elif field.kind == "choice":
+                values = ("left", "right")
+                widget = self._searchable_combo(field.name, var, values)
+            else:
+                widget = ctk.CTkEntry(
+                    self.settings_box,
+                    textvariable=var,
+                    height=34,
+                    corner_radius=9,
+                    border_color=BORDER,
+                )
+
+            widget.grid(row=row, column=1, sticky="ew", pady=5)
+            self.field_widgets[field.name] = widget
+
         self.save_button.configure(state="normal")
+
+    def _searchable_combo(
+        self,
+        field_name: str,
+        var: tk.StringVar,
+        values: tuple[str, ...],
+    ) -> ctk.CTkComboBox:
+        self.combo_values[field_name] = values
+        combo = ctk.CTkComboBox(
+            self.settings_box,
+            variable=var,
+            values=list(values) or [""],
+            height=34,
+            corner_radius=9,
+            border_color=BORDER,
+            button_color=("#E5E7EB", "#303740"),
+            button_hover_color=("#D1D5DB", "#3A434E"),
+            dropdown_fg_color=CARD,
+            dropdown_hover_color=("#E8EEF8", "#293241"),
+        )
+
+        def filter_values(*_args) -> None:
+            typed = var.get().strip().casefold()
+            matches = [value for value in values if typed in value.casefold()] if typed else list(values)
+            combo.configure(values=matches or list(values) or [""])
+
+        var.trace_add("write", filter_values)
+        return combo
 
     def _area_names(self) -> tuple[str, ...]:
         try:
@@ -279,11 +543,18 @@ class ActionStudio(tk.Tk):
         if self.selected_path is not None:
             self._load_path(self.selected_path)
 
+    def _set_results(self, lines: list[str]) -> None:
+        self.result_text.configure(state="normal")
+        self.result_text.delete("1.0", "end")
+        if lines:
+            self.result_text.insert("1.0", "\n".join(lines))
+        self.result_text.configure(state="disabled")
+
     def _reset_live(self) -> None:
         self.live_result_var.set("Nog niet gemeten")
-        self.preview_label.configure(image="", text="Klik op ‘Meet live’")
-        self.preview_photo = None
-        self.blob_list.delete(0, "end")
+        self.preview_label.configure(image=None, text="Klik op ‘Meet live’")
+        self.preview_image = None
+        self._set_results([])
         self.live_blob_sizes = []
         self.use_smallest_button.configure(state="disabled")
         self.use_largest_button.configure(state="disabled")
@@ -333,10 +604,12 @@ class ActionStudio(tk.Tk):
         ]
         self.live_blob_sizes = sorted(blob.area_px for blob in all_blobs)
         self.found_title.configure(text="Gevonden groottes")
-        self.blob_list.delete(0, "end")
+
+        lines = []
         for blob in sorted(all_blobs, key=lambda b: b.area_px):
             marker = "✓" if blob in valid else "×"
-            self.blob_list.insert("end", f"{marker}  {blob.area_px} px")
+            lines.append(f"{marker}  {blob.area_px} px")
+        self._set_results(lines or ["Geen blobs gevonden"])
 
         self.live_result_var.set(
             f"{len(valid)} geldig · {len(all_blobs)} gevonden · {total_pixels} kleurpixels totaal"
@@ -364,15 +637,18 @@ class ActionStudio(tk.Tk):
             return
 
         self.found_title.configure(text="Image match")
-        self.blob_list.delete(0, "end")
         if hit is None:
             self.live_result_var.set("Geen match gevonden")
-            self.blob_list.insert("end", "×  Geen match")
+            self._set_results(["×  Geen match"])
         else:
             self.live_result_var.set("✓ Image gevonden")
-            self.blob_list.insert("end", f"✓  Shape {hit.shape_score:.1%}")
-            self.blob_list.insert("end", f"✓  Colour {hit.color_score:.1%}")
-            self.blob_list.insert("end", f"    {hit.width} × {hit.height} px")
+            self._set_results(
+                [
+                    f"✓  Shape   {hit.shape_score:.1%}",
+                    f"✓  Colour  {hit.color_score:.1%}",
+                    f"   Grootte {hit.width} × {hit.height} px",
+                ]
+            )
         self._show_image_preview(screenshot, region, hit)
 
     def _show_colour_preview(self, screenshot, region, blobs, valid) -> None:
@@ -408,9 +684,16 @@ class ActionStudio(tk.Tk):
         self._set_preview(image)
 
     def _set_preview(self, image: Image.Image) -> None:
-        image.thumbnail((720, 430), Image.Resampling.LANCZOS)
-        self.preview_photo = ImageTk.PhotoImage(image)
-        self.preview_label.configure(image=self.preview_photo, text="")
+        max_width = 720
+        max_height = 430
+        copy = image.copy()
+        copy.thumbnail((max_width, max_height), Image.Resampling.LANCZOS)
+        self.preview_image = ctk.CTkImage(
+            light_image=copy,
+            dark_image=copy,
+            size=copy.size,
+        )
+        self.preview_label.configure(image=self.preview_image, text="")
 
     def _use_smallest(self) -> None:
         field = next((f for f in self.fields if f.name.endswith("_MIN_PIXELS")), None)
