@@ -9,17 +9,18 @@ from core import mouse
 from core.vision.areas import get_region
 from definitions.bank.is_bank_all_selected import is_bank_all_selected
 from definitions.bank.is_bank_open import is_bank_open
-from definitions.inventory.constants import SLOT_PREFIX
+from definitions.inventory.constants import SLOT_PREFIX, TOTAL_SLOTS
 from definitions.inventory.exclusions import (
     occupied_slots,
     resolve_inventory_exclusions,
 )
+from definitions.inventory.get_inventory_item_slots import get_inventory_item_slots
 from definitions.inventory.get_inventory_state import InventorySlot, get_inventory_state
 
 
 DEFAULT_CHANGE_TIMEOUT_S = 2.5
 DEFAULT_CHECK_INTERVAL_S = 0.10
-DEFAULT_MAX_CLICKS = 28
+DEFAULT_MAX_CLICKS = TOTAL_SLOTS
 
 
 @dataclass(frozen=True)
@@ -150,6 +151,7 @@ def bank_inventory(
             explicit_slots=explicit_slots,
             protected_images=protected_images,
             optional_images=optional_images,
+            item_slots_getter=get_inventory_item_slots,
         )
         occupied = tuple(slot.number for slot in state if slot.occupied)
 
