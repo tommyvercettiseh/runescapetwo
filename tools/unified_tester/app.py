@@ -3,33 +3,15 @@ from __future__ import annotations
 import threading
 import time
 import tkinter as tk
-from dataclasses import asdict, is_dataclass
 from queue import Empty, SimpleQueue
 from tkinter import messagebox, ttk
 from typing import Any, Callable
 
-from actions.bank.bank_inventory import bank_inventory
-from actions.bank.click_bank import click_bank
-from actions.bank.close_bank import close_bank
-from actions.bank.find_bank import find_bank
-from actions.bank.open_bank import open_bank
-from actions.inventory.drop_inventory import drop_inventory
 from core import mouse_actions
-from definitions.bank.is_bank_all_selected import is_bank_all_selected
-from definitions.bank.is_bank_closed import is_bank_closed
-from definitions.bank.is_bank_open import is_bank_open
-from definitions.bank.is_bank_visible import is_bank_visible
 from tools.definition_tester.registry import categories, definitions_for, get_definition
+from tools.unified_tester.action_registry import ActionContext, action_names, get_action
+from tools.unified_tester.result_utils import format_result, result_success
 
-
-ACTION_NAMES = (
-    "Bank inventory",
-    "Open bank",
-    "Close bank",
-    "Find bank",
-    "Click bank",
-    "Drop inventory",
-)
 
 BAR_COLOURS = {
     "neutral": "#6B7280",
@@ -37,38 +19,6 @@ BAR_COLOURS = {
     "success": "#15803D",
     "failure": "#B91C1C",
 }
-
-
-def format_result(result: Any) -> str:
-    if isinstance(result, bool):
-        return f"RESULT: {'TRUE' if result else 'FALSE'}"
-    if result is None:
-        return "RESULT: None"
-    if is_dataclass(result):
-        return "\n".join(
-            f"{key}: {value}" for key, value in asdict(result).items()
-        )
-    if isinstance(result, dict):
-        return "\n".join(f"{key}: {value}" for key, value in result.items())
-    if isinstance(result, (list, tuple, set)):
-        return "\n".join(map(str, result)) or "Empty result."
-    return repr(result)
-
-
-def result_success(result: Any) -> bool | None:
-    if isinstance(result, bool):
-        return result
-
-    success = getattr(result, "success", None)
-    if isinstance(success, bool):
-        return success
-
-    if isinstance(result, dict):
-        success = result.get("success")
-        if isinstance(success, bool):
-            return success
-
-    return None
 
 
 def parse_images(text: str) -> list[str]:
@@ -92,7 +42,7 @@ class UnifiedTester(tk.Tk):
         self.status_var = tk.StringVar(value="Ready.")
         self.sensor_category_var = tk.StringVar()
         self.sensor_var = tk.StringVar()
-        self.action_var = tk.StringVar(value="Bank inventory")
+        self.action_var = tk.StringVar(value=action_names()[0])
         self.exclude_images_var = tk.StringVar()
         self.optional_exclude_images_var = tk.StringVar()
         self.pattern_var = tk.StringVar(value="random_pattern")
@@ -117,7 +67,6 @@ class UnifiedTester(tk.Tk):
 
         header = ttk.Frame(root)
         header.grid(row=0, column=0, sticky="ew", pady=(0, 12))
-
         ttk.Label(
             header,
             text="Unified Tester",
@@ -273,7 +222,7 @@ class UnifiedTester(tk.Tk):
         self.action_box = ttk.Combobox(
             self.action_tab,
             textvariable=self.action_var,
-            values=ACTION_NAMES,
+            values=action_names(),
             state="readonly",
         )
         self.action_box.grid(
@@ -406,10 +355,10 @@ class UnifiedTester(tk.Tk):
         self._load_sensors(self.sensor_category_var.get())
 
     def _set_result_bar(self, target: tk.Text, text: str, state: str) -> None:
-        bar = self._result_bars[target]
-        bar.configure(text=text, bg=BAR_COLOURS[state])
+        self._result_bars[target].configure(text=text, bg=BAR_COLOURS[state])
 
-    def _set_result(self, target: tk.Text, value: str) -> None:
+    @staticmethod
+    def _set_result(target: tk.Text, value: str) -> None:
         target.configure(state="normal")
         target.delete("1.0", "end")
         target.insert("1.0", value)
@@ -463,9 +412,7 @@ class UnifiedTester(tk.Tk):
 
     def _poll_worker(self) -> None:
         try:
-            target, _label, elapsed, result, error = (
-                self._worker_results.get_nowait()
-            )
+            target, _label, elapsed, result, error = self._worker_results.get_nowait()
         except Empty:
             self.after(25, self._poll_worker)
             return
@@ -508,82 +455,50 @@ class UnifiedTester(tk.Tk):
         )
 
     def _update_action_fields(self) -> None:
-        action = self.action_var.get()
-        inventory_action = action in {"Bank inventory", "Drop inventory"}
-        self.exclude_entry.configure(
-            state="normal" if inventory_action else "disabled"
-        )
-        self.optional_exclude_entry.configure(
-            state="normal" if inventory_action else "disabled"
-        )
+        try:
+            spec = get_action(self.action_var.get())
+        except KeyError:
+            return
+
+        inventory_state = "normal" if spec.uses_inventory_options else "disabled"
+        self.exclude_entry.configure(state=inventory_state)
+        self.optional_exclude_entry.configure(state=inventory_state)
         self.pattern_box.configure(
-            state="readonly" if action == "Drop inventory" else "disabled"
+            state="readonly" if spec.uses_pattern else "disabled"
         )
         self.selection_box.configure(
-            state="readonly" if action == "Bank inventory" else "disabled"
+            state="readonly" if spec.uses_selection else "disabled"
         )
 
-    def _bank_preflight(self, action: str, bot_id: int) -> dict[str, object]:
-        return {
-            "action": action,
-            "executed": False,
-            "bank_visible": is_bank_visible(bot_id),
-            "bank_open": is_bank_open(bot_id),
-            "bank_all_selected": is_bank_all_selected(bot_id),
-            "bank_closed": is_bank_closed(bot_id),
-            "note": "Dry run. No input sent.",
-        }
+    def _action_context(self) -> ActionContext:
+        return ActionContext(
+            bot_id=self._bot_id(),
+            protected_images=tuple(parse_images(self.exclude_images_var.get())),
+            optional_images=tuple(
+                parse_images(self.optional_exclude_images_var.get())
+            ),
+            pattern=self.pattern_var.get(),
+            selection=self.selection_var.get(),
+            dry_run=self.dry_run_var.get(),
+        )
 
     def _run_action(self) -> None:
         try:
-            bot_id = self._bot_id()
-        except Exception as exc:
+            spec = get_action(self.action_var.get())
+            context = self._action_context()
+        except (KeyError, ValueError) as exc:
             messagebox.showerror("Action", str(exc))
             return
 
-        action = self.action_var.get()
-        protected_images = parse_images(self.exclude_images_var.get())
-        optional_images = parse_images(self.optional_exclude_images_var.get())
-        dry_run = self.dry_run_var.get()
-
-        if not dry_run:
-            if not messagebox.askyesno(
-                "Run action",
-                f"Run {action}?",
-            ):
+        if not context.dry_run:
+            if not messagebox.askyesno("Run action", f"Run {spec.name}?"):
                 return
 
-        if action == "Bank inventory":
-            call = lambda: bank_inventory(
-                bot_id,
-                exclude_images=protected_images,
-                optional_exclude_images=optional_images,
-                selection=self.selection_var.get(),
-                dry_run=dry_run,
-            )
-        elif action == "Drop inventory":
-            call = lambda: drop_inventory(
-                bot_id,
-                exclude_images=protected_images,
-                optional_exclude_images=optional_images,
-                pattern=self.pattern_var.get(),
-                dry_run=dry_run,
-            )
-        elif dry_run:
-            call = lambda: self._bank_preflight(action, bot_id)
-        elif action == "Open bank":
-            call = lambda: open_bank(bot_id)
-        elif action == "Close bank":
-            call = lambda: close_bank(bot_id)
-        elif action == "Find bank":
-            call = lambda: find_bank(bot_id)
-        elif action == "Click bank":
-            call = lambda: click_bank(bot_id)
-        else:
-            messagebox.showerror("Action", "Unknown action.")
-            return
-
-        self._execute(self.action_result, action, call)
+        self._execute(
+            self.action_result,
+            spec.name,
+            lambda: spec.execute(context),
+        )
 
     def _emergency_stop(self) -> None:
         mouse_actions.emergency_stop()
