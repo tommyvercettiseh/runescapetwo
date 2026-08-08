@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from core.vision.hp_stoplight import classify_hp_frame
+from core.vision.hp_stoplight import classify_hp_frame, load_hp_stoplight_profile
 from core.vision.screenshots import capture_area
 
 
-HP_AREA = "Hp_Area"
+HP_AREA = str(load_hp_stoplight_profile().get("area", "Hp_Area"))
 
 
 class HpSensorError(RuntimeError):
@@ -28,13 +28,14 @@ class HpReading:
         raise HpSensorError("HP state UNKNOWN")
 
 
-def read_hp(*, bot_id: int = 1, area: str = HP_AREA) -> HpReading:
-    screenshot, _region = capture_area(area, bot_id=bot_id)
+def read_hp(*, bot_id: int = 1, area: str | None = None) -> HpReading:
+    selected_area = area or str(load_hp_stoplight_profile().get("area", HP_AREA))
+    screenshot, _region = capture_area(selected_area, bot_id=bot_id)
     reading = classify_hp_frame(screenshot)
 
     if reading.state == "unknown":
         raise HpSensorError(
-            f"HP state UNKNOWN in {area}. "
+            f"HP state UNKNOWN in {selected_area}. "
             f"Pixels: {reading.pixels} · confidence {reading.confidence:.0%}."
         )
 
@@ -45,7 +46,7 @@ def read_hp(*, bot_id: int = 1, area: str = HP_AREA) -> HpReading:
     )
 
 
-def hp_low(*, bot_id: int = 1, area: str = HP_AREA) -> bool:
+def hp_low(*, bot_id: int = 1, area: str | None = None) -> bool:
     """Return True for orange/red HP, False for green/yellow.
 
     UNKNOWN deliberately raises HpSensorError so failure to see the HP number can
