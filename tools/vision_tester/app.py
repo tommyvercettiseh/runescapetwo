@@ -11,6 +11,10 @@ from .colour_browser import install_colour_browser
 
 install_colour_browser()
 
+from .manual_colour_save import install_manual_colour_save
+
+install_manual_colour_save()
+
 from .colour_recording import install_colour_recording
 
 install_colour_recording()
