@@ -1,14 +1,9 @@
 from __future__ import annotations
 
-import sys
-import time
 import tkinter as tk
-from queue import Empty, SimpleQueue
 from tkinter import messagebox, simpledialog, ttk
 
 import customtkinter as ctk
-from pynput.keyboard import Key as KeyboardKey
-from pynput.keyboard import Listener as KeyboardListener
 
 from core.vision.areas import load_areas
 from core.vision.colour_presets import (
@@ -19,6 +14,7 @@ from core.vision.colour_presets import (
     save_colour_preset,
 )
 from . import modern_ui
+from .app_shell import VisionTesterShell
 
 
 DEFAULT_PRESET_NAME = "cyan"
@@ -62,7 +58,7 @@ def format_ranges(ranges) -> str:
 
 
 def apply_basic_theme() -> None:
-    """Give the existing Template and Sensor pages a simple light theme."""
+    """Apply the light tester palette without replacing UI factories."""
     ctk.set_appearance_mode("light")
 
     modern_ui.BG = BASIC_BG
@@ -79,56 +75,6 @@ def apply_basic_theme() -> None:
     modern_ui.DANGER = BASIC_RED
     modern_ui.SUCCESS = BASIC_GREEN
     modern_ui.VIEW_BG = BASIC_VIEW
-
-    def compact_button(
-        parent,
-        text: str,
-        command,
-        *,
-        primary: bool = False,
-        danger: bool = False,
-        width: int = 105,
-    ):
-        if primary:
-            foreground = BASIC_BLUE
-            hover = BASIC_BLUE_HOVER
-            text_colour = "white"
-        elif danger:
-            foreground = BASIC_CONTROL
-            hover = "#fee2e2"
-            text_colour = BASIC_RED
-        else:
-            foreground = BASIC_CONTROL
-            hover = "#e6e6e6"
-            text_colour = BASIC_TEXT
-
-        return ctk.CTkButton(
-            parent,
-            text=text,
-            command=command,
-            width=width,
-            height=30,
-            corner_radius=2,
-            fg_color=foreground,
-            hover_color=hover,
-            text_color=text_colour,
-            font=ctk.CTkFont(family="Segoe UI", size=11),
-            border_width=1,
-            border_color=BASIC_BORDER,
-        )
-
-    def compact_card(parent, **kwargs):
-        return ctk.CTkFrame(
-            parent,
-            fg_color=kwargs.pop("fg_color", BASIC_PANEL),
-            corner_radius=kwargs.pop("corner_radius", 2),
-            border_width=kwargs.pop("border_width", 1),
-            border_color=kwargs.pop("border_color", BASIC_BORDER),
-            **kwargs,
-        )
-
-    modern_ui._button = compact_button
-    modern_ui._card = compact_card
 
 
 class BasicSourceControls(ttk.Frame):
@@ -574,138 +520,40 @@ class PresetColourPage(modern_ui.ColourPage):
             )
 
 
-class VisionTester(tk.Tk):
+class VisionTester(VisionTesterShell):
     def __init__(self) -> None:
-        apply_basic_theme()
-        super().__init__()
-        self.configure(background=BASIC_BG)
-        self.title("RuneScape Two - Unified Vision Tester")
-        self.geometry("1180x760")
-        self.minsize(980, 650)
-
-        self._hotkey_events: SimpleQueue[str] = SimpleQueue()
-        self._hotkey_listener: KeyboardListener | None = None
-        self._last_f2_at = 0.0
-        self._closing = False
-        self.pages: list[object] = []
-        self.current_page = None
-
-        style = ttk.Style(self)
-        available = style.theme_names()
-        if sys.platform == "win32" and "vista" in available:
-            style.theme_use("vista")
-        style.configure("TNotebook.Tab", padding=(14, 6))
-
-        root = ttk.Frame(self, padding=10)
-        root.pack(fill="both", expand=True)
-        root.rowconfigure(1, weight=1)
-        root.columnconfigure(0, weight=1)
-
-        header = ttk.Frame(root)
-        header.grid(row=0, column=0, sticky="ew", pady=(0, 8))
-        ttk.Label(
-            header,
-            text="Unified Vision Tester",
-            font=("Segoe UI", 17, "bold"),
-        ).pack(side="left")
-        ttk.Label(
-            header,
-            text="F2 Capture",
-            foreground=BASIC_MUTED,
-        ).pack(side="right")
-
-        self.tabs = ttk.Notebook(root)
-        self.tabs.grid(row=1, column=0, sticky="nsew")
-
-        self.colour_host = tk.Frame(self.tabs, background=BASIC_BG)
-        self.template_host = tk.Frame(self.tabs, background=BASIC_BG)
-        self.sensor_host = tk.Frame(self.tabs, background=BASIC_BG)
-        self.tabs.add(self.colour_host, text="Colour")
-        self.tabs.add(self.template_host, text="Template")
-        self.tabs.add(self.sensor_host, text="Sensor")
-
-        self.colour_page = PresetColourPage(self.colour_host)
-        self.template_page = modern_ui.TemplatePage(self.template_host)
-        self.sensor_page = modern_ui.SensorPage(self.sensor_host)
-        self.colour_page.pack(fill="both", expand=True)
-        self.template_page.pack(fill="both", expand=True)
-        self.sensor_page.pack(fill="both", expand=True)
-        self.pages = [
-            self.colour_page,
-            self.template_page,
-            self.sensor_page,
-        ]
-        self.tabs.bind("<<NotebookTabChanged>>", self._tab_changed)
-
-        self.protocol("WM_DELETE_WINDOW", self._close)
-        self._start_hotkeys()
-        self.after(50, self._poll_hotkeys)
-        self.after(120, self._activate_current_page)
-
-    def _selected_page(self):
-        try:
-            return self.pages[self.tabs.index(self.tabs.select())]
-        except (IndexError, tk.TclError):
-            return None
-
-    def _activate_current_page(self) -> None:
-        page = self._selected_page()
-        if page is None:
-            return
-        if self.current_page is not None and self.current_page is not page:
-            self.current_page.deactivate()
-        self.current_page = page
-        self.current_page.activate()
-
-    def _tab_changed(self, _event=None) -> None:
-        self._activate_current_page()
-
-    def _start_hotkeys(self) -> None:
-        options = {"on_press": self._global_key_pressed}
-        if sys.platform == "win32":
-            options["win32_event_filter"] = self._windows_key_filter
-        self._hotkey_listener = KeyboardListener(**options)
-        self._hotkey_listener.start()
-
-    def _global_key_pressed(self, key) -> None:
-        if key == KeyboardKey.f2:
-            self._queue_capture_hotkey()
-
-    def _queue_capture_hotkey(self) -> None:
-        now = time.monotonic()
-        if now - self._last_f2_at < 0.4:
-            return
-        self._last_f2_at = now
-        self._hotkey_events.put("capture")
-
-    def _windows_key_filter(self, message, data):
-        if int(data.vkCode) != 0x71:
-            return True
-        if int(message) in (0x0100, 0x0104):
-            self._queue_capture_hotkey()
-        if self._hotkey_listener is not None:
-            self._hotkey_listener.suppress_event()
-        return False
-
-    def _poll_hotkeys(self) -> None:
-        if self._closing:
-            return
-        try:
-            while self._hotkey_events.get_nowait() == "capture":
-                if self.current_page is not None:
-                    self.current_page.capture_hotkey()
-        except Empty:
-            pass
-        self.after(50, self._poll_hotkeys)
-
-    def _close(self) -> None:
-        self._closing = True
-        if self.current_page is not None:
-            self.current_page.deactivate()
-        if self._hotkey_listener is not None:
-            self._hotkey_listener.stop()
-        self.destroy()
+        super().__init__(
+            colour_page_type=PresetColourPage,
+            background=BASIC_BG,
+            muted_text=BASIC_MUTED,
+            theme_setup=apply_basic_theme,
+        )
 
 
 def main() -> None:
     VisionTester().mainloop()
+
+
+__all__ = [
+    "BASIC_BG",
+    "BASIC_BLUE",
+    "BASIC_BLUE_HOVER",
+    "BASIC_BORDER",
+    "BASIC_CONTROL",
+    "BASIC_GREEN",
+    "BASIC_MUTED",
+    "BASIC_PANEL",
+    "BASIC_RED",
+    "BASIC_TEXT",
+    "BASIC_VIEW",
+    "BasicProgressbar",
+    "BasicSourceControls",
+    "DEFAULT_PRESET_NAME",
+    "PRESETS_PATH_LABEL",
+    "PresetColourPage",
+    "VisionTester",
+    "apply_basic_theme",
+    "filter_preset_names",
+    "format_ranges",
+    "main",
+]
