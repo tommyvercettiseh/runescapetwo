@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 from definitions.inventory.constants import TOTAL_SLOTS
 from definitions.inventory.get_inventory_item_slots import get_inventory_item_slots
 from definitions.inventory.get_inventory_state import InventorySlot, get_inventory_state
+
+
+InventoryStateGetter = Callable[[int], list[InventorySlot]]
+InventoryItemSlotsGetter = Callable[[str, int], set[int]]
 
 
 @dataclass(frozen=True)
@@ -125,8 +130,10 @@ def check_inventory(
     image_name: str = "",
     *,
     strict_image: bool = False,
+    state_getter: InventoryStateGetter = get_inventory_state,
+    item_slots_getter: InventoryItemSlotsGetter = get_inventory_item_slots,
 ) -> InventoryCheckResult:
-    slots = tuple(get_inventory_state(bot_id))
+    slots = tuple(state_getter(bot_id))
     cleaned_image_name = image_name.strip()
     image_slots: tuple[int, ...] = ()
     image_error = ""
@@ -134,7 +141,7 @@ def check_inventory(
     if cleaned_image_name:
         try:
             image_slots = tuple(
-                sorted(get_inventory_item_slots(cleaned_image_name, bot_id))
+                sorted(item_slots_getter(cleaned_image_name, bot_id))
             )
         except Exception as exc:
             if strict_image:
@@ -149,4 +156,10 @@ def check_inventory(
     )
 
 
-__all__ = ["InventoryCheckResult", "TOTAL_SLOTS", "check_inventory"]
+__all__ = [
+    "InventoryCheckResult",
+    "InventoryItemSlotsGetter",
+    "InventoryStateGetter",
+    "TOTAL_SLOTS",
+    "check_inventory",
+]
