@@ -9,6 +9,7 @@ from core import mouse
 from core.vision.areas import get_region
 from definitions.bank.is_bank_all_selected import is_bank_all_selected
 from definitions.bank.is_bank_open import is_bank_open
+from definitions.inventory.constants import SLOT_PREFIX
 from definitions.inventory.exclusions import (
     occupied_slots,
     resolve_inventory_exclusions,
@@ -56,7 +57,7 @@ def _pick_slot(
 
     def distance(slot: int) -> int:
         x, y, width, height = get_region(
-            f"Inventory_Slot_{slot}",
+            f"{SLOT_PREFIX}{slot}",
             bot_id=bot_id,
         )
         center_x = x + width // 2
