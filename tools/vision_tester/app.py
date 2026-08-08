@@ -27,9 +27,9 @@ from .replay_reset import install_replay_reset
 
 install_replay_reset()
 
-from .replay_palette_builder import install_replay_palette_builder
+from .hp_stoplight_monitor import install_hp_stoplight_monitor
 
-install_replay_palette_builder()
+install_hp_stoplight_monitor()
 
 VisionTester = unified_plus.VisionTester
 main = unified_plus.main
