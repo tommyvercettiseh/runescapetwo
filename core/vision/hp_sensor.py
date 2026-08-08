@@ -2,22 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from core.vision.colour_detection import build_mask_from_ranges, count_mask_pixels
-from core.vision.colour_presets import load_colour_preset
+from core.vision.hp_stoplight import classify_hp_frame
 from core.vision.screenshots import capture_area
 
 
 HP_AREA = "Hp_Area"
-HP_COLOURS = (
-    "hp_green",
-    "hp_yellow",
-    "hp_orange",
-    "hp_red",
-)
-LOW_STATES = {"hp_orange", "hp_red"}
-SAFE_STATES = {"hp_green", "hp_yellow"}
-MIN_MATCH_PIXELS = 3
-AMBIGUITY_RATIO = 0.85
 
 
 class HpSensorError(RuntimeError):
@@ -28,56 +17,39 @@ class HpSensorError(RuntimeError):
 class HpReading:
     state: str
     pixels: dict[str, int]
+    confidence: float
 
     @property
     def low(self) -> bool:
-        if self.state in LOW_STATES:
+        if self.state in ("orange", "red"):
             return True
-        if self.state in SAFE_STATES:
+        if self.state in ("green", "yellow"):
             return False
-        raise HpSensorError(f"Unknown HP state: {self.state}")
+        raise HpSensorError("HP state UNKNOWN")
 
 
 def read_hp(*, bot_id: int = 1, area: str = HP_AREA) -> HpReading:
     screenshot, _region = capture_area(area, bot_id=bot_id)
+    reading = classify_hp_frame(screenshot)
 
-    scores: dict[str, int] = {}
-    for colour_name in HP_COLOURS:
-        try:
-            preset = load_colour_preset(colour_name)
-        except (KeyError, ValueError) as exc:
-            raise HpSensorError(
-                f"HP colour preset ontbreekt: {colour_name}. "
-                "Maak deze eerst vanuit de raw HP recording."
-            ) from exc
-
-        mask = build_mask_from_ranges(screenshot, preset.ranges)
-        scores[colour_name] = count_mask_pixels(mask)
-
-    ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
-    winner, winner_pixels = ranked[0]
-    runner_pixels = ranked[1][1] if len(ranked) > 1 else 0
-
-    if winner_pixels < MIN_MATCH_PIXELS:
+    if reading.state == "unknown":
         raise HpSensorError(
-            f"HP state UNKNOWN in {area}: geen colour haalt {MIN_MATCH_PIXELS} pixels. "
-            f"Scores: {scores}"
+            f"HP state UNKNOWN in {area}. "
+            f"Pixels: {reading.pixels} · confidence {reading.confidence:.0%}."
         )
 
-    if runner_pixels >= winner_pixels * AMBIGUITY_RATIO:
-        raise HpSensorError(
-            f"HP state UNKNOWN in {area}: meerdere colours matchen bijna even sterk. "
-            f"Scores: {scores}"
-        )
-
-    return HpReading(state=winner, pixels=scores)
+    return HpReading(
+        state=reading.state,
+        pixels=reading.pixels,
+        confidence=reading.confidence,
+    )
 
 
 def hp_low(*, bot_id: int = 1, area: str = HP_AREA) -> bool:
-    """Return True when HP is orange/red, False when green/yellow.
+    """Return True for orange/red HP, False for green/yellow.
 
-    UNKNOWN is deliberately raised as HpSensorError instead of being treated as
-    False, so a broken/missing colour detection can never silently mean 'safe'.
+    UNKNOWN deliberately raises HpSensorError so failure to see the HP number can
+    never silently be interpreted as safe HP.
     """
 
     return read_hp(bot_id=bot_id, area=area).low
@@ -85,7 +57,6 @@ def hp_low(*, bot_id: int = 1, area: str = HP_AREA) -> bool:
 
 __all__ = [
     "HP_AREA",
-    "HP_COLOURS",
     "HpReading",
     "HpSensorError",
     "hp_low",
