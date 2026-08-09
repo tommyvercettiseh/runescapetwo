@@ -9,7 +9,7 @@
   "is_logged_out": {
     "kind": "python_bool",
     "value": "definitions.login.is_logged_out",
-    "area": "Bot_Area",
+    "area": "Bot_Area_Full",
     "threshold": 1,
     "enabled": true
   },
