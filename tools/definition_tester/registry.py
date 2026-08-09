@@ -7,9 +7,14 @@ from definitions.bank.is_bank_all_selected import is_bank_all_selected
 from definitions.bank.is_bank_closed import is_bank_closed
 from definitions.bank.is_bank_open import is_bank_open
 from definitions.bank.is_bank_visible import is_bank_visible
+from definitions.hp.is_low_hp import is_low_hp
 from definitions.interface.is_screen_open import is_screen_open
 from definitions.inventory.is_inventory_empty import is_inventory_empty
 from definitions.inventory.is_inventory_full import is_inventory_full
+from definitions.login.is_logged_in import is_logged_in
+from definitions.login.is_logged_out import is_logged_out
+from definitions.prayer.is_low_prayer import is_low_prayer
+from definitions.skilling.is_skilling import is_skilling
 
 
 DefinitionFunction = Callable[[int], Any]
@@ -49,6 +54,12 @@ DEFINITIONS: tuple[DefinitionEntry, ...] = (
         description="Checks whether the bank is closed.",
     ),
     DefinitionEntry(
+        category="HP",
+        name="Low HP.",
+        function=is_low_hp,
+        description="Uses the HP stoplight sensor; orange/red means low HP.",
+    ),
+    DefinitionEntry(
         category="Interface",
         name="Screen open.",
         function=is_screen_open,
@@ -65,6 +76,30 @@ DEFINITIONS: tuple[DefinitionEntry, ...] = (
         name="Inventory empty.",
         function=is_inventory_empty,
         description="Checks all 28 slots.",
+    ),
+    DefinitionEntry(
+        category="Login",
+        name="Logged in.",
+        function=is_logged_in,
+        description="Requires both Login_Exp and Login_Globe in Info_Area.",
+    ),
+    DefinitionEntry(
+        category="Login",
+        name="Logged out.",
+        function=is_logged_out,
+        description="Detects Login_Disconnected or Login_World_Selection in Bot_Area.",
+    ),
+    DefinitionEntry(
+        category="Prayer",
+        name="Low prayer.",
+        function=is_low_prayer,
+        description="Uses the prayer stoplight sensor; orange/red means low prayer.",
+    ),
+    DefinitionEntry(
+        category="Skilling",
+        name="Skilling.",
+        function=is_skilling,
+        description="Green means skilling; red or no indicator means not skilling.",
     ),
 )
 
