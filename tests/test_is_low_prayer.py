@@ -1,6 +1,8 @@
+import importlib
 from types import SimpleNamespace
 
-from definitions.prayer import is_low_prayer as prayer_module
+
+prayer_module = importlib.import_module("definitions.prayer.is_low_prayer")
 
 
 def test_is_low_prayer_uses_profile_area_and_sensor(monkeypatch):
