@@ -1,8 +1,36 @@
 {
-  "low_prayer": {
+  "is_logged_in": {
     "kind": "python_bool",
-    "value": "core.sensors.low_prayer",
+    "value": "definitions.login.is_logged_in",
+    "area": "Info_Area",
+    "threshold": 1,
+    "enabled": true
+  },
+  "is_logged_out": {
+    "kind": "python_bool",
+    "value": "definitions.login.is_logged_out",
+    "area": "Bot_Area",
+    "threshold": 1,
+    "enabled": true
+  },
+  "is_low_hp": {
+    "kind": "python_bool",
+    "value": "definitions.hp.is_low_hp",
+    "area": "Hp_Area",
+    "threshold": 1,
+    "enabled": true
+  },
+  "is_low_prayer": {
+    "kind": "python_bool",
+    "value": "definitions.prayer.is_low_prayer",
     "area": "Prayer_Area",
+    "threshold": 1,
+    "enabled": true
+  },
+  "is_skilling": {
+    "kind": "python_bool",
+    "value": "definitions.skilling.is_skilling",
+    "area": "Skilling_Area",
     "threshold": 1,
     "enabled": true
   }
