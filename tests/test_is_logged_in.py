@@ -1,4 +1,7 @@
-from definitions.login import is_logged_in as login_module
+import importlib
+
+
+login_module = importlib.import_module("definitions.login.is_logged_in")
 
 
 def test_is_logged_in_requires_both_images(monkeypatch):
