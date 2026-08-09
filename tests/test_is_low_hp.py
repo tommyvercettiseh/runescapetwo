@@ -1,6 +1,8 @@
+import importlib
 from types import SimpleNamespace
 
-from definitions.hp import is_low_hp as hp_module
+
+hp_module = importlib.import_module("definitions.hp.is_low_hp")
 
 
 def test_is_low_hp_uses_profile_area_and_sensor(monkeypatch):
