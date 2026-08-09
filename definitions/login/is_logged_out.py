@@ -3,7 +3,7 @@ from __future__ import annotations
 from core import vision
 
 
-LOGOUT_AREA = "Bot_Area"
+LOGOUT_AREA = "Bot_Area_Full"
 LOGIN_DISCONNECTED_IMAGE = "Login_Disconnected"
 LOGIN_WORLD_SELECTION_IMAGE = "Login_World_Selection"
 
