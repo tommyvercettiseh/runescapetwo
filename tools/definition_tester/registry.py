@@ -10,6 +10,7 @@ from definitions.bank.is_bank_visible import is_bank_visible
 from definitions.interface.is_screen_open import is_screen_open
 from definitions.inventory.is_inventory_empty import is_inventory_empty
 from definitions.inventory.is_inventory_full import is_inventory_full
+from definitions.skilling.is_skilling import is_skilling
 
 
 DefinitionFunction = Callable[[int], Any]
@@ -65,6 +66,12 @@ DEFINITIONS: tuple[DefinitionEntry, ...] = (
         name="Inventory empty.",
         function=is_inventory_empty,
         description="Checks all 28 slots.",
+    ),
+    DefinitionEntry(
+        category="Skilling",
+        name="Skilling.",
+        function=is_skilling,
+        description="Green means skilling; red or no indicator means not skilling.",
     ),
 )
 
