@@ -4,9 +4,8 @@ import json
 import os
 from pathlib import Path
 
+from .enhanced_config import MAX_ZOOM_PERCENT, MIN_ZOOM_PERCENT
 
-MIN_ZOOM_PERCENT = 25
-MAX_ZOOM_PERCENT = 1600
 
 DEFAULT_PREFERENCES = {
     "auto_resize": True,

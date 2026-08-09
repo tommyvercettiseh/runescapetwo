@@ -1,46 +1,31 @@
-from .template_plus import install_template_plus
-from .area_overlay_toggle import install_area_overlay_toggle
-from .colour_view_cleanup import install_colour_view_cleanup
+from __future__ import annotations
 
-install_template_plus()
-install_area_overlay_toggle()
-install_colour_view_cleanup()
+from .app_shell import VisionTesterShell
+from .enhanced_ui import apply_enhanced_theme
+from .prayer_stoplight_monitor import PrayerStoplightMonitorPage
+from .preset_ui import BASIC_BG, BASIC_MUTED
+from .sensor_boolean_badge import EnhancedSensorPage
+from .template_plus import SearchableTemplatePage
+from .unified_plus import AreaEditorPage
 
-from . import unified_plus
-from .colour_browser import install_colour_browser
 
-install_colour_browser()
+class VisionTester(VisionTesterShell):
+    """Production tester composed explicitly from the final feature pages."""
 
-from .manual_colour_save import install_manual_colour_save
+    def __init__(self) -> None:
+        super().__init__(
+            colour_page_type=PrayerStoplightMonitorPage,
+            template_page_type=SearchableTemplatePage,
+            sensor_page_type=EnhancedSensorPage,
+            background=BASIC_BG,
+            muted_text=BASIC_MUTED,
+            theme_setup=apply_enhanced_theme,
+        )
+        self.area_editor_page = self.add_page("Area Editor", AreaEditorPage)
 
-install_manual_colour_save()
 
-from .colour_delete_undo import install_colour_delete_undo
-
-install_colour_delete_undo()
-
-from .colour_recording import install_colour_recording
-
-install_colour_recording()
-
-from .replay_reset import install_replay_reset
-
-install_replay_reset()
-
-from .hp_stoplight_monitor import install_hp_stoplight_monitor
-
-install_hp_stoplight_monitor()
-
-from .prayer_stoplight_monitor import install_prayer_stoplight_monitor
-
-install_prayer_stoplight_monitor()
-
-from .sensor_boolean_badge import install_sensor_boolean_badge
-
-install_sensor_boolean_badge()
-
-VisionTester = unified_plus.VisionTester
-main = unified_plus.main
+def main() -> None:
+    VisionTester().mainloop()
 
 
 __all__ = ["VisionTester", "main"]

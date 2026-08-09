@@ -11,7 +11,7 @@ from tkinter import filedialog, ttk
 import cv2
 import numpy as np
 
-from . import unified_plus
+from .colour_delete_undo import DeleteUndoColourPage
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -20,10 +20,10 @@ REPLAY_SPEEDS = ("0.5x", "1x", "2x", "4x", "8x")
 NOMINAL_FPS = 10
 
 
-class RecordedColourPage(unified_plus.ToleranceColourPage):
-    """Simple lossless raw-area recorder and replay for colour discovery."""
+class RecordedColourPage(DeleteUndoColourPage):
+    """Lossless raw-area recording and replay layered on the operator colour page."""
 
-    def __init__(self, parent):
+    def __init__(self, parent) -> None:
         self._recording = False
         self._record_dir: Path | None = None
         self._record_queue: Queue[tuple[int, np.ndarray] | None] = Queue(maxsize=180)
@@ -36,10 +36,10 @@ class RecordedColourPage(unified_plus.ToleranceColourPage):
         self._replay_playing = False
         self._replay_active = False
 
-        self.record_text = tk.StringVar(value="Record Raw")
-        self.play_text = tk.StringVar(value="Play Video")
-        self.replay_speed = tk.StringVar(value="1x")
-        self.replay_info = tk.StringVar(value="")
+        self.record_text = tk.StringVar(master=parent, value="Record Raw")
+        self.play_text = tk.StringVar(master=parent, value="Play Video")
+        self.replay_speed = tk.StringVar(master=parent, value="1x")
+        self.replay_info = tk.StringVar(master=parent, value="")
         super().__init__(parent)
 
     def _build(self) -> None:
@@ -47,11 +47,7 @@ class RecordedColourPage(unified_plus.ToleranceColourPage):
         self._add_recording_controls()
 
     def _add_recording_controls(self) -> None:
-        try:
-            toolbar = self.source.master
-        except AttributeError:
-            return
-
+        toolbar = self.source.master
         controls = ttk.Frame(toolbar)
         controls.grid(row=0, column=3, sticky="e", padx=(12, 8))
 
@@ -72,11 +68,11 @@ class RecordedColourPage(unified_plus.ToleranceColourPage):
             state="readonly",
             width=5,
         ).pack(side="left", padx=(6, 0))
-        ttk.Label(controls, textvariable=self.replay_info).pack(side="left", padx=(8, 0))
+        ttk.Label(controls, textvariable=self.replay_info).pack(
+            side="left",
+            padx=(8, 0),
+        )
 
-    # ------------------------------------------------------------------
-    # Raw recording
-    # ------------------------------------------------------------------
     def _toggle_recording(self) -> None:
         if self._recording:
             self._stop_recording()
@@ -93,7 +89,10 @@ class RecordedColourPage(unified_plus.ToleranceColourPage):
             return
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        safe_area = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in area)
+        safe_area = "".join(
+            ch if ch.isalnum() or ch in "-_" else "_"
+            for ch in area
+        )
         record_dir = RECORDINGS_DIR / f"{timestamp}_{safe_area}"
         (record_dir / "frames").mkdir(parents=True, exist_ok=True)
 
@@ -118,8 +117,6 @@ class RecordedColourPage(unified_plus.ToleranceColourPage):
             encoding="utf-8",
         )
 
-        # A fresh queue prevents a sentinel from an older recording ending the
-        # new writer early.
         self._record_queue = Queue(maxsize=180)
         self._record_thread = threading.Thread(
             target=self._record_writer,
@@ -139,7 +136,11 @@ class RecordedColourPage(unified_plus.ToleranceColourPage):
                 index, rgb = item
                 target = record_dir / "frames" / f"{index:06d}.png"
                 bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-                cv2.imwrite(str(target), bgr, [cv2.IMWRITE_PNG_COMPRESSION, 3])
+                cv2.imwrite(
+                    str(target),
+                    bgr,
+                    [cv2.IMWRITE_PNG_COMPRESSION, 3],
+                )
             finally:
                 queue.task_done()
 
@@ -166,42 +167,41 @@ class RecordedColourPage(unified_plus.ToleranceColourPage):
         try:
             self._record_queue.put_nowait(None)
         except Full:
-            # The writer will catch up quickly at ~10 fps; use a short helper so
-            # the Tk thread never blocks waiting for disk I/O.
             threading.Thread(
                 target=self._record_queue.put,
                 args=(None,),
                 daemon=True,
             ).start()
 
-        if record_dir is not None:
-            metadata_path = record_dir / "metadata.json"
-            try:
-                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                metadata = {}
-            metadata["frame_count"] = frame_count
-            metadata["stopped_at"] = datetime.now().isoformat(timespec="seconds")
-            try:
-                metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
-            except OSError:
-                pass
+        if record_dir is None:
+            return
 
-            # Make the recording immediately available to Play Video.
-            self._load_recording_folder(record_dir, autoplay=False)
-            self.status.set(f"RAW bewaard: {record_dir.name} · {frame_count} frames.")
+        metadata_path = record_dir / "metadata.json"
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            metadata = {}
+        metadata["frame_count"] = frame_count
+        metadata["stopped_at"] = datetime.now().isoformat(timespec="seconds")
+        try:
+            metadata_path.write_text(
+                json.dumps(metadata, indent=2),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
 
-    # ------------------------------------------------------------------
-    # Replay
-    # ------------------------------------------------------------------
+        self._load_recording_folder(record_dir, autoplay=False)
+        self.status.set(
+            f"RAW bewaard: {record_dir.name} · {frame_count} frames."
+        )
+
     def _play_video(self) -> None:
         if self._replay_playing:
             self._pause_replay()
             return
-
-        if not self._replay_frames:
-            if not self._choose_recording():
-                return
+        if not self._replay_frames and not self._choose_recording():
+            return
 
         self._replay_playing = True
         self.play_text.set("Pause")
@@ -234,7 +234,7 @@ class RecordedColourPage(unified_plus.ToleranceColourPage):
         self._show_replay_frame(0)
         self._update_replay_info()
         self.status.set(
-            "RAW video geladen. Pauzeer op een frame, maak/selecteer een colour en gebruik de pipet."
+            "RAW video geladen. Pauzeer op een frame en gebruik de pipet."
         )
         if autoplay:
             self._play_video()
@@ -249,7 +249,6 @@ class RecordedColourPage(unified_plus.ToleranceColourPage):
             except tk.TclError:
                 pass
             self._replay_job = None
-        self.status.set("Video gepauzeerd · je kunt nu met de pipet kleuren markeren.")
 
     def _stop_replay(self, *, clear: bool) -> None:
         self._pause_replay()
@@ -269,9 +268,13 @@ class RecordedColourPage(unified_plus.ToleranceColourPage):
     def _schedule_next_frame(self, *, immediate: bool = False) -> None:
         if not self._replay_playing or not self._replay_frames:
             return
-        delay = 1 if immediate else max(
-            1,
-            round((1000 / NOMINAL_FPS) / self._speed_multiplier()),
+        delay = (
+            1
+            if immediate
+            else max(
+                1,
+                round((1000 / NOMINAL_FPS) / self._speed_multiplier()),
+            )
         )
         self._replay_job = self.after(delay, self._advance_replay)
 
@@ -280,9 +283,7 @@ class RecordedColourPage(unified_plus.ToleranceColourPage):
         if not self._replay_playing or not self._replay_frames:
             return
 
-        self._replay_index += 1
-        if self._replay_index >= len(self._replay_frames):
-            self._replay_index = 0
+        self._replay_index = (self._replay_index + 1) % len(self._replay_frames)
         self._show_replay_frame(self._replay_index)
         self._update_replay_info()
         self._schedule_next_frame()
@@ -290,16 +291,13 @@ class RecordedColourPage(unified_plus.ToleranceColourPage):
     def _show_replay_frame(self, index: int) -> None:
         if not self._replay_frames:
             return
-        path = self._replay_frames[index]
-        bgr = cv2.imread(str(path), cv2.IMREAD_COLOR)
+        bgr = cv2.imread(str(self._replay_frames[index]), cv2.IMREAD_COLOR)
         if bgr is None:
             return
 
         self.capture = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
         height, width = self.capture.shape[:2]
         self.capture_region = (0, 0, width, height)
-        # Re-use the normal Colour view so the existing pipette mapping works
-        # on paused replay frames exactly as it does on live captures.
         self._render()
 
     def _update_replay_info(self) -> None:
@@ -310,9 +308,6 @@ class RecordedColourPage(unified_plus.ToleranceColourPage):
             f"{self._replay_index + 1}/{len(self._replay_frames)}"
         )
 
-    # ------------------------------------------------------------------
-    # Normal Colour page integration
-    # ------------------------------------------------------------------
     def _capture(self) -> None:
         if self._replay_active:
             return
@@ -328,7 +323,7 @@ class RecordedColourPage(unified_plus.ToleranceColourPage):
 
 
 def install_colour_recording() -> None:
-    unified_plus.ToleranceColourPage = RecordedColourPage
+    """Compatibility no-op; use RecordedColourPage explicitly."""
 
 
 __all__ = ["RecordedColourPage", "install_colour_recording"]

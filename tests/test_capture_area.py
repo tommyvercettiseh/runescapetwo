@@ -1,22 +1,24 @@
 import numpy as np
 
 from core.vision import screenshots
+from core.vision.areas import get_region
 
 
 def test_capture_area_uses_one_absolute_region(monkeypatch):
     captured = []
 
-    def fake_screenshot(*, region):
+    def fake_capture_rgb(region):
         captured.append(region)
         return np.zeros((region[3], region[2], 3), dtype=np.uint8)
 
-    monkeypatch.setattr(screenshots.pyautogui, "screenshot", fake_screenshot)
+    monkeypatch.setattr(screenshots, "capture_rgb", fake_capture_rgb)
 
     image, region = screenshots.capture_area("Inventory_Area", bot_id=2)
+    expected = get_region("Inventory_Area", bot_id=2)
 
-    assert region == (1958, 200, 250, 420)
-    assert captured == [region]
-    assert image.shape == (420, 250, 3)
+    assert region == expected
+    assert captured == [expected]
+    assert image.shape == (expected[3], expected[2], 3)
 
 
 def test_windows_capture_includes_secondary_monitors(monkeypatch):

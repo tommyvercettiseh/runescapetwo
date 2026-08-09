@@ -4,6 +4,15 @@ import random
 
 from core import keyboard, mouse
 from core.vision.areas import get_region
+from definitions.inventory.constants import (
+    INVENTORY_COLUMNS,
+    SLOT_PREFIX,
+    TOTAL_SLOTS,
+)
+from definitions.inventory.exclusions import (
+    occupied_slots,
+    resolve_inventory_exclusions,
+)
 from definitions.inventory.get_inventory_item_slots import get_inventory_item_slots
 from definitions.inventory.get_inventory_state import get_inventory_state
 
@@ -12,16 +21,24 @@ from .click_inventory_slot import click_inventory_slot
 
 DEFAULT_PATTERN = "random_pattern"
 FIXED_PATTERNS = ("row", "snake", "column", "column_snake")
-SLOT_PREFIX = "Inventory_Slot_"
-TOTAL_SLOTS = 28
+
+
+def _inventory_rows() -> list[list[int]]:
+    return [
+        list(range(start, min(start + INVENTORY_COLUMNS, TOTAL_SLOTS + 1)))
+        for start in range(1, TOTAL_SLOTS + 1, INVENTORY_COLUMNS)
+    ]
 
 
 def _pattern_order(pattern: str, rng: random.Random) -> list[int]:
-    rows = [list(range(start, start + 4)) for start in range(1, 29, 4)]
-    columns = [[row[column] for row in rows] for column in range(4)]
+    rows = _inventory_rows()
+    columns = [
+        [row[column] for row in rows if column < len(row)]
+        for column in range(INVENTORY_COLUMNS)
+    ]
 
     if pattern == "row":
-        return list(range(1, 29))
+        return list(range(1, TOTAL_SLOTS + 1))
     if pattern == "snake":
         return [
             slot
@@ -37,7 +54,7 @@ def _pattern_order(pattern: str, rng: random.Random) -> list[int]:
             for slot in (column if index % 2 == 0 else reversed(column))
         ]
     if pattern == "random":
-        order = list(range(1, 29))
+        order = list(range(1, TOTAL_SLOTS + 1))
         rng.shuffle(order)
         return order
     if pattern == "random_pattern":
@@ -51,7 +68,7 @@ def _pattern_order(pattern: str, rng: random.Random) -> list[int]:
 def _nearest_order(slots: set[int], bot_id: int) -> list[int]:
     remaining = set(slots)
     current_x, current_y = mouse.position()
-    order = []
+    order: list[int] = []
 
     while remaining:
         slot = min(
@@ -90,33 +107,6 @@ def _distance_to_slot(
     return (center_x - x) ** 2 + (center_y - y) ** 2
 
 
-def _resolve_excluded_slots(
-    exclude_slots: set[int],
-    protected_images: list[str],
-    optional_images: list[str],
-    bot_id: int,
-) -> tuple[set[int], tuple[str, ...]]:
-    invalid = sorted(
-        slot for slot in exclude_slots if slot < 1 or slot > TOTAL_SLOTS
-    )
-    if invalid:
-        raise ValueError(f"exclude_slots contains invalid slots: {invalid}")
-
-    excluded = set(exclude_slots)
-    missing: list[str] = []
-
-    for image_name in protected_images:
-        slots = get_inventory_item_slots(image_name, bot_id)
-        if not slots:
-            missing.append(image_name)
-        excluded.update(slots)
-
-    for image_name in optional_images:
-        excluded.update(get_inventory_item_slots(image_name, bot_id))
-
-    return excluded, tuple(missing)
-
-
 def drop_inventory(
     bot_id: int = 1,
     *,
@@ -127,11 +117,12 @@ def drop_inventory(
     seed: int | None = None,
     dry_run: bool = False,
 ) -> bool:
-    excluded, missing = _resolve_excluded_slots(
-        set(exclude_slots or set()),
-        list(dict.fromkeys(exclude_images or [])),
-        list(dict.fromkeys(optional_exclude_images or [])),
-        bot_id,
+    excluded, missing = resolve_inventory_exclusions(
+        bot_id=bot_id,
+        explicit_slots=exclude_slots or (),
+        protected_images=exclude_images or (),
+        optional_images=optional_exclude_images or (),
+        item_slots_getter=get_inventory_item_slots,
     )
 
     if missing:
@@ -141,12 +132,7 @@ def drop_inventory(
         )
         return False
 
-    occupied = {
-        slot.number
-        for slot in get_inventory_state(bot_id)
-        if slot.occupied and slot.number not in excluded
-    }
-
+    occupied = set(occupied_slots(get_inventory_state(bot_id), excluded))
     if not occupied:
         return True
 
@@ -171,9 +157,5 @@ def drop_inventory(
     finally:
         keyboard.key_up("shift")
 
-    remaining = {
-        slot.number
-        for slot in get_inventory_state(bot_id)
-        if slot.occupied and slot.number not in excluded
-    }
+    remaining = occupied_slots(get_inventory_state(bot_id), excluded)
     return not remaining

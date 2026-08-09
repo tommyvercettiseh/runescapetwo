@@ -1,11 +1,10 @@
 from core import mouse_actions
-
-
-SCREEN_CROSS_IMAGE = "ScreenCross"
-SCREEN_AREA = "Bot_Area"
-
-SCREEN_BUTTON = "left"
-SCREEN_EDGE_PADDING = 20
+from definitions.interface.screen_target import (
+    SCREEN_AREA,
+    SCREEN_BUTTON,
+    SCREEN_CROSS_IMAGE,
+    SCREEN_EDGE_PADDING,
+)
 
 
 def click_close_screen(bot_id: int = 1):

@@ -1,8 +1,7 @@
 from core import mouse_actions
+from definitions.inventory.constants import SLOT_PREFIX, TOTAL_SLOTS
 
 
-SLOT_PREFIX = "Inventory_Slot_"
-TOTAL_SLOTS = 28
 CLICK_PADDING = 6
 
 

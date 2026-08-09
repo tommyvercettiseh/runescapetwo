@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 import tkinter as tk
 
 import customtkinter as ctk
@@ -7,7 +8,7 @@ import numpy as np
 
 from core.vision.areas import load_areas
 
-from . import enhanced_ui
+from . import modern_ui
 
 
 ORIGINAL_VALID = np.array((37, 169, 105), dtype=np.uint8)
@@ -15,31 +16,58 @@ ORIGINAL_SAFE = np.array((209, 166, 75), dtype=np.uint8)
 BRIGHT_VALID = np.array((0, 255, 70), dtype=np.uint8)
 
 
-class SearchableTemplatePage(enhanced_ui.modern_ui.TemplatePage):
-    """Template tester with Template and Area browsers as the primary navigation."""
+class CleanTemplatePreview(modern_ui.ImageView):
+    """Template preview that normalizes overlay colours without patching show()."""
 
-    def __init__(self, parent):
-        self.area_query = tk.StringVar(value="")
+    def __init__(self, parent, screenshot: Callable[[], np.ndarray | None]) -> None:
+        self._screenshot = screenshot
+        super().__init__(parent)
+
+    def show(self, visual: np.ndarray) -> None:
+        cleaned = visual.copy()
+        screenshot = self._screenshot()
+        if screenshot is not None and screenshot.shape == cleaned.shape:
+            safe_mask = np.all(cleaned == ORIGINAL_SAFE, axis=2)
+            cleaned[safe_mask] = screenshot[safe_mask]
+        valid_mask = np.all(cleaned == ORIGINAL_VALID, axis=2)
+        cleaned[valid_mask] = BRIGHT_VALID
+        super().show(cleaned)
+
+
+class SearchableTemplatePage(modern_ui.TemplatePage):
+    """Template tester with Template and Area browsers as primary navigation."""
+
+    def __init__(self, parent) -> None:
+        self.area_query = tk.StringVar(master=parent, value="")
         self.area_scroll: ctk.CTkScrollableFrame | None = None
         self.area_rows: dict[str, ctk.CTkButton] = {}
         super().__init__(parent)
 
     def _build(self) -> None:
         super()._build()
-        self._install_clean_preview()
+        self._replace_preview()
         self._simplify_top_toolbar()
         self._add_area_browser()
 
+    def _replace_preview(self) -> None:
+        parent = self.preview.master
+        self.preview.destroy()
+        self.preview = CleanTemplatePreview(parent, lambda: self.screenshot)
+        self.preview.grid(row=2, column=0, sticky="nsew", padx=12)
+
     def _simplify_top_toolbar(self) -> None:
-        """The Area sidebar owns area selection; keep only the useful actions above."""
+        """The Area sidebar owns area selection; keep only useful actions above."""
         try:
             toolbar = self.source.master
             self.source.grid_remove()
-            actions = None
-            for child in toolbar.grid_slaves(row=0):
-                if child is not self.source:
-                    actions = child
-                    break
+            actions = next(
+                (
+                    child
+                    for child in toolbar.grid_slaves(row=0)
+                    if child is not self.source
+                ),
+                None,
+            )
             if actions is not None:
                 actions.grid_configure(column=0, sticky="e", padx=16, pady=10)
             toolbar.grid_columnconfigure(0, weight=1)
@@ -47,21 +75,8 @@ class SearchableTemplatePage(enhanced_ui.modern_ui.TemplatePage):
         except (AttributeError, tk.TclError):
             pass
 
-    def _install_clean_preview(self) -> None:
-        original_show = self.preview.show
-
-        def show_clean(visual):
-            cleaned = visual.copy()
-            if self.screenshot is not None and self.screenshot.shape == cleaned.shape:
-                safe_mask = np.all(cleaned == ORIGINAL_SAFE, axis=2)
-                cleaned[safe_mask] = self.screenshot[safe_mask]
-            valid_mask = np.all(cleaned == ORIGINAL_VALID, axis=2)
-            cleaned[valid_mask] = BRIGHT_VALID
-            original_show(cleaned)
-
-        self.preview.show = show_clean
-
-    def _area_names(self) -> list[str]:
+    @staticmethod
+    def _area_names() -> list[str]:
         return sorted(load_areas(), key=str.casefold)
 
     def _filtered_area_names(self) -> list[str]:
@@ -100,14 +115,18 @@ class SearchableTemplatePage(enhanced_ui.modern_ui.TemplatePage):
         content.grid_columnconfigure(2, weight=1)
         content.grid_columnconfigure(3, weight=0)
 
-        sidebar = enhanced_ui.modern_ui._card(content, width=245)
+        sidebar = modern_ui._card(content, width=245)
         sidebar.grid(row=0, column=1, sticky="nsew", padx=(0, 8))
         sidebar.grid_propagate(False)
         sidebar.grid_rowconfigure(2, weight=1)
         sidebar.grid_columnconfigure(0, weight=1)
 
-        enhanced_ui.modern_ui._label(sidebar, "AREAS", size=12, bold=True).grid(
-            row=0, column=0, sticky="w", padx=14, pady=(14, 8)
+        modern_ui._label(sidebar, "AREAS", size=12, bold=True).grid(
+            row=0,
+            column=0,
+            sticky="w",
+            padx=14,
+            pady=(14, 8),
         )
         area_search = ctk.CTkEntry(
             sidebar,
@@ -115,9 +134,9 @@ class SearchableTemplatePage(enhanced_ui.modern_ui.TemplatePage):
             placeholder_text="Zoek area",
             height=38,
             corner_radius=8,
-            fg_color=enhanced_ui.modern_ui.CARD_ALT,
-            border_color=enhanced_ui.modern_ui.BORDER,
-            text_color=enhanced_ui.modern_ui.TEXT,
+            fg_color=modern_ui.CARD_ALT,
+            border_color=modern_ui.BORDER,
+            text_color=modern_ui.TEXT,
         )
         area_search.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 10))
         area_search.bind("<KeyRelease>", self._filter_areas)
@@ -126,8 +145,8 @@ class SearchableTemplatePage(enhanced_ui.modern_ui.TemplatePage):
         self.area_scroll = ctk.CTkScrollableFrame(
             sidebar,
             fg_color="transparent",
-            scrollbar_button_color=enhanced_ui.modern_ui.BORDER,
-            scrollbar_button_hover_color=enhanced_ui.modern_ui.GOLD,
+            scrollbar_button_color=modern_ui.BORDER,
+            scrollbar_button_hover_color=modern_ui.GOLD,
         )
         self.area_scroll.grid(row=2, column=0, sticky="nsew", padx=8, pady=(0, 8))
         self.area_scroll.grid_columnconfigure(0, weight=1)
@@ -150,9 +169,9 @@ class SearchableTemplatePage(enhanced_ui.modern_ui.TemplatePage):
                 anchor="w",
                 height=34,
                 corner_radius=7,
-                fg_color=enhanced_ui.modern_ui.ACCENT_SOFT if selected else "transparent",
-                hover_color=enhanced_ui.modern_ui.ACCENT_SOFT,
-                text_color=enhanced_ui.modern_ui.ACCENT_HOVER if selected else enhanced_ui.modern_ui.TEXT,
+                fg_color=modern_ui.ACCENT_SOFT if selected else "transparent",
+                hover_color=modern_ui.ACCENT_SOFT,
+                text_color=modern_ui.ACCENT_HOVER if selected else modern_ui.TEXT,
             )
             button.grid(row=row, column=0, sticky="ew", pady=1)
             self.area_rows[name] = button
@@ -195,8 +214,11 @@ class SearchableTemplatePage(enhanced_ui.modern_ui.TemplatePage):
 
 
 def install_template_plus() -> None:
-    if enhanced_ui.modern_ui.TemplatePage is not SearchableTemplatePage:
-        enhanced_ui.modern_ui.TemplatePage = SearchableTemplatePage
+    """Compatibility no-op; use SearchableTemplatePage explicitly."""
 
 
-__all__ = ["SearchableTemplatePage", "install_template_plus"]
+__all__ = [
+    "CleanTemplatePreview",
+    "SearchableTemplatePage",
+    "install_template_plus",
+]

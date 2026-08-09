@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 import subprocess
 import sys
 import tkinter as tk
-from pathlib import Path
 from tkinter import ttk
 
 from core.vision.colour_detection import hsv_ranges_around, sample_hsv
 
-from . import enhanced_ui
+from . import preset_ui
+from .app_shell import VisionTesterShell
+from .colour_view_cleanup import CompactColourPage
+from .enhanced_config import PIPETTE_EDGE_PADDING
+from .enhanced_ui import apply_enhanced_theme
 
 
 DEFAULT_TOLERANCE = 35
@@ -42,36 +46,34 @@ def _save_meta(data: dict[str, dict[str, object]]) -> None:
 
 
 def _infer_base_colours(ranges) -> list[tuple[int, int, int]]:
-    bases: list[tuple[int, int, int]] = []
-    for lower, upper in ranges:
-        bases.append(
-            (
-                round((int(lower[0]) + int(upper[0])) / 2),
-                round((int(lower[1]) + int(upper[1])) / 2),
-                round((int(lower[2]) + int(upper[2])) / 2),
-            )
+    return [
+        (
+            round((int(lower[0]) + int(upper[0])) / 2),
+            round((int(lower[1]) + int(upper[1])) / 2),
+            round((int(lower[2]) + int(upper[2])) / 2),
         )
-    return bases
+        for lower, upper in ranges
+    ]
 
 
-class ToleranceColourPage(enhanced_ui.preset_ui.PresetColourPage):
-    """Colour page with multi-colour bases controlled by one tolerance slider."""
+class ToleranceColourPage(CompactColourPage):
+    """Multi-colour HSV page controlled by one friendly tolerance slider."""
 
-    def __init__(self, parent):
-        self.colour_tolerance = tk.IntVar(value=DEFAULT_TOLERANCE)
+    def __init__(self, parent) -> None:
+        self.colour_tolerance = tk.IntVar(master=parent, value=DEFAULT_TOLERANCE)
         self.base_colours: list[tuple[int, int, int]] = []
-        self.colour_count_text = tk.StringVar(value="0 colours")
-        self.tolerance_text = tk.StringVar(value=f"{DEFAULT_TOLERANCE}%")
+        self.colour_count_text = tk.StringVar(master=parent, value="0 colours")
+        self.tolerance_text = tk.StringVar(master=parent, value=f"{DEFAULT_TOLERANCE}%")
         super().__init__(parent)
 
     def _build(self) -> None:
         super()._build()
 
-        # Insert one compact colour-width row between Detection and previews.
         for child in self.grid_slaves():
             info = child.grid_info()
-            if int(info.get("row", 0)) >= 3:
-                child.grid_configure(row=int(info["row"]) + 1)
+            row = int(info.get("row", 0))
+            if row >= 3:
+                child.grid_configure(row=row + 1)
         self.grid_rowconfigure(3, weight=0)
         self.grid_rowconfigure(4, weight=1)
 
@@ -81,7 +83,9 @@ class ToleranceColourPage(enhanced_ui.preset_ui.PresetColourPage):
 
         ttk.Label(bar, text="Tolerance").grid(row=0, column=0, sticky="w")
         ttk.Label(bar, textvariable=self.tolerance_text, width=5).grid(
-            row=0, column=1, padx=(7, 5)
+            row=0,
+            column=1,
+            padx=(7, 5),
         )
         self.tolerance_slider = ttk.Scale(
             bar,
@@ -94,22 +98,25 @@ class ToleranceColourPage(enhanced_ui.preset_ui.PresetColourPage):
         self.tolerance_slider.grid(row=0, column=2, sticky="ew", padx=(0, 14))
 
         ttk.Label(bar, textvariable=self.colour_count_text).grid(
-            row=0, column=3, padx=(0, 8)
+            row=0,
+            column=3,
+            padx=(0, 8),
         )
         ttk.Button(bar, text="Remove last", command=self._remove_last_colour).grid(
-            row=0, column=4, padx=4
+            row=0,
+            column=4,
+            padx=4,
         )
         ttk.Button(bar, text="Clear colours", command=self._clear_colours).grid(
-            row=0, column=5, padx=(4, 0)
+            row=0,
+            column=5,
+            padx=(4, 0),
         )
         ttk.Label(
             bar,
             text="Pipette adds a base colour. Slider widens/narrows all saved colours automatically.",
-            foreground=enhanced_ui.preset_ui.BASIC_MUTED,
+            foreground=preset_ui.BASIC_MUTED,
         ).grid(row=1, column=0, columnspan=6, sticky="w", pady=(6, 0))
-
-    def _selected_sample_size(self) -> int:
-        return enhanced_ui._selected_sample_size(self)
 
     def _rebuild_ranges(self) -> None:
         hue, saturation, brightness = tolerance_values(self.colour_tolerance.get())
@@ -125,10 +132,11 @@ class ToleranceColourPage(enhanced_ui.preset_ui.PresetColourPage):
             )
         self.ranges = tuple(combined)
         count = len(self.base_colours)
-        self.colour_count_text.set(f"{count} colour" if count == 1 else f"{count} colours")
+        self.colour_count_text.set(
+            f"{count} colour" if count == 1 else f"{count} colours"
+        )
         self.tolerance_text.set(f"{int(self.colour_tolerance.get())}%")
-        if hasattr(self, "_update_preset_summary"):
-            self._update_preset_summary()
+        self._update_preset_summary()
         self._reset_blob_history()
         self._render()
 
@@ -145,23 +153,30 @@ class ToleranceColourPage(enhanced_ui.preset_ui.PresetColourPage):
 
         x, y = point
         height, width = self.capture.shape[:2]
-        padding = enhanced_ui.PIPETTE_EDGE_PADDING
-        if x < padding or y < padding or x >= width - padding or y >= height - padding:
-            self.status.set(f"Pipette: choose inside the safe area ({padding}px edge padding).")
+        padding = PIPETTE_EDGE_PADDING
+        if (
+            x < padding
+            or y < padding
+            or x >= width - padding
+            or y >= height - padding
+        ):
+            self.status.set(
+                f"Pipette: choose inside the safe area ({padding}px edge padding)."
+            )
             return
 
         sample_size = self._selected_sample_size()
         radius = sample_size // 2
         hsv = sample_hsv(self.capture, x, y, radius=radius)
-
-        # Avoid accidental exact duplicates while still allowing nearby shades.
         if hsv not in self.base_colours:
             self.base_colours.append(hsv)
+
         self.capture_view.set_marker(x, y, sample_size)
         self._rebuild_ranges()
         self.status.set(
             f"Added colour {hsv} to {self.current_preset.get()} • "
-            f"{len(self.base_colours)} base colour(s) • tolerance {self.colour_tolerance.get()}%."
+            f"{len(self.base_colours)} base colour(s) • "
+            f"tolerance {self.colour_tolerance.get()}%."
         )
 
     def _remove_last_colour(self) -> None:
@@ -182,16 +197,20 @@ class ToleranceColourPage(enhanced_ui.preset_ui.PresetColourPage):
         meta = _load_meta().get(name, {})
         colours = meta.get("colours") if isinstance(meta, dict) else None
         if isinstance(colours, list):
-            parsed = []
-            for item in colours:
-                if isinstance(item, list) and len(item) == 3:
-                    parsed.append(tuple(int(value) for value in item))
-            self.base_colours = parsed
+            self.base_colours = [
+                tuple(int(value) for value in item)
+                for item in colours
+                if isinstance(item, list) and len(item) == 3
+            ]
         else:
             self.base_colours = _infer_base_colours(self.ranges)
 
         try:
-            tolerance = int(meta.get("tolerance", DEFAULT_TOLERANCE)) if isinstance(meta, dict) else DEFAULT_TOLERANCE
+            tolerance = (
+                int(meta.get("tolerance", DEFAULT_TOLERANCE))
+                if isinstance(meta, dict)
+                else DEFAULT_TOLERANCE
+            )
         except (TypeError, ValueError):
             tolerance = DEFAULT_TOLERANCE
         self.colour_tolerance.set(min(100, max(0, tolerance)))
@@ -203,6 +222,7 @@ class ToleranceColourPage(enhanced_ui.preset_ui.PresetColourPage):
         name = self.current_preset.get().strip()
         if not name or not self.base_colours:
             return
+
         data = _load_meta()
         data[name] = {
             "tolerance": int(self.colour_tolerance.get()),
@@ -222,46 +242,52 @@ class ToleranceColourPage(enhanced_ui.preset_ui.PresetColourPage):
     def _delete_current_preset(self) -> None:
         name = self.current_preset.get().strip()
         super()._delete_current_preset()
-        if not name:
-            return
-        data = _load_meta()
-        if name in data:
-            data.pop(name, None)
-            try:
-                _save_meta(data)
-            except OSError:
-                pass
+        if name:
+            data = _load_meta()
+            if name in data:
+                data.pop(name, None)
+                try:
+                    _save_meta(data)
+                except OSError:
+                    pass
         self.base_colours = []
         self._rebuild_ranges()
 
 
 class AreaEditorPage(ttk.Frame):
-    """Unified launcher for the existing visual Area Maker."""
+    """Launcher for the visual Area Maker using the shared areas.json."""
 
-    def __init__(self, parent):
+    def __init__(self, parent) -> None:
         super().__init__(parent, padding=18)
         self.process: subprocess.Popen | None = None
-        self.status = tk.StringVar(value="Area Editor ready.")
+        self.status = tk.StringVar(master=parent, value="Area Editor ready.")
         self.columnconfigure(0, weight=1)
 
         ttk.Label(self, text="Area Editor", font=("Segoe UI", 16, "bold")).grid(
-            row=0, column=0, sticky="w"
+            row=0,
+            column=0,
+            sticky="w",
         )
         ttk.Label(
             self,
             text=(
                 "Uses the existing visual Area Maker: drag an area to move it, "
-                "drag edges/corners to resize, filter by partial name/group, and save directly to areas.json."
+                "drag edges/corners to resize, filter by partial name/group, "
+                "and save directly to areas.json."
             ),
             wraplength=820,
             justify="left",
         ).grid(row=1, column=0, sticky="w", pady=(8, 16))
-
-        ttk.Button(self, text="Open visual Area Editor", command=self.open_editor).grid(
-            row=2, column=0, sticky="w"
-        )
+        ttk.Button(
+            self,
+            text="Open visual Area Editor",
+            command=self.open_editor,
+        ).grid(row=2, column=0, sticky="w")
         ttk.Label(self, textvariable=self.status).grid(
-            row=3, column=0, sticky="w", pady=(12, 0)
+            row=3,
+            column=0,
+            sticky="w",
+            pady=(12, 0),
         )
 
     def open_editor(self) -> None:
@@ -277,7 +303,7 @@ class AreaEditorPage(ttk.Frame):
         except OSError as exc:
             self.status.set(f"Could not open Area Editor: {exc}")
             return
-        self.status.set("Area Editor opened. Drag/move/resize on the real screen; changes save to the shared area config.")
+        self.status.set("Area Editor opened. Changes save to the shared area config.")
 
     def activate(self) -> None:
         pass
@@ -285,25 +311,33 @@ class AreaEditorPage(ttk.Frame):
     def deactivate(self) -> None:
         pass
 
+    def capture_hotkey(self) -> None:
+        pass
 
-class VisionTester(enhanced_ui.VisionTester):
-    def __init__(self):
-        original_page = enhanced_ui.preset_ui.PresetColourPage
-        enhanced_ui.preset_ui.PresetColourPage = ToleranceColourPage
-        try:
-            super().__init__()
-        finally:
-            enhanced_ui.preset_ui.PresetColourPage = original_page
 
-        self.area_host = tk.Frame(self.tabs, background=enhanced_ui.preset_ui.BASIC_BG)
-        self.tabs.add(self.area_host, text="Area Editor")
-        self.area_editor_page = AreaEditorPage(self.area_host)
-        self.area_editor_page.pack(fill="both", expand=True)
-        self.pages.append(self.area_editor_page)
+class VisionTester(VisionTesterShell):
+    def __init__(self) -> None:
+        super().__init__(
+            colour_page_type=ToleranceColourPage,
+            background=preset_ui.BASIC_BG,
+            muted_text=preset_ui.BASIC_MUTED,
+            theme_setup=apply_enhanced_theme,
+        )
+        self.area_editor_page = self.add_page("Area Editor", AreaEditorPage)
 
 
 def main() -> None:
     VisionTester().mainloop()
 
 
-__all__ = ["VisionTester", "main", "tolerance_values"]
+__all__ = [
+    "AreaEditorPage",
+    "DEFAULT_TOLERANCE",
+    "ToleranceColourPage",
+    "VisionTester",
+    "_infer_base_colours",
+    "_load_meta",
+    "_save_meta",
+    "main",
+    "tolerance_values",
+]

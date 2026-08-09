@@ -1,0 +1,12 @@
+SCREEN_CROSS_IMAGE = "ScreenCross"
+SCREEN_AREA = "Bot_Area"
+SCREEN_BUTTON = "left"
+SCREEN_EDGE_PADDING = 20
+
+
+__all__ = [
+    "SCREEN_AREA",
+    "SCREEN_BUTTON",
+    "SCREEN_CROSS_IMAGE",
+    "SCREEN_EDGE_PADDING",
+]

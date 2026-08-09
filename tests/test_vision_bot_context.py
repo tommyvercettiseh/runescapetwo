@@ -1,5 +1,6 @@
 import numpy as np
 
+from core import mouse_actions
 from core.vision import api
 from core.vision.models import TemplateSettings
 
@@ -33,24 +34,30 @@ def test_image_capture_keeps_area_and_bot_together(monkeypatch):
     assert result[4] == (1958, 200)
 
 
-def test_click_image_uses_absolute_hit_without_second_offset(monkeypatch):
-    targets = []
-
-    class FakeHit:
-        x = 2000
-        y = 240
-        width = 20
-        height = 20
-
-    monkeypatch.setattr(api, "get_section", lambda _section: {"click_padding_px": 4})
-    monkeypatch.setattr(api, "find_image", lambda *_args, **_kwargs: FakeHit())
+def test_click_image_delegates_area_and_bot_to_canonical_mouse_action(monkeypatch):
+    calls = []
     monkeypatch.setattr(
-        api.mouse,
-        "move_and_click_target",
-        lambda *args, **kwargs: targets.append((args, kwargs)),
+        api,
+        "load_settings",
+        lambda _name: TemplateSettings(
+            method="TM_CCOEFF_NORMED",
+            min_shape=85.0,
+            min_color=60.0,
+            area="Inventory_Area",
+        ),
+    )
+    monkeypatch.setattr(
+        mouse_actions,
+        "click_image",
+        lambda **kwargs: calls.append(kwargs) or True,
     )
 
     assert api.click_image("item", area="Inventory_Area", bot_id=2)
-    assert targets == [
-        ((2000, 240, 2020, 260), {"padding_px": 4, "button": "left"})
+    assert calls == [
+        {
+            "image_name": "item",
+            "area_name": "Inventory_Area",
+            "bot_id": 2,
+            "button": "left",
+        }
     ]

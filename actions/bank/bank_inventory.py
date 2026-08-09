@@ -4,19 +4,23 @@ from dataclasses import dataclass
 import random
 import time
 
+from actions.inventory.click_inventory_slot import click_inventory_slot
 from core import mouse
 from core.vision.areas import get_region
 from definitions.bank.is_bank_all_selected import is_bank_all_selected
 from definitions.bank.is_bank_open import is_bank_open
+from definitions.inventory.constants import SLOT_PREFIX, TOTAL_SLOTS
+from definitions.inventory.exclusions import (
+    occupied_slots,
+    resolve_inventory_exclusions,
+)
 from definitions.inventory.get_inventory_item_slots import get_inventory_item_slots
 from definitions.inventory.get_inventory_state import InventorySlot, get_inventory_state
-from actions.inventory.click_inventory_slot import click_inventory_slot
 
 
-TOTAL_SLOTS = 28
 DEFAULT_CHANGE_TIMEOUT_S = 2.5
 DEFAULT_CHECK_INTERVAL_S = 0.10
-DEFAULT_MAX_CLICKS = 28
+DEFAULT_MAX_CLICKS = TOTAL_SLOTS
 
 
 @dataclass(frozen=True)
@@ -33,44 +37,6 @@ class BankInventoryResult:
 
     def __bool__(self) -> bool:
         return self.success
-
-
-def _validate_slots(slots: set[int]) -> None:
-    invalid = sorted(slot for slot in slots if slot < 1 or slot > TOTAL_SLOTS)
-    if invalid:
-        raise ValueError(f"exclude_slots contains invalid slots: {invalid}")
-
-
-def _resolve_excluded_slots(
-    protected_images: list[str],
-    optional_images: list[str],
-    explicit_slots: set[int],
-    bot_id: int,
-) -> tuple[set[int], tuple[str, ...]]:
-    excluded = set(explicit_slots)
-    missing: list[str] = []
-
-    for image_name in protected_images:
-        slots = get_inventory_item_slots(image_name, bot_id)
-        if not slots:
-            missing.append(image_name)
-        excluded.update(slots)
-
-    for image_name in optional_images:
-        excluded.update(get_inventory_item_slots(image_name, bot_id))
-
-    return excluded, tuple(missing)
-
-
-def _occupied_slots(
-    state: list[InventorySlot],
-    excluded: set[int],
-) -> list[int]:
-    return [
-        slot.number
-        for slot in state
-        if slot.occupied and slot.number not in excluded
-    ]
 
 
 def _state_signature(state: list[InventorySlot]) -> tuple[bool, ...]:
@@ -92,7 +58,7 @@ def _pick_slot(
 
     def distance(slot: int) -> int:
         x, y, width, height = get_region(
-            f"Inventory_Slot_{slot}",
+            f"{SLOT_PREFIX}{slot}",
             bot_id=bot_id,
         )
         center_x = x + width // 2
@@ -148,9 +114,8 @@ def bank_inventory(
         raise ValueError("max_clicks must be at least 1")
 
     explicit_slots = set(exclude_slots or set())
-    _validate_slots(explicit_slots)
-    protected_images = list(dict.fromkeys(exclude_images or []))
-    optional_images = list(dict.fromkeys(optional_exclude_images or []))
+    protected_images = tuple(exclude_images or ())
+    optional_images = tuple(optional_exclude_images or ())
     rng = random.Random(seed)
     clicks = 0
 
@@ -181,17 +146,14 @@ def bank_inventory(
             )
 
         state = get_inventory_state(bot_id)
-        excluded, missing = _resolve_excluded_slots(
-            protected_images,
-            optional_images,
-            explicit_slots,
-            bot_id,
+        excluded, missing = resolve_inventory_exclusions(
+            bot_id=bot_id,
+            explicit_slots=explicit_slots,
+            protected_images=protected_images,
+            optional_images=optional_images,
+            item_slots_getter=get_inventory_item_slots,
         )
-        occupied = tuple(
-            slot.number
-            for slot in state
-            if slot.occupied
-        )
+        occupied = tuple(slot.number for slot in state if slot.occupied)
 
         if missing:
             return BankInventoryResult(
@@ -205,7 +167,7 @@ def bank_inventory(
                 missing_exclude_images=missing,
             )
 
-        candidates = _occupied_slots(state, excluded)
+        candidates = occupied_slots(state, excluded)
         if not candidates:
             return BankInventoryResult(
                 success=True,
@@ -268,7 +230,7 @@ def bank_inventory(
                 bank_open=False,
                 clicks=clicks,
                 excluded_slots=tuple(sorted(excluded)),
-                remaining_slots=tuple(_occupied_slots(changed_state, excluded)),
+                remaining_slots=tuple(occupied_slots(changed_state, excluded)),
                 selected_slot=selected,
             )
 
@@ -279,6 +241,6 @@ def bank_inventory(
                 bank_open=True,
                 clicks=clicks,
                 excluded_slots=tuple(sorted(excluded)),
-                remaining_slots=tuple(_occupied_slots(changed_state, excluded)),
+                remaining_slots=tuple(occupied_slots(changed_state, excluded)),
                 selected_slot=selected,
             )

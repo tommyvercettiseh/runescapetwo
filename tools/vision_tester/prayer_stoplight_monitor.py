@@ -3,9 +3,12 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
-from core.vision.prayer_stoplight import classify_prayer_frame, load_prayer_stoplight_profile
+from core.vision.prayer_stoplight import (
+    classify_prayer_frame,
+    load_prayer_stoplight_profile,
+)
 
-from . import unified_plus
+from .hp_stoplight_monitor import HpStoplightMonitorPage
 
 
 STATE_COLOURS = {
@@ -17,12 +20,12 @@ STATE_COLOURS = {
 }
 
 
-class PrayerStoplightMonitorPage(unified_plus.ToleranceColourPage):
-    """Compact Prayer stoplight readout using the same classifier as prayer_low()."""
+class PrayerStoplightMonitorPage(HpStoplightMonitorPage):
+    """Full colour operator page with live Prayer stoplight classification."""
 
-    def __init__(self, parent):
-        self.prayer_stoplight_state = tk.StringVar(value="PRAYER: —")
-        self.prayer_stoplight_px = tk.StringVar(value="PX: 0")
+    def __init__(self, parent) -> None:
+        self.prayer_stoplight_state = tk.StringVar(master=parent, value="PRAYER: —")
+        self.prayer_stoplight_px = tk.StringVar(master=parent, value="PX: 0")
         super().__init__(parent)
 
     def _build(self) -> None:
@@ -30,11 +33,7 @@ class PrayerStoplightMonitorPage(unified_plus.ToleranceColourPage):
         self._add_prayer_stoplight_monitor()
 
     def _add_prayer_stoplight_monitor(self) -> None:
-        try:
-            toolbar = self.source.master
-        except AttributeError:
-            return
-
+        toolbar = self.source.master
         box = ttk.LabelFrame(toolbar, text="Prayer sensor", padding=(8, 6))
         box.grid(row=6, column=0, columnspan=7, sticky="ew", padx=8, pady=(5, 0))
 
@@ -44,7 +43,10 @@ class PrayerStoplightMonitorPage(unified_plus.ToleranceColourPage):
             font=("Segoe UI", 11, "bold"),
         )
         self.prayer_stoplight_label.pack(side="left")
-        ttk.Label(box, textvariable=self.prayer_stoplight_px).pack(side="left", padx=(14, 0))
+        ttk.Label(box, textvariable=self.prayer_stoplight_px).pack(
+            side="left",
+            padx=(14, 0),
+        )
 
     def _update_prayer_stoplight(self) -> None:
         profile = load_prayer_stoplight_profile()
@@ -64,19 +66,19 @@ class PrayerStoplightMonitorPage(unified_plus.ToleranceColourPage):
             return
 
         reading = classify_prayer_frame(self.capture)
-        winner_px = reading.pixels.get(reading.state, 0) if reading.state != "unknown" else 0
+        winner_px = (
+            reading.pixels.get(reading.state, 0)
+            if reading.state != "unknown"
+            else 0
+        )
         self.prayer_stoplight_state.set(f"PRAYER: {reading.state.upper()}")
         self.prayer_stoplight_px.set(f"PX: {winner_px}")
         self._set_prayer_colour(reading.state)
 
     def _set_prayer_colour(self, state: str) -> None:
-        label = getattr(self, "prayer_stoplight_label", None)
-        if label is None:
-            return
-        try:
-            label.configure(foreground=STATE_COLOURS.get(state, STATE_COLOURS["unknown"]))
-        except tk.TclError:
-            pass
+        self.prayer_stoplight_label.configure(
+            foreground=STATE_COLOURS.get(state, STATE_COLOURS["unknown"])
+        )
 
     def _render(self, started=None) -> None:
         super()._render(started)
@@ -85,7 +87,7 @@ class PrayerStoplightMonitorPage(unified_plus.ToleranceColourPage):
 
 
 def install_prayer_stoplight_monitor() -> None:
-    unified_plus.ToleranceColourPage = PrayerStoplightMonitorPage
+    """Compatibility no-op; use PrayerStoplightMonitorPage explicitly."""
 
 
 __all__ = ["PrayerStoplightMonitorPage", "install_prayer_stoplight_monitor"]

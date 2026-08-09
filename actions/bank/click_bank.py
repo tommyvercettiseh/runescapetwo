@@ -1,12 +1,12 @@
 from core import mouse_actions
-
-
-BANK_COLOUR = "cyan"
-BANK_AREA = "Bot_Area"
-BANK_MIN_PIXELS = 300
-BANK_MAX_PIXELS = 800
-BANK_EDGE_PADDING = 20
-BANK_BUTTON = "left"
+from definitions.bank.bank_target import (
+    BANK_AREA,
+    BANK_BUTTON,
+    BANK_COLOUR,
+    BANK_EDGE_PADDING,
+    BANK_MAX_PIXELS,
+    BANK_MIN_PIXELS,
+)
 
 
 def click_bank(bot_id: int = 1):

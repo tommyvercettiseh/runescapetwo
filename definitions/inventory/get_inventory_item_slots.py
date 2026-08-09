@@ -3,11 +3,7 @@ from __future__ import annotations
 from core.vision.api import find_all_images
 from core.vision.areas import get_region
 from core.vision.models import Hit
-
-
-INVENTORY_AREA = "Inventory_Area"
-SLOT_PREFIX = "Inventory_Slot_"
-TOTAL_SLOTS = 28
+from definitions.inventory.constants import INVENTORY_AREA, SLOT_PREFIX, TOTAL_SLOTS
 
 
 def _overlap_area(

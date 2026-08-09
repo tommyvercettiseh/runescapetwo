@@ -1,8 +1,5 @@
 from core import vision
-
-
-BANK_ALL_SELECTED_IMAGE = "BankAllSelected"
-BANK_AREA = "Bot_Area"
+from definitions.bank.bank_target import BANK_ALL_SELECTED_IMAGE, BANK_AREA
 
 
 def is_bank_all_selected(bot_id: int = 1) -> bool:

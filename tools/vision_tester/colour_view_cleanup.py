@@ -1,17 +1,14 @@
 from __future__ import annotations
 
-from . import enhanced_ui
+from .area_overlay_toggle import OverlayColourPage
 
 
-_original_build = enhanced_ui.preset_ui.PresetColourPage._build
+class CompactColourPage(OverlayColourPage):
+    """Keep the detector mask alive while showing only the useful operator views."""
 
+    def _build_previews(self) -> None:
+        super()._build_previews()
 
-def _build_without_binary_mask(self) -> None:
-    _original_build(self)
-
-    # Keep the detector pipeline intact, but remove the redundant visual mask.
-    # Live area and Isolated colour are the two useful operator views.
-    try:
         previews = self.capture_view.master.master
         mask_frame = self.mask_view.master
         isolated_frame = self.isolated_view.master
@@ -21,14 +18,10 @@ def _build_without_binary_mask(self) -> None:
         previews.columnconfigure(0, weight=1, uniform="preview")
         previews.columnconfigure(1, weight=1, uniform="preview")
         previews.columnconfigure(2, weight=0, uniform="")
-    except Exception:
-        # A layout failure should never stop the tester from launching.
-        pass
 
 
 def install_colour_view_cleanup() -> None:
-    if enhanced_ui.preset_ui.PresetColourPage._build is not _build_without_binary_mask:
-        enhanced_ui.preset_ui.PresetColourPage._build = _build_without_binary_mask
+    """Compatibility no-op; CompactColourPage owns the layout explicitly."""
 
 
-__all__ = ["install_colour_view_cleanup"]
+__all__ = ["CompactColourPage", "install_colour_view_cleanup"]

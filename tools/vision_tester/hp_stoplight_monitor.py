@@ -5,7 +5,7 @@ from tkinter import ttk
 
 from core.vision.hp_stoplight import classify_hp_frame
 
-from . import unified_plus
+from .replay_reset import ReplayResetPage
 
 
 STATE_COLOURS = {
@@ -17,12 +17,12 @@ STATE_COLOURS = {
 }
 
 
-class HpStoplightMonitorPage(unified_plus.ToleranceColourPage):
-    """Compact preset-free HP stoplight classification on the current frame."""
+class HpStoplightMonitorPage(ReplayResetPage):
+    """Replay-capable colour page with live HP stoplight classification."""
 
-    def __init__(self, parent):
-        self.hp_stoplight_state = tk.StringVar(value="STOPLIGHT: UNKNOWN")
-        self.hp_stoplight_px = tk.StringVar(value="PX: 0")
+    def __init__(self, parent) -> None:
+        self.hp_stoplight_state = tk.StringVar(master=parent, value="STOPLIGHT: UNKNOWN")
+        self.hp_stoplight_px = tk.StringVar(master=parent, value="PX: 0")
         super().__init__(parent)
 
     def _build(self) -> None:
@@ -30,11 +30,7 @@ class HpStoplightMonitorPage(unified_plus.ToleranceColourPage):
         self._add_hp_stoplight_monitor()
 
     def _add_hp_stoplight_monitor(self) -> None:
-        try:
-            toolbar = self.source.master
-        except AttributeError:
-            return
-
+        toolbar = self.source.master
         box = ttk.LabelFrame(toolbar, text="HP", padding=(10, 7))
         box.grid(row=5, column=0, columnspan=7, sticky="ew", padx=8, pady=(5, 0))
 
@@ -44,7 +40,6 @@ class HpStoplightMonitorPage(unified_plus.ToleranceColourPage):
             font=("Segoe UI", 11, "bold"),
         )
         self.hp_stoplight_label.pack(side="left")
-
         ttk.Label(
             box,
             textvariable=self.hp_stoplight_px,
@@ -58,17 +53,17 @@ class HpStoplightMonitorPage(unified_plus.ToleranceColourPage):
         else:
             reading = classify_hp_frame(self.capture)
             state = reading.state
-            pixels = reading.pixels.get(state, 0) if state != "unknown" else reading.coloured_pixels
+            pixels = (
+                reading.pixels.get(state, 0)
+                if state != "unknown"
+                else reading.coloured_pixels
+            )
 
         self.hp_stoplight_state.set(f"STOPLIGHT: {state.upper()}")
         self.hp_stoplight_px.set(f"PX: {pixels}")
-
-        label = getattr(self, "hp_stoplight_label", None)
-        if label is not None:
-            try:
-                label.configure(foreground=STATE_COLOURS.get(state, STATE_COLOURS["unknown"]))
-            except tk.TclError:
-                pass
+        self.hp_stoplight_label.configure(
+            foreground=STATE_COLOURS.get(state, STATE_COLOURS["unknown"])
+        )
 
     def _render(self, started=None) -> None:
         super()._render(started)
@@ -77,7 +72,7 @@ class HpStoplightMonitorPage(unified_plus.ToleranceColourPage):
 
 
 def install_hp_stoplight_monitor() -> None:
-    unified_plus.ToleranceColourPage = HpStoplightMonitorPage
+    """Compatibility no-op; use HpStoplightMonitorPage explicitly."""
 
 
 __all__ = ["HpStoplightMonitorPage", "install_hp_stoplight_monitor"]
