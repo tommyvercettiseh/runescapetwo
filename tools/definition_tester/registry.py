@@ -11,6 +11,7 @@ from definitions.interface.is_screen_open import is_screen_open
 from definitions.inventory.is_inventory_empty import is_inventory_empty
 from definitions.inventory.is_inventory_full import is_inventory_full
 from definitions.login.is_logged_in import is_logged_in
+from definitions.login.is_logged_out import is_logged_out
 from definitions.skilling.is_skilling import is_skilling
 
 
@@ -73,6 +74,12 @@ DEFINITIONS: tuple[DefinitionEntry, ...] = (
         name="Logged in.",
         function=is_logged_in,
         description="Requires both Login_Exp and Login_Globe in Info_Area.",
+    ),
+    DefinitionEntry(
+        category="Login",
+        name="Logged out.",
+        function=is_logged_out,
+        description="Detects Login_Disconnected or Login_World_Selection in Bot_Area.",
     ),
     DefinitionEntry(
         category="Skilling",
