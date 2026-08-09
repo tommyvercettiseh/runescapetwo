@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import time
+
+from core.vision.screenshots import capture_area
+
 from . import modern_ui
+from .sensor_checks import evaluate_sensor
 
 
 class EnhancedSensorPage(modern_ui.SensorPage):
@@ -47,15 +52,32 @@ class EnhancedSensorPage(modern_ui.SensorPage):
             self._style_boolean_badge(None)
 
     def _measure(self) -> None:
-        super()._measure()
-        if self._function_label() is None:
+        check = self.checks.get(self.sensor_name.get())
+        if check is None or check.kind != "python_bool":
+            super()._measure()
             return
 
-        text = str(self.outcome.cget("text")).strip().upper()
-        if text == "TRUE":
-            self._style_boolean_badge(True)
-        elif text == "FALSE":
-            self._style_boolean_badge(False)
+        bot_id = int(self.bot_id.get())
+        started = time.perf_counter()
+        try:
+            screenshot, _region = capture_area(check.area, bot_id=bot_id)
+            result = evaluate_sensor(check, bot_id=bot_id)
+
+            self.live_view.show(screenshot)
+            self.detected_view.show(screenshot.copy())
+            self.measurement.configure(
+                text=f"Definition resultaat  •  {'TRUE' if result else 'FALSE'}"
+            )
+            self._style_boolean_badge(result)
+
+            elapsed = (time.perf_counter() - started) * 1000
+            self.status.set(
+                f"Bot {bot_id}  •  {check.name}  •  {elapsed:.1f} ms"
+            )
+        except Exception as exc:
+            # A transient measurement error should not disable Live mode.
+            self._style_boolean_badge(None)
+            self.status.set(f"Fout: {exc}")
 
 
 def install_sensor_boolean_badge() -> None:
