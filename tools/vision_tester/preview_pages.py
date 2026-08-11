@@ -14,17 +14,17 @@ COLOUR_MODES = (
     PreviewMode(
         "mask",
         "Mask",
-        "Aanbevolen voor Colour: alleen pixels die binnen het gekozen kleurprofiel vallen.",
+        "AANBEVOLEN · Colour: wit = pixels die binnen je gekozen kleurprofiel vallen.",
     ),
     PreviewMode(
         "isolated",
         "Geïsoleerd",
-        "Toont alleen de echte RGB-pixels die door het kleurmasker heen komen.",
+        "Colour debug: alleen de echte RGB-pixels die door het masker heen komen.",
     ),
     PreviewMode(
         "live",
         "Live + blob",
-        "Normaal area-beeld met de huidige blob/target-markering.",
+        "Colour debug: normaal area-beeld met de huidige blob/target-markering.",
     ),
 )
 
@@ -32,7 +32,7 @@ TEMPLATE_MODES = (
     PreviewMode(
         "matches",
         "Matches",
-        "Aanbevolen voor Template: live beeld met template-hits en geldigheidsmarkeringen.",
+        "AANBEVOLEN · Template: live beeld met template-hits en geldigheidsmarkeringen.",
     ),
 )
 
@@ -40,7 +40,7 @@ SENSOR_MODES = (
     PreviewMode(
         "result",
         "Sensor resultaat",
-        "Toont alleen de visualisatie die logisch hoort bij de geselecteerde sensor.",
+        "AANBEVOLEN · Sensor kiest automatisch de juiste live- of detectieweergave.",
     ),
 )
 
@@ -109,7 +109,6 @@ class PreviewColourPage(PrayerStoplightMonitorPage):
         return PreviewSnapshot(frame=frame, region=region)
 
     def set_desktop_preview_compact(self, enabled: bool) -> None:
-        # All three colour preview cards share one explicit preview container.
         parent = getattr(self.capture_view, "master", None)
         container = getattr(parent, "master", None)
         _set_grid_visible(container, not enabled)
@@ -144,7 +143,6 @@ class PreviewTemplatePage(SearchableTemplatePage):
         return PreviewSnapshot(frame=frame, region=region)
 
     def set_desktop_preview_compact(self, enabled: bool) -> None:
-        # The center card is the template live/match preview column.
         _set_grid_visible(getattr(self.preview, "master", None), not enabled)
 
 
@@ -165,8 +163,6 @@ class PreviewSensorPage(EnhancedSensorPage):
         if check is None:
             return None
 
-        # Python booleans do not have a meaningful pixel mask. Other sensor
-        # kinds do, so the processed/detected view is the useful default.
         if check.kind == "python_bool":
             frame = _view_frame(self.live_view)
         else:
@@ -182,7 +178,6 @@ class PreviewSensorPage(EnhancedSensorPage):
         return PreviewSnapshot(frame=frame, region=region)
 
     def set_desktop_preview_compact(self, enabled: bool) -> None:
-        # Sensor keeps controls/results visible and only hides image cards.
         parents: list[tk.Misc] = []
         for view in (self.live_view, self.detected_view):
             parent = getattr(view, "master", None)
