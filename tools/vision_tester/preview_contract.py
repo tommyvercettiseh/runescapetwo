@@ -27,6 +27,7 @@ class PreviewBox:
     colour: str
     width: int = 2
     label: str = ""
+    label_offset: int = 10
 
 
 @dataclass(frozen=True)
