@@ -32,6 +32,7 @@ class ScreenAreaOverlay:
         )
         self.canvas.pack(fill="both", expand=True)
         self._capture_excluded = False
+        self._last_region: tuple[int, int, int, int] | None = None
         self._configure_windows_overlay()
 
     def _window_handle(self) -> int:
@@ -70,13 +71,7 @@ class ScreenAreaOverlay:
         except tk.TclError:
             pass
 
-    def show_region(self, region: tuple[int, int, int, int]) -> None:
-        left, top, width, height = map(int, region)
-        if width <= 1 or height <= 1:
-            self.hide()
-            return
-
-        self.window.geometry(f"{width}x{height}{left:+d}{top:+d}")
+    def _draw_region(self, width: int, height: int) -> None:
         self.canvas.configure(width=width, height=height)
         self.canvas.delete("all")
         self.canvas.create_rectangle(
@@ -98,8 +93,27 @@ class ScreenAreaOverlay:
                 outline=SAFE_BORDER_HEX,
                 width=1,
             )
+
+    def show_region(self, region: tuple[int, int, int, int]) -> None:
+        left, top, width, height = map(int, region)
+        if width <= 1 or height <= 1:
+            self.hide()
+            self._last_region = None
+            return
+
+        normalized = (left, top, width, height)
+        if normalized != self._last_region:
+            self.window.geometry(f"{width}x{height}{left:+d}{top:+d}")
+            self._draw_region(width, height)
+            self._last_region = normalized
+
+        # Deiconifying a withdrawn Toplevel can refresh its HWND/style on some
+        # Windows configurations. Re-apply click-through + capture exclusion
+        # after it becomes visible so the area outline cannot randomly vanish.
         self.window.deiconify()
         self.window.lift()
+        self.window.attributes("-topmost", True)
+        self._configure_windows_overlay()
 
 
 __all__ = ["ScreenAreaOverlay"]
