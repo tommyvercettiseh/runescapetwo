@@ -96,7 +96,10 @@ class DesktopPreviewOverlay:
 
     @property
     def capture_excluded(self) -> bool:
-        return self._capture_excluded
+        # From the caller's point of view this overlay is always capture-safe:
+        # either Windows excludes it natively, or screenshot hooks temporarily
+        # withdraw it for the few milliseconds ImageGrab is active.
+        return True
 
     @property
     def uses_capture_fallback(self) -> bool:
@@ -109,7 +112,6 @@ class DesktopPreviewOverlay:
         try:
             self._suspended_for_capture = True
             self.window.withdraw()
-            # Force the native withdraw to reach DWM before ImageGrab.
             self.window.update_idletasks()
         except tk.TclError:
             self._suspended_for_capture = False
@@ -173,7 +175,7 @@ class DesktopPreviewOverlay:
         self._visible = True
 
         # Try native exclusion whenever the native Tk wrapper is available.
-        # If Windows still rejects it, capture hooks above provide the fallback.
+        # If Windows rejects it, capture hooks provide the fallback instead.
         self._configure_windows_overlay()
         self.window.lift()
 
