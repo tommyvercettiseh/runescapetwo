@@ -269,7 +269,7 @@ class VisionTesterShell(tk.Tk):
             return
 
         try:
-            overlay.show_frame(snapshot.frame, snapshot.region)
+            overlay.show_snapshot(snapshot)
         except (tk.TclError, ValueError, TypeError):
             self._hide_desktop_preview()
 
