@@ -54,6 +54,7 @@ TEMPLATE_AREA_COLOUR = "#e056fd"
 TEMPLATE_MATCH_COLOUR = "#39ff14"
 TEMPLATE_SAFE_COLOUR = "#d1a64b"
 TEMPLATE_OVERLAY_MARGIN = 8
+TEMPLATE_IMAGE_LABEL_OFFSET = 14
 
 
 def _valid_region(region) -> tuple[int, int, int, int] | None:
@@ -130,6 +131,7 @@ class PreviewTemplatePage(SearchableTemplatePage):
 
     def __init__(self, parent) -> None:
         self.show_safe_zone = tk.BooleanVar(master=parent, value=False)
+        self.show_image_name = tk.BooleanVar(master=parent, value=True)
         self.match_line_width = tk.IntVar(master=parent, value=3)
         self.match_line_width_text = tk.StringVar(master=parent, value="3 px")
         super().__init__(parent)
@@ -143,7 +145,7 @@ class PreviewTemplatePage(SearchableTemplatePage):
         toolbar = self.source.master
         controls = ctk.CTkFrame(toolbar, fg_color="transparent")
         controls.grid(row=1, column=0, columnspan=2, sticky="ew", padx=16, pady=(0, 10))
-        controls.grid_columnconfigure(3, weight=1)
+        controls.grid_columnconfigure(4, weight=1)
 
         modern_ui._label(controls, "OVERLAY", muted=True, size=10).grid(
             row=0,
@@ -153,17 +155,26 @@ class PreviewTemplatePage(SearchableTemplatePage):
         )
         ctk.CTkSwitch(
             controls,
+            text="Image naam",
+            variable=self.show_image_name,
+            progress_color=modern_ui.ACCENT,
+            button_color=modern_ui.TEXT,
+            button_hover_color=modern_ui.GOLD,
+            text_color=modern_ui.MUTED,
+        ).grid(row=0, column=1, sticky="w", padx=(0, 14))
+        ctk.CTkSwitch(
+            controls,
             text="Toon safe zone",
             variable=self.show_safe_zone,
             progress_color=modern_ui.ACCENT,
             button_color=modern_ui.TEXT,
             button_hover_color=modern_ui.GOLD,
             text_color=modern_ui.MUTED,
-        ).grid(row=0, column=1, sticky="w", padx=(0, 18))
+        ).grid(row=0, column=2, sticky="w", padx=(0, 18))
 
         modern_ui._label(controls, "MATCH LIJN", muted=True, size=10).grid(
             row=0,
-            column=2,
+            column=3,
             sticky="w",
             padx=(0, 7),
         )
@@ -180,14 +191,14 @@ class PreviewTemplatePage(SearchableTemplatePage):
             button_hover_color=modern_ui.ACCENT_HOVER,
             fg_color=modern_ui.BORDER,
         )
-        slider.grid(row=0, column=3, sticky="w", padx=(0, 8))
+        slider.grid(row=0, column=4, sticky="w", padx=(0, 8))
         modern_ui._label(
             controls,
             "",
             textvariable=self.match_line_width_text,
             size=10,
             bold=True,
-        ).grid(row=0, column=4, sticky="w")
+        ).grid(row=0, column=5, sticky="w")
 
     def _match_line_width_changed(self, value) -> None:
         width = min(6, max(1, int(round(float(value)))))
@@ -227,6 +238,7 @@ class PreviewTemplatePage(SearchableTemplatePage):
                 TEMPLATE_AREA_COLOUR,
                 width=2,
                 label=self.source.area.get(),
+                label_offset=6,
             )
         ]
 
@@ -266,7 +278,8 @@ class PreviewTemplatePage(SearchableTemplatePage):
                 green_local,
                 TEMPLATE_MATCH_COLOUR,
                 width=line_width,
-                label=Path(self.selected).stem,
+                label=Path(self.selected).stem if self.show_image_name.get() else "",
+                label_offset=TEMPLATE_IMAGE_LABEL_OFFSET,
             )
         )
 
@@ -283,6 +296,7 @@ class PreviewTemplatePage(SearchableTemplatePage):
                     TEMPLATE_SAFE_COLOUR,
                     width=1,
                     label="safe",
+                    label_offset=8,
                 )
             )
 
