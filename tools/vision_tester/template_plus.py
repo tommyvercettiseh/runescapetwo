@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import time
 import tkinter as tk
 
 import customtkinter as ctk
+import cv2
 import numpy as np
 
+from core.targeting import image_target_bounds
 from core.vision.areas import load_areas
+from core.vision.color_matching import calculate_color_score
+from core.vision.template_matching import iter_candidates, match_template
+from core.vision.templates import load_template
 
 from . import modern_ui
 
@@ -14,6 +20,8 @@ from . import modern_ui
 ORIGINAL_VALID = np.array((37, 169, 105), dtype=np.uint8)
 ORIGINAL_SAFE = np.array((209, 166, 75), dtype=np.uint8)
 BRIGHT_VALID = np.array((0, 255, 70), dtype=np.uint8)
+
+Bounds = tuple[int, int, int, int]
 
 
 class CleanTemplatePreview(modern_ui.ImageView):
@@ -35,12 +43,19 @@ class CleanTemplatePreview(modern_ui.ImageView):
 
 
 class SearchableTemplatePage(modern_ui.TemplatePage):
-    """Template tester with Template and Area browsers as primary navigation."""
+    """Template tester with explicit search, area browsing and match state.
+
+    The page owns all valid template matches from the most recent analysis.
+    Desktop overlays can consume that state directly without rerunning template
+    matching or replacing methods at runtime.
+    """
 
     def __init__(self, parent) -> None:
         self.area_query = tk.StringVar(master=parent, value="")
         self.area_scroll: ctk.CTkScrollableFrame | None = None
         self.area_rows: dict[str, ctk.CTkButton] = {}
+        self.valid_match_bounds: list[Bounds] = []
+        self.valid_safe_bounds: list[Bounds] = []
         super().__init__(parent)
 
     def _build(self) -> None:
@@ -180,6 +195,8 @@ class SearchableTemplatePage(modern_ui.TemplatePage):
         if name == self.source.area.get():
             return
         self.source.area.set(name)
+        self.valid_match_bounds.clear()
+        self.valid_safe_bounds.clear()
         self._draw_areas()
         self.status.set(f"Area geselecteerd: {name}. Opnieuw analyseren…")
         if self.selected:
@@ -205,6 +222,151 @@ class SearchableTemplatePage(modern_ui.TemplatePage):
         except (AttributeError, tk.TclError):
             pass
         self._draw_areas()
+
+    def _select(self, name: str) -> None:
+        self.valid_match_bounds.clear()
+        self.valid_safe_bounds.clear()
+        super()._select(name)
+
+    def _analyse(self) -> None:
+        """Analyse once and retain every valid match for all consumers."""
+        self._job = None
+        self.best_valid_bounds = None
+        self.valid_match_bounds.clear()
+        self.valid_safe_bounds.clear()
+        if self.screenshot is None or not self.selected:
+            return
+
+        started = time.perf_counter()
+        try:
+            template_rgb, template_gray = load_template(self.selected)
+            gray = cv2.cvtColor(self.screenshot, cv2.COLOR_RGB2GRAY)
+            template_height, template_width = template_gray.shape[:2]
+            if gray.shape[0] < template_height or gray.shape[1] < template_width:
+                raise ValueError("Template is groter dan de geselecteerde area")
+
+            scores = match_template(gray, template_gray, self.method.get())
+            _min, best_score, _minloc, best_location = cv2.minMaxLoc(scores)
+            visual = self.screenshot.copy()
+            rows: list[tuple[bool, float, float, int, int]] = []
+            maximum = max(1, int(self.maximum.get() or 1))
+            padding_percent = self._x_padding_percent()
+            origin_x, origin_y = self.region[0], self.region[1]
+
+            for x, y, score in iter_candidates(
+                scores,
+                self.shape.get() / 100,
+                template_width,
+                template_height,
+                maximum_candidates=maximum,
+            ):
+                patch = self.screenshot[
+                    y : y + template_height,
+                    x : x + template_width,
+                ]
+                colour = calculate_color_score(template_rgb, patch)
+                valid = colour >= self.colour.get()
+                rows.append((valid, score * 100, colour, x, y))
+
+                cv2.rectangle(
+                    visual,
+                    (x, y),
+                    (x + template_width, y + template_height),
+                    (37, 169, 105) if valid else (220, 82, 104),
+                    2,
+                )
+
+                if not valid:
+                    continue
+
+                self.valid_match_bounds.append(
+                    (
+                        x + origin_x,
+                        y + origin_y,
+                        x + template_width + origin_x,
+                        y + template_height + origin_y,
+                    )
+                )
+                safe_local = image_target_bounds(
+                    x,
+                    y,
+                    x + template_width,
+                    y + template_height,
+                    image_edge_padding=padding_percent,
+                )
+                self.valid_safe_bounds.append(
+                    (
+                        safe_local[0] + origin_x,
+                        safe_local[1] + origin_y,
+                        safe_local[2] + origin_x,
+                        safe_local[3] + origin_y,
+                    )
+                )
+
+            best_x, best_y = best_location
+            best_colour = calculate_color_score(
+                template_rgb,
+                self.screenshot[
+                    best_y : best_y + template_height,
+                    best_x : best_x + template_width,
+                ],
+            )
+
+            valid_rows = [row for row in rows if row[0]]
+            if valid_rows:
+                _valid, _shape, _colour, target_x, target_y = max(
+                    valid_rows,
+                    key=lambda row: (row[1], row[2]),
+                )
+                best_safe_local = image_target_bounds(
+                    target_x,
+                    target_y,
+                    target_x + template_width,
+                    target_y + template_height,
+                    image_edge_padding=padding_percent,
+                )
+                self.best_valid_bounds = (
+                    best_safe_local[0] + origin_x,
+                    best_safe_local[1] + origin_y,
+                    best_safe_local[2] + origin_x,
+                    best_safe_local[3] + origin_y,
+                )
+                cv2.rectangle(
+                    visual,
+                    (best_safe_local[0], best_safe_local[1]),
+                    (best_safe_local[2], best_safe_local[3]),
+                    (209, 166, 75),
+                    1,
+                )
+
+            self.preview.show(visual)
+            lines = ["STATUS         SHAPE    COLOUR      X      Y"]
+            lines.extend(
+                f"{'GELDIG' if valid else 'KLEUR FAALT':<14} "
+                f"{shape:>5.1f}%   {colour:>5.1f}%   {x:>4}   {y:>4}"
+                for valid, shape, colour, x, y in rows
+            )
+            self.results.configure(state="normal")
+            self.results.delete("1.0", "end")
+            self.results.insert("1.0", "\n".join(lines))
+            self.results.configure(state="disabled")
+            self.summary.configure(
+                text=(
+                    f"Beste shape  {best_score * 100:.1f}%\n"
+                    f"Kleur daarbij  {best_colour:.1f}%\n"
+                    f"Geldige hits  {len(valid_rows)}/{len(rows)}"
+                )
+            )
+            elapsed = (time.perf_counter() - started) * 1000
+            self.status.set(
+                f"Bot {self.source.bot()}  •  {self.source.area.get()}  •  "
+                f"{self.method.get()}  •  {elapsed:.1f} ms"
+            )
+        except Exception as exc:
+            self.live.set(False)
+            self.valid_match_bounds.clear()
+            self.valid_safe_bounds.clear()
+            self.status.set(f"Fout: {exc}")
 
     def _captured(self, name: str) -> None:
         super()._captured(name)
