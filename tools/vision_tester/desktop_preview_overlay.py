@@ -7,6 +7,8 @@ import tkinter as tk
 import numpy as np
 from PIL import Image, ImageTk
 
+from core.vision.screenshots import register_capture_hooks
+
 
 class DesktopPreviewOverlay:
     """Click-through RGB overlay rendered directly over the selected game area."""
@@ -28,12 +30,15 @@ class DesktopPreviewOverlay:
         self._photo: ImageTk.PhotoImage | None = None
         self._capture_excluded = False
         self._configured_handle = 0
+        self._suspended_for_capture = False
+        self._visible = False
 
-        # Tk creates a native wrapper window around the widget HWND.  Force the
-        # native hierarchy to exist before asking Windows for the real top-level
-        # handle; SetWindowDisplayAffinity only accepts a top-level HWND.
         self.window.update_idletasks()
         self._configure_windows_overlay()
+        self._unregister_capture_hooks = register_capture_hooks(
+            before=self._before_capture,
+            after=self._after_capture,
+        )
 
     def _window_handles(self) -> tuple[int, ...]:
         if sys.platform != "win32":
@@ -43,9 +48,6 @@ class DesktopPreviewOverlay:
         widget_handle = int(self.window.winfo_id())
         handles: list[int] = []
 
-        # GA_ROOT resolves the actual native top-level window, even when Tk has
-        # inserted one or more wrapper HWNDs.  This is more reliable than a
-        # single GetParent() call.
         try:
             root_handle = int(user32.GetAncestor(widget_handle, 2))  # GA_ROOT
         except Exception:
@@ -74,8 +76,6 @@ class DesktopPreviewOverlay:
                 | 0x08000000,  # WS_EX_NOACTIVATE
             )
 
-            # Prefer WDA_EXCLUDEFROMCAPTURE.  WDA_MONITOR is kept as a
-            # compatibility fallback for older Windows builds.
             if bool(user32.SetWindowDisplayAffinity(handle, 0x00000011)):
                 return True
             return bool(user32.SetWindowDisplayAffinity(handle, 0x00000001))
@@ -98,9 +98,51 @@ class DesktopPreviewOverlay:
     def capture_excluded(self) -> bool:
         return self._capture_excluded
 
+    @property
+    def uses_capture_fallback(self) -> bool:
+        return not self._capture_excluded
+
+    def _before_capture(self) -> None:
+        """Fallback: briefly remove this overlay before ImageGrab runs."""
+        if self._capture_excluded or not self._visible:
+            return
+        try:
+            self._suspended_for_capture = True
+            self.window.withdraw()
+            # Force the native withdraw to reach DWM before ImageGrab.
+            self.window.update_idletasks()
+        except tk.TclError:
+            self._suspended_for_capture = False
+
+    def _after_capture(self) -> None:
+        if not self._suspended_for_capture:
+            return
+        self._suspended_for_capture = False
+        try:
+            self.window.deiconify()
+            self.window.update_idletasks()
+            self._configure_windows_overlay()
+            self.window.lift()
+        except tk.TclError:
+            self._visible = False
+
     def hide(self) -> None:
+        self._visible = False
+        self._suspended_for_capture = False
         try:
             self.window.withdraw()
+            self.window.update_idletasks()
+        except tk.TclError:
+            pass
+
+    def close(self) -> None:
+        self.hide()
+        try:
+            self._unregister_capture_hooks()
+        except Exception:
+            pass
+        try:
+            self.window.destroy()
         except tk.TclError:
             pass
 
@@ -128,9 +170,10 @@ class DesktopPreviewOverlay:
         self.window.geometry(f"{width}x{height}{left:+d}{top:+d}")
         self.window.deiconify()
         self.window.update_idletasks()
+        self._visible = True
 
-        # Deiconifying can recreate/re-parent Tk's native wrapper. Re-resolve
-        # the real top-level HWND every time instead of trusting a stale one.
+        # Try native exclusion whenever the native Tk wrapper is available.
+        # If Windows still rejects it, capture hooks above provide the fallback.
         self._configure_windows_overlay()
         self.window.lift()
 
