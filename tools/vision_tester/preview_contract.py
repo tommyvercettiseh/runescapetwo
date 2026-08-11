@@ -7,6 +7,7 @@ import numpy as np
 
 
 Region = tuple[int, int, int, int]
+Bounds = tuple[int, int, int, int]
 
 
 @dataclass(frozen=True)
@@ -19,11 +20,28 @@ class PreviewMode:
 
 
 @dataclass(frozen=True)
-class PreviewSnapshot:
-    """Frame + absolute desktop region to render on the game window."""
+class PreviewBox:
+    """One annotation drawn over the real game window, local to the region."""
 
-    frame: np.ndarray
+    bounds: Bounds
+    colour: str
+    width: int = 2
+    label: str = ""
+
+
+@dataclass(frozen=True)
+class PreviewSnapshot:
+    """Desktop preview payload for one absolute game region.
+
+    ``frame`` is optional. Colour and sensor previews normally provide a full
+    processed RGB frame. Template matching intentionally omits the frame and
+    provides only annotation boxes, so the real RuneLite pixels remain visible
+    underneath the overlay.
+    """
+
     region: Region
+    frame: np.ndarray | None = None
+    boxes: tuple[PreviewBox, ...] = ()
 
 
 @runtime_checkable
@@ -40,7 +58,9 @@ class DesktopPreviewPage(Protocol):
 
 
 __all__ = [
+    "Bounds",
     "DesktopPreviewPage",
+    "PreviewBox",
     "PreviewMode",
     "PreviewSnapshot",
     "Region",
