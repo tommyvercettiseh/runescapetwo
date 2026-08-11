@@ -20,12 +20,12 @@ def register_capture_hooks(
     before: Callable[[], None] | None = None,
     after: Callable[[], None] | None = None,
 ) -> Callable[[], None]:
-    """Register lightweight callbacks around every desktop screenshot.
+    """Register explicit observers around desktop capture.
 
-    The vision tester uses this as a fallback on Windows systems where
-    WDA_EXCLUDEFROMCAPTURE is unavailable for a Tk overlay.  Hooks are kept in
-    core so capture behavior stays centralized instead of every page needing to
-    know about desktop overlays.
+    This is an extension point, not a method replacement: production callers
+    still use capture_rgb/capture_area normally. The Vision Tester uses it only
+    to hide debug overlays on Windows systems that reject native capture
+    exclusion.
     """
     if before is not None and before not in _CAPTURE_BEFORE:
         _CAPTURE_BEFORE.append(before)
@@ -52,7 +52,7 @@ def _run_hooks(callbacks: list[Callable[[], None]]) -> None:
         try:
             callback()
         except Exception:
-            # Debug overlays must never be able to break production capture.
+            # Debug observers must never be able to break production capture.
             pass
 
 
@@ -71,7 +71,6 @@ def capture_rgb(region: Region) -> np.ndarray:
         else:
             image = np.asarray(pyautogui.screenshot(region=region))
     finally:
-        # Restore overlays in reverse registration order, mirroring a stack.
         _run_hooks(list(reversed(_CAPTURE_AFTER)))
 
     if image.ndim == 3 and image.shape[2] == 4:
