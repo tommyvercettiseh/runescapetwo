@@ -188,13 +188,19 @@ class DesktopPreviewOverlay:
                 width=max(1, int(box.width)),
             )
             if box.label:
-                text_y = y1 - 6 if y1 >= 18 else y1 + 14
+                offset = max(0, int(box.label_offset))
+                if y1 >= 18 + offset:
+                    text_y = y1 - offset
+                    anchor = "sw"
+                else:
+                    text_y = y2 + offset
+                    anchor = "nw"
                 self.canvas.create_text(
                     x1 + 4,
                     text_y,
                     text=box.label,
                     fill=box.colour,
-                    anchor="w",
+                    anchor=anchor,
                     font=("Segoe UI", 9, "bold"),
                 )
 
