@@ -11,7 +11,13 @@ from core.vision.screenshots import register_capture_hooks
 
 
 class DesktopPreviewOverlay:
-    """Click-through RGB overlay rendered directly over the selected game area."""
+    """Click-through RGB overlay rendered directly over the selected game area.
+
+    Native Windows capture exclusion is preferred. If Windows rejects that
+    flag, this class uses the explicit screenshot hook API to withdraw only
+    this overlay for the duration of ImageGrab. No page methods are replaced or
+    monkey-patched.
+    """
 
     def __init__(self, master: tk.Misc) -> None:
         self.window = tk.Toplevel(master)
@@ -28,8 +34,7 @@ class DesktopPreviewOverlay:
         )
         self.label.pack(fill="both", expand=True)
         self._photo: ImageTk.PhotoImage | None = None
-        self._capture_excluded = False
-        self._configured_handle = 0
+        self._native_capture_exclusion = False
         self._suspended_for_capture = False
         self._visible = False
 
@@ -87,27 +92,19 @@ class DesktopPreviewOverlay:
             return
 
         self.window.update_idletasks()
-        self._capture_excluded = False
+        self._native_capture_exclusion = False
         for handle in self._window_handles():
             if self._configure_handle(handle):
-                self._configured_handle = handle
-                self._capture_excluded = True
+                self._native_capture_exclusion = True
                 break
 
     @property
-    def capture_excluded(self) -> bool:
-        # From the caller's point of view this overlay is always capture-safe:
-        # either Windows excludes it natively, or screenshot hooks temporarily
-        # withdraw it for the few milliseconds ImageGrab is active.
-        return True
-
-    @property
     def uses_capture_fallback(self) -> bool:
-        return not self._capture_excluded
+        return not self._native_capture_exclusion
 
     def _before_capture(self) -> None:
-        """Fallback: briefly remove this overlay before ImageGrab runs."""
-        if self._capture_excluded or not self._visible:
+        """Fallback: remove this overlay only while ImageGrab is active."""
+        if self._native_capture_exclusion or not self._visible:
             return
         try:
             self._suspended_for_capture = True
@@ -139,10 +136,7 @@ class DesktopPreviewOverlay:
 
     def close(self) -> None:
         self.hide()
-        try:
-            self._unregister_capture_hooks()
-        except Exception:
-            pass
+        self._unregister_capture_hooks()
         try:
             self.window.destroy()
         except tk.TclError:
@@ -174,8 +168,7 @@ class DesktopPreviewOverlay:
         self.window.update_idletasks()
         self._visible = True
 
-        # Try native exclusion whenever the native Tk wrapper is available.
-        # If Windows rejects it, capture hooks provide the fallback instead.
+        # Re-resolve the native Tk window after deiconify; wrappers can change.
         self._configure_windows_overlay()
         self.window.lift()
 
