@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
 import tkinter as tk
 
 from core.vision.areas import get_region
+from core.vision.templates import load_template
 
 from .prayer_stoplight_monitor import PrayerStoplightMonitorPage
-from .preview_contract import PreviewMode, PreviewSnapshot
+from .preview_contract import PreviewBox, PreviewMode, PreviewSnapshot
 from .sensor_boolean_badge import EnhancedSensorPage
 from .template_plus import SearchableTemplatePage
 
@@ -32,7 +34,7 @@ TEMPLATE_MODES = (
     PreviewMode(
         "matches",
         "Matches",
-        "AANBEVOLEN · Template: live beeld met template-hits en geldigheidsmarkeringen.",
+        "AANBEVOLEN · Template: groen en goud worden fysiek over het echte gamevenster getekend.",
     ),
 )
 
@@ -106,7 +108,7 @@ class PreviewColourPage(PrayerStoplightMonitorPage):
 
         if frame is None:
             return None
-        return PreviewSnapshot(frame=frame, region=region)
+        return PreviewSnapshot(region=region, frame=frame)
 
     def set_desktop_preview_compact(self, enabled: bool) -> None:
         parent = getattr(self.capture_view, "master", None)
@@ -115,7 +117,7 @@ class PreviewColourPage(PrayerStoplightMonitorPage):
 
 
 class PreviewTemplatePage(SearchableTemplatePage):
-    """Template page exposes one unambiguous matches preview."""
+    """Template page draws target annotations over the actual RuneLite pixels."""
 
     def desktop_preview_modes(self) -> tuple[PreviewMode, ...]:
         return TEMPLATE_MODES
@@ -124,12 +126,8 @@ class PreviewTemplatePage(SearchableTemplatePage):
         return "matches"
 
     def desktop_preview_snapshot(self, mode_key: str) -> PreviewSnapshot | None:
-        if mode_key != "matches":
+        if mode_key != "matches" or not self.selected:
             return None
-
-        frame = _view_frame(self.preview)
-        if frame is None:
-            frame = self.screenshot
 
         region = _valid_region(self.region)
         if region is None:
@@ -138,9 +136,45 @@ class PreviewTemplatePage(SearchableTemplatePage):
             except Exception:
                 return None
 
-        if frame is None:
+        safe = self.best_valid_bounds
+        if safe is None:
+            return PreviewSnapshot(region=region)
+
+        try:
+            _template_rgb, template_gray = load_template(self.selected)
+            template_height, template_width = template_gray.shape[:2]
+            padding_percent = self._x_padding_percent()
+        except Exception:
             return None
-        return PreviewSnapshot(frame=frame, region=region)
+
+        region_left, region_top, _region_width, _region_height = region
+        safe_left, safe_top, safe_right, safe_bottom = map(int, safe)
+        margin = max(1, int(round(template_width * padding_percent / 100.0)))
+
+        target_left = safe_left - margin
+        target_right = safe_right + margin
+        target_top = safe_top
+        target_bottom = safe_bottom
+
+        green_local = (
+            target_left - region_left,
+            target_top - region_top,
+            target_right - region_left,
+            target_bottom - region_top,
+        )
+        gold_local = (
+            safe_left - region_left,
+            safe_top - region_top,
+            safe_right - region_left,
+            safe_bottom - region_top,
+        )
+
+        label = Path(self.selected).stem
+        boxes = (
+            PreviewBox(green_local, "#25a969", width=2, label=label),
+            PreviewBox(gold_local, "#d1a64b", width=1, label="safe"),
+        )
+        return PreviewSnapshot(region=region, boxes=boxes)
 
     def set_desktop_preview_compact(self, enabled: bool) -> None:
         _set_grid_visible(getattr(self.preview, "master", None), not enabled)
@@ -175,7 +209,7 @@ class PreviewSensorPage(EnhancedSensorPage):
 
         if frame is None:
             return None
-        return PreviewSnapshot(frame=frame, region=region)
+        return PreviewSnapshot(region=region, frame=frame)
 
     def set_desktop_preview_compact(self, enabled: bool) -> None:
         parents: list[tk.Misc] = []
