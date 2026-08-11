@@ -7,7 +7,6 @@ import tkinter as tk
 import customtkinter as ctk
 
 from core.vision.areas import get_region
-from core.vision.templates import load_template
 
 from . import modern_ui
 from .prayer_stoplight_monitor import PrayerStoplightMonitorPage
@@ -38,7 +37,7 @@ TEMPLATE_MODES = (
     PreviewMode(
         "matches",
         "Matches",
-        "AANBEVOLEN · Template: paars = gekozen area · felgroen = geldige match.",
+        "AANBEVOLEN · Template: paars = gekozen area · felgroen = alle geldige matches.",
     ),
 )
 
@@ -231,7 +230,6 @@ class PreviewTemplatePage(SearchableTemplatePage):
             area_height + margin * 2,
         )
 
-        # The purple guide is the exact selected area boundary: zero area padding.
         boxes: list[PreviewBox] = [
             PreviewBox(
                 (margin, margin, margin + area_width, margin + area_height),
@@ -242,63 +240,46 @@ class PreviewTemplatePage(SearchableTemplatePage):
             )
         ]
 
-        safe = self.best_valid_bounds
-        if safe is None:
-            return PreviewSnapshot(region=overlay_region, boxes=tuple(boxes))
-
-        try:
-            _template_rgb, template_gray = load_template(self.selected)
-            _template_height, template_width = template_gray.shape[:2]
-            padding_percent = self._x_padding_percent()
-        except Exception:
-            return PreviewSnapshot(region=overlay_region, boxes=tuple(boxes))
-
-        safe_left, safe_top, safe_right, safe_bottom = map(int, safe)
-        x_margin = max(1, int(round(template_width * padding_percent / 100.0)))
-
-        # Reconstruct the true template bounds from the safe click zone. The
-        # green stroke is then pushed OUTSIDE those bounds so it never covers
-        # pixels that belong to the matched image itself.
-        target_left = safe_left - x_margin
-        target_right = safe_right + x_margin
-        target_top = safe_top
-        target_bottom = safe_bottom
-
         line_width = min(6, max(1, int(self.match_line_width.get())))
         outside_offset = math.ceil(line_width / 2) + 1
+        image_label = Path(self.selected).stem if self.show_image_name.get() else ""
 
-        green_local = (
-            target_left - outside_offset - overlay_region[0],
-            target_top - outside_offset - overlay_region[1],
-            target_right + outside_offset - overlay_region[0],
-            target_bottom + outside_offset - overlay_region[1],
-        )
-        boxes.append(
-            PreviewBox(
-                green_local,
-                TEMPLATE_MATCH_COLOUR,
-                width=line_width,
-                label=Path(self.selected).stem if self.show_image_name.get() else "",
-                label_offset=TEMPLATE_IMAGE_LABEL_OFFSET,
-            )
-        )
-
-        if self.show_safe_zone.get():
-            safe_local = (
-                safe_left - overlay_region[0],
-                safe_top - overlay_region[1],
-                safe_right - overlay_region[0],
-                safe_bottom - overlay_region[1],
+        for match_index, match_bounds in enumerate(self.valid_match_bounds):
+            match_left, match_top, match_right, match_bottom = map(int, match_bounds)
+            green_local = (
+                match_left - outside_offset - overlay_region[0],
+                match_top - outside_offset - overlay_region[1],
+                match_right + outside_offset - overlay_region[0],
+                match_bottom + outside_offset - overlay_region[1],
             )
             boxes.append(
                 PreviewBox(
-                    safe_local,
-                    TEMPLATE_SAFE_COLOUR,
-                    width=1,
-                    label="safe",
-                    label_offset=8,
+                    green_local,
+                    TEMPLATE_MATCH_COLOUR,
+                    width=line_width,
+                    label=image_label if match_index == 0 else "",
+                    label_offset=TEMPLATE_IMAGE_LABEL_OFFSET,
                 )
             )
+
+        if self.show_safe_zone.get():
+            for safe_bounds in self.valid_safe_bounds:
+                safe_left, safe_top, safe_right, safe_bottom = map(int, safe_bounds)
+                safe_local = (
+                    safe_left - overlay_region[0],
+                    safe_top - overlay_region[1],
+                    safe_right - overlay_region[0],
+                    safe_bottom - overlay_region[1],
+                )
+                boxes.append(
+                    PreviewBox(
+                        safe_local,
+                        TEMPLATE_SAFE_COLOUR,
+                        width=1,
+                        label="",
+                        label_offset=8,
+                    )
+                )
 
         return PreviewSnapshot(region=overlay_region, boxes=tuple(boxes))
 
