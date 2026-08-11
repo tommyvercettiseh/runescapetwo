@@ -4,19 +4,25 @@ import ctypes
 import sys
 import tkinter as tk
 
-import numpy as np
 from PIL import Image, ImageTk
 
 from core.vision.screenshots import register_capture_hooks
+from .preview_contract import PreviewSnapshot
+
+
+TRANSPARENT_KEY = "#010203"
 
 
 class DesktopPreviewOverlay:
-    """Click-through RGB overlay rendered directly over the selected game area.
+    """Click-through desktop preview rendered over the selected game area.
+
+    Full processed frames are used for colour/sensor modes. Annotation-only
+    snapshots use a transparent chroma-key canvas, so template boxes are drawn
+    physically over the real RuneLite pixels instead of over a copied preview.
 
     Native Windows capture exclusion is preferred. If Windows rejects that
-    flag, this class uses the explicit screenshot hook API to withdraw only
-    this overlay for the duration of ImageGrab. No page methods are replaced or
-    monkey-patched.
+    flag, the explicit screenshot hook API briefly withdraws this overlay while
+    ImageGrab runs. No page methods are replaced or monkey-patched.
     """
 
     def __init__(self, master: tk.Misc) -> None:
@@ -24,15 +30,18 @@ class DesktopPreviewOverlay:
         self.window.withdraw()
         self.window.overrideredirect(True)
         self.window.attributes("-topmost", True)
-        self.window.configure(bg="black")
+        self.window.configure(bg=TRANSPARENT_KEY)
+        if sys.platform == "win32":
+            self.window.attributes("-transparentcolor", TRANSPARENT_KEY)
 
-        self.label = tk.Label(
+        self.canvas = tk.Canvas(
             self.window,
-            background="black",
+            background=TRANSPARENT_KEY,
             borderwidth=0,
             highlightthickness=0,
         )
-        self.label.pack(fill="both", expand=True)
+        self.canvas.pack(fill="both", expand=True)
+
         self._photo: ImageTk.PhotoImage | None = None
         self._native_capture_exclusion = False
         self._suspended_for_capture = False
@@ -103,7 +112,6 @@ class DesktopPreviewOverlay:
         return not self._native_capture_exclusion
 
     def _before_capture(self) -> None:
-        """Fallback: remove this overlay only while ImageGrab is active."""
         if self._native_capture_exclusion or not self._visible:
             return
         try:
@@ -142,33 +150,60 @@ class DesktopPreviewOverlay:
         except tk.TclError:
             pass
 
-    def show_frame(
-        self,
-        rgb: np.ndarray,
-        region: tuple[int, int, int, int],
-    ) -> None:
-        if rgb is None or rgb.ndim != 3 or rgb.shape[2] != 3:
-            self.hide()
-            return
-
-        left, top, width, height = map(int, region)
+    def show_snapshot(self, snapshot: PreviewSnapshot) -> None:
+        left, top, width, height = map(int, snapshot.region)
         if width <= 1 or height <= 1:
             self.hide()
             return
 
-        if rgb.shape[1] != width or rgb.shape[0] != height:
-            image = Image.fromarray(rgb).resize((width, height), Image.Resampling.NEAREST)
-        else:
-            image = Image.fromarray(rgb)
+        self.canvas.delete("all")
+        self._photo = None
 
-        self._photo = ImageTk.PhotoImage(image)
-        self.label.configure(image=self._photo)
+        if snapshot.frame is not None:
+            rgb = snapshot.frame
+            if rgb.ndim != 3 or rgb.shape[2] != 3:
+                self.hide()
+                return
+            if rgb.shape[1] != width or rgb.shape[0] != height:
+                image = Image.fromarray(rgb).resize((width, height), Image.Resampling.NEAREST)
+            else:
+                image = Image.fromarray(rgb)
+            self._photo = ImageTk.PhotoImage(image)
+            self.canvas.create_image(0, 0, anchor="nw", image=self._photo)
+
+        for box in snapshot.boxes:
+            x1, y1, x2, y2 = map(int, box.bounds)
+            x1 = max(0, min(width - 1, x1))
+            y1 = max(0, min(height - 1, y1))
+            x2 = max(0, min(width - 1, x2))
+            y2 = max(0, min(height - 1, y2))
+            if x2 <= x1 or y2 <= y1:
+                continue
+            self.canvas.create_rectangle(
+                x1,
+                y1,
+                x2,
+                y2,
+                outline=box.colour,
+                width=max(1, int(box.width)),
+            )
+            if box.label:
+                text_y = y1 - 6 if y1 >= 18 else y1 + 14
+                self.canvas.create_text(
+                    x1 + 4,
+                    text_y,
+                    text=box.label,
+                    fill=box.colour,
+                    anchor="w",
+                    font=("Segoe UI", 9, "bold"),
+                )
+
         self.window.geometry(f"{width}x{height}{left:+d}{top:+d}")
+        self.canvas.configure(width=width, height=height)
         self.window.deiconify()
         self.window.update_idletasks()
         self._visible = True
 
-        # Re-resolve the native Tk window after deiconify; wrappers can change.
         self._configure_windows_overlay()
         self.window.lift()
 
