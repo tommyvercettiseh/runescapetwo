@@ -12,6 +12,8 @@ from pynput.keyboard import Key as KeyboardKey
 from pynput.keyboard import Listener as KeyboardListener
 
 from . import modern_ui
+from .desktop_preview_overlay import DesktopPreviewOverlay
+from .preview_contract import DesktopPreviewPage, PreviewMode
 
 
 class VisionTesterShell(tk.Tk):
@@ -46,12 +48,19 @@ class VisionTesterShell(tk.Tk):
         self.pages: list[object] = []
         self.current_page = None
 
+        self.preview_on_game = tk.BooleanVar(value=False)
+        self.preview_mode = tk.StringVar(value="")
+        self.preview_hint = tk.StringVar(value="")
+        self._preview_modes_by_label: dict[str, PreviewMode] = {}
+        self._desktop_preview_overlay: DesktopPreviewOverlay | None = None
+
         self._configure_style()
         self._build()
         self.protocol("WM_DELETE_WINDOW", self._close)
         self._start_hotkeys()
         self.after(50, self._poll_hotkeys)
         self.after(120, self._activate_current_page)
+        self.after(90, self._poll_desktop_preview)
 
     def _configure_style(self) -> None:
         style = ttk.Style(self)
@@ -63,7 +72,7 @@ class VisionTesterShell(tk.Tk):
     def _build(self) -> None:
         root = ttk.Frame(self, padding=10)
         root.pack(fill="both", expand=True)
-        root.rowconfigure(1, weight=1)
+        root.rowconfigure(2, weight=1)
         root.columnconfigure(0, weight=1)
 
         header = ttk.Frame(root)
@@ -79,8 +88,39 @@ class VisionTesterShell(tk.Tk):
             foreground=self._muted_text,
         ).pack(side="right")
 
+        previewbar = ttk.Frame(root, padding=(8, 5))
+        previewbar.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+
+        self.preview_toggle = ttk.Checkbutton(
+            previewbar,
+            text="Preview op gamevenster",
+            variable=self.preview_on_game,
+            command=self._desktop_preview_changed,
+        )
+        self.preview_toggle.pack(side="left")
+
+        ttk.Label(previewbar, text="Weergave:").pack(side="left", padx=(16, 5))
+        self.preview_mode_box = ttk.Combobox(
+            previewbar,
+            values=(),
+            textvariable=self.preview_mode,
+            state="disabled",
+            width=18,
+        )
+        self.preview_mode_box.pack(side="left")
+        self.preview_mode_box.bind(
+            "<<ComboboxSelected>>",
+            self._preview_mode_changed,
+        )
+
+        ttk.Label(
+            previewbar,
+            textvariable=self.preview_hint,
+            foreground=self._muted_text,
+        ).pack(side="left", padx=(14, 0))
+
         self.tabs = ttk.Notebook(root)
-        self.tabs.grid(row=1, column=0, sticky="nsew")
+        self.tabs.grid(row=2, column=0, sticky="nsew")
 
         colour_host = tk.Frame(self.tabs, background=self._background)
         template_host = tk.Frame(self.tabs, background=self._background)
@@ -118,18 +158,127 @@ class VisionTesterShell(tk.Tk):
         except (IndexError, tk.TclError):
             return None
 
+    @staticmethod
+    def _preview_page(page) -> DesktopPreviewPage | None:
+        return page if isinstance(page, DesktopPreviewPage) else None
+
     def _activate_current_page(self) -> None:
         page = self._selected_page()
         if page is None:
             return
 
-        if self.current_page is not None and self.current_page is not page:
-            self.current_page.deactivate()
+        previous = self.current_page
+        if previous is not None and previous is not page:
+            previous_preview = self._preview_page(previous)
+            if previous_preview is not None:
+                previous_preview.set_desktop_preview_compact(False)
+            previous.deactivate()
+
         self.current_page = page
         self.current_page.activate()
+        self._sync_preview_controls()
+
+        current_preview = self._preview_page(page)
+        if self.preview_on_game.get() and current_preview is not None:
+            current_preview.set_desktop_preview_compact(True)
+            self.after_idle(self._refresh_desktop_preview)
+        else:
+            self._hide_desktop_preview()
 
     def _tab_changed(self, _event=None) -> None:
         self._activate_current_page()
+
+    def _sync_preview_controls(self) -> None:
+        page = self._preview_page(self.current_page)
+        if page is None:
+            self._preview_modes_by_label.clear()
+            self.preview_mode.set("")
+            self.preview_mode_box.configure(values=(), state="disabled")
+            self.preview_toggle.configure(state="disabled")
+            self.preview_hint.set("Niet beschikbaar op deze pagina.")
+            return
+
+        modes = page.desktop_preview_modes()
+        self._preview_modes_by_label = {mode.label: mode for mode in modes}
+        labels = tuple(self._preview_modes_by_label)
+        self.preview_mode_box.configure(values=labels)
+        self.preview_toggle.configure(state="normal")
+
+        default_key = page.desktop_preview_default_mode()
+        default_mode = next(
+            (mode for mode in modes if mode.key == default_key),
+            modes[0] if modes else None,
+        )
+        current_mode = self._preview_modes_by_label.get(self.preview_mode.get())
+        if current_mode is None or current_mode.key not in {mode.key for mode in modes}:
+            self.preview_mode.set(default_mode.label if default_mode is not None else "")
+            current_mode = default_mode
+
+        self.preview_mode_box.configure(
+            state="readonly" if len(modes) > 1 else "disabled"
+        )
+        self.preview_hint.set(
+            current_mode.description if current_mode is not None else "Geen previewmodus beschikbaar."
+        )
+
+    def _selected_preview_mode(self) -> PreviewMode | None:
+        return self._preview_modes_by_label.get(self.preview_mode.get())
+
+    def _preview_mode_changed(self, _event=None) -> None:
+        mode = self._selected_preview_mode()
+        self.preview_hint.set(mode.description if mode is not None else "")
+        self._refresh_desktop_preview()
+
+    def _desktop_preview_changed(self) -> None:
+        page = self._preview_page(self.current_page)
+        if page is None:
+            self.preview_on_game.set(False)
+            self._hide_desktop_preview()
+            return
+
+        if self.preview_on_game.get():
+            if self._desktop_preview_overlay is None:
+                self._desktop_preview_overlay = DesktopPreviewOverlay(self)
+            page.set_desktop_preview_compact(True)
+            self._refresh_desktop_preview()
+            return
+
+        page.set_desktop_preview_compact(False)
+        self._hide_desktop_preview()
+
+    def _hide_desktop_preview(self) -> None:
+        if self._desktop_preview_overlay is not None:
+            self._desktop_preview_overlay.hide()
+
+    def _refresh_desktop_preview(self) -> None:
+        overlay = self._desktop_preview_overlay
+        page = self._preview_page(self.current_page)
+        mode = self._selected_preview_mode()
+        if (
+            not self.preview_on_game.get()
+            or overlay is None
+            or page is None
+            or mode is None
+        ):
+            self._hide_desktop_preview()
+            return
+
+        snapshot = page.desktop_preview_snapshot(mode.key)
+        if snapshot is None:
+            self._hide_desktop_preview()
+            return
+
+        try:
+            overlay.show_snapshot(snapshot)
+        except (tk.TclError, ValueError, TypeError):
+            self._hide_desktop_preview()
+
+    def _poll_desktop_preview(self) -> None:
+        if self._closing:
+            return
+        if self.preview_on_game.get():
+            self._refresh_desktop_preview()
+        self.after(90, self._poll_desktop_preview)
 
     def _start_hotkeys(self) -> None:
         options = {"on_press": self._global_key_pressed}
@@ -171,6 +320,12 @@ class VisionTesterShell(tk.Tk):
 
     def _close(self) -> None:
         self._closing = True
+        preview_page = self._preview_page(self.current_page)
+        if preview_page is not None:
+            preview_page.set_desktop_preview_compact(False)
+        self.preview_on_game.set(False)
+        if self._desktop_preview_overlay is not None:
+            self._desktop_preview_overlay.close()
         if self.current_page is not None:
             self.current_page.deactivate()
         if self._hotkey_listener is not None:
