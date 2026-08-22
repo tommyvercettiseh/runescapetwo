@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-from core.vision.skilling_sensor import classify_skilling_frame
+from core.sensors.skilling_sensor import classify_skilling_frame
 
 
 def _solid_hsv(hue: int, saturation: int = 255, value: int = 255) -> np.ndarray:
