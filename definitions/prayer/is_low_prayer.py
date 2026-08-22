@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.vision.prayer_stoplight import classify_prayer_frame, load_prayer_stoplight_profile
+from core.sensors.prayer_stoplight import classify_prayer_frame, load_prayer_stoplight_profile
 from core.vision.screenshots import capture_area
 
 
