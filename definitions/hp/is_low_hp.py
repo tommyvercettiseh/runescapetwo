@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.vision.hp_stoplight import classify_hp_frame, load_hp_stoplight_profile
+from core.sensors.hp_stoplight import classify_hp_frame, load_hp_stoplight_profile
 from core.vision.screenshots import capture_area
 
 
