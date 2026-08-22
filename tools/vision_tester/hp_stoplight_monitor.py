@@ -3,7 +3,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
-from core.vision.hp_stoplight import classify_hp_frame
+from core.sensors.hp_stoplight import classify_hp_frame
 
 from .replay_reset import ReplayResetPage
 
