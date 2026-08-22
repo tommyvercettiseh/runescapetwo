@@ -109,8 +109,11 @@ def test_sensor_logic_stays_out_of_vision() -> None:
         "core.vision.prayer_stoplight",
         "core.vision.skilling_sensor",
     )
+    this_file = Path(__file__).resolve()
     offenders = []
     for path in ROOT.rglob("*.py"):
+        if path.resolve() == this_file:
+            continue
         source = path.read_text(encoding="utf-8")
         if any(import_path in source for import_path in forbidden_imports):
             offenders.append(str(path.relative_to(ROOT)))
