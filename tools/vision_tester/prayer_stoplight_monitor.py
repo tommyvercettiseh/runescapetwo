@@ -3,7 +3,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
-from core.vision.prayer_stoplight import (
+from core.sensors.prayer_stoplight import (
     classify_prayer_frame,
     load_prayer_stoplight_profile,
 )
