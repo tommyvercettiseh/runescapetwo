@@ -3,8 +3,8 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from core.vision.prayer_sensor import PrayerSensorError, prayer_low
-from core.vision.prayer_stoplight import classify_prayer_frame, load_prayer_stoplight_profile
+from core.sensors.prayer_sensor import PrayerSensorError, prayer_low
+from core.sensors.prayer_stoplight import classify_prayer_frame, load_prayer_stoplight_profile
 
 
 SENSOR_NAME = "low_prayer"
@@ -38,7 +38,7 @@ def analyse_frame(frame_rgb: np.ndarray) -> dict[str, object]:
     for low, high in profile.get("hue_ranges", {}).get(reading.state, []):
         state_mask |= candidate & (hue >= int(low)) & (hue <= int(high))
 
-    mask = (state_mask.astype(np.uint8) * 255)
+    mask = state_mask.astype(np.uint8) * 255
     detected = cv2.bitwise_and(frame_rgb, frame_rgb, mask=mask)
     found = int(reading.pixels.get(reading.state, 0))
     required = int(profile.get("min_colour_pixels", 3))
