@@ -1,100 +1,37 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
-from dataclasses import dataclass
 import ctypes
 import random
-import threading
 import time
-from typing import Any, Iterator, Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 from pynput.mouse import Button, Controller
 
 from . import mouse_engine
 from .movements import create_path
 from .mouse_plan import MousePlanValidationError, validate_mouse_plan
+from .mouse_runtime import (
+    MouseActionCancelled,
+    MouseExecutionStatus,
+    MouseRuntimeError,
+    PendingClickUnavailable,
+    PendingTimeline as _PendingTimeline,
+    action_guard,
+    cancel_pending_click as _cancel_pending_click,
+    emergency_stop_requested,
+    has_pending_click as _has_pending_click,
+    last_execution_status,
+    pop_pending as _pop_pending,
+    raise_if_stopped as _raise_if_stopped,
+    request_emergency_stop,
+    reset_emergency_stop,
+    set_execution_status as _set_execution_status,
+    set_pending as _set_pending,
+)
 from .profile import get_section
 
 _controller = Controller()
-_thread_state = threading.local()
 _last_engine_error: str | None = None
-_action_lock = threading.RLock()
-_emergency_stop = threading.Event()
-PENDING_CLICK_TIMEOUT_S = 3.0
-
-
-class MouseRuntimeError(RuntimeError):
-    pass
-
-
-class MouseActionCancelled(MouseRuntimeError):
-    pass
-
-
-class PendingClickUnavailable(MouseRuntimeError):
-    pass
-
-
-@dataclass(frozen=True)
-class MouseExecutionStatus:
-    engine: str
-    fallback_used: bool = False
-    error: str | None = None
-
-
-@dataclass
-class _PendingTimeline:
-    events: list[dict[str, Any]]
-    created_at: float
-    target_bounds: tuple[float, float, float, float]
-
-
-@contextmanager
-def action_guard() -> Iterator[None]:
-    """Serialize access to the one physical mouse shared by every bot."""
-    with _action_lock:
-        yield
-
-
-def _set_execution_status(
-    engine: str,
-    *,
-    fallback_used: bool = False,
-    error: str | None = None,
-) -> None:
-    _thread_state.execution_status = MouseExecutionStatus(
-        engine=engine,
-        fallback_used=fallback_used,
-        error=error,
-    )
-
-
-def last_execution_status() -> MouseExecutionStatus:
-    return getattr(
-        _thread_state,
-        "execution_status",
-        MouseExecutionStatus(engine="none"),
-    )
-
-
-def request_emergency_stop() -> None:
-    """Stop the active timeline; its finally block releases the mouse button."""
-    _emergency_stop.set()
-
-
-def reset_emergency_stop() -> None:
-    _emergency_stop.clear()
-
-
-def emergency_stop_requested() -> bool:
-    return _emergency_stop.is_set()
-
-
-def _raise_if_stopped() -> None:
-    if _emergency_stop.is_set():
-        raise MouseActionCancelled(
-            "Mouse emergency stop is active. Call reset_emergency_stop() before retrying."
-        )
 
 
 def _between(settings: dict, minimum: str, maximum: str) -> float:
@@ -336,40 +273,12 @@ def _rectangle_target_bounds(
     )
 
 
-def _cursor_inside(bounds: tuple[float, float, float, float]) -> bool:
-    x, y = position()
-    left, top, right, bottom = bounds
-    return left <= x < right and top <= y < bottom
-
-
-def _set_pending(value: _PendingTimeline | None) -> None:
-    _thread_state.pending = value
-
-
-def _pop_pending() -> _PendingTimeline | None:
-    pending = getattr(_thread_state, "pending", None)
-    _thread_state.pending = None
-    return pending
-
-
 def has_pending_click() -> bool:
-    pending = getattr(_thread_state, "pending", None)
-    if pending is None:
-        return False
-    if time.perf_counter() - pending.created_at > PENDING_CLICK_TIMEOUT_S:
-        _set_pending(None)
-        return False
-    if not _cursor_inside(pending.target_bounds):
-        _set_pending(None)
-        return False
-    return bool(pending.events)
+    return _has_pending_click(position())
 
 
 def cancel_pending_click() -> bool:
-    with action_guard():
-        existed = getattr(_thread_state, "pending", None) is not None
-        _set_pending(None)
-        return existed
+    return _cancel_pending_click()
 
 
 def _native_move_to(x: int, y: int, method: str | None = None) -> None:
