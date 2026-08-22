@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.vision.skilling_sensor import SKILLING_AREA, classify_skilling_frame
+from core.sensors.skilling_sensor import SKILLING_AREA, classify_skilling_frame
 from core.vision.screenshots import capture_area
 
 
