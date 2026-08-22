@@ -19,6 +19,9 @@ from tools.vision_tester.template_plus import SearchableTemplatePage
 from tools.vision_tester.unified_plus import ToleranceColourPage
 
 
+ROOT = Path(__file__).resolve().parents[1]
+
+
 def test_action_registry_has_unique_names() -> None:
     names = action_names()
     assert names
@@ -91,13 +94,27 @@ def test_template_and_sensor_features_are_explicit_pages() -> None:
 
 
 def test_production_vision_app_has_no_runtime_installers() -> None:
-    source = (
-        Path(__file__).resolve().parents[1]
-        / "tools"
-        / "vision_tester"
-        / "app.py"
-    ).read_text(encoding="utf-8")
+    source = (ROOT / "tools" / "vision_tester" / "app.py").read_text(encoding="utf-8")
     assert "install_" not in source
+
+
+def test_sensor_logic_stays_out_of_vision() -> None:
+    vision_files = {path.name for path in (ROOT / "core" / "vision").glob("*.py")}
+    assert not any("sensor" in name or "stoplight" in name for name in vision_files)
+
+    forbidden_imports = (
+        "core.vision.hp_sensor",
+        "core.vision.hp_stoplight",
+        "core.vision.prayer_sensor",
+        "core.vision.prayer_stoplight",
+        "core.vision.skilling_sensor",
+    )
+    offenders = []
+    for path in ROOT.rglob("*.py"):
+        source = path.read_text(encoding="utf-8")
+        if any(import_path in source for import_path in forbidden_imports):
+            offenders.append(str(path.relative_to(ROOT)))
+    assert offenders == []
 
 
 @dataclass(frozen=True)
