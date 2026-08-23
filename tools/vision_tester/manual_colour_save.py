@@ -4,6 +4,8 @@ from tkinter import simpledialog
 
 import customtkinter as ctk
 
+from core.vision.colour_presets import list_colour_presets, normalize_colour_name
+
 from . import modern_ui, unified_plus
 from .colour_browser import BrowserToleranceColourPage
 
@@ -56,9 +58,18 @@ class ManualColourPage(BrowserToleranceColourPage):
         if name is None:
             return
 
-        name = name.strip()
-        if not name:
+        try:
+            name = normalize_colour_name(name)
+        except ValueError:
             self.status.set("Colour niet aangemaakt: naam ontbreekt.")
+            return
+
+        if name in set(list_colour_presets()):
+            self._active_colour_names = {name}
+            self.current_preset.set(name)
+            self._load_current_preset()
+            self._draw_colour_browser()
+            self.status.set(f"Colour '{name}' bestaat al en is geselecteerd.")
             return
 
         self.current_preset.set(name)
@@ -66,9 +77,12 @@ class ManualColourPage(BrowserToleranceColourPage):
         self.colour_tolerance.set(unified_plus.DEFAULT_TOLERANCE)
         self._active_colour_names = {name}
         self._rebuild_ranges()
-        self._draw_colour_browser()
+
+        if not self.pipette:
+            self._toggle_pipette()
+
         self.status.set(
-            f"Nieuwe colour '{name}'. Pipet kleur(en), stel tolerance in en klik Save updated colour."
+            f"Nieuwe colour '{name}' klaar. Klik kleur(en) met het pipet en daarna Save updated colour."
         )
 
     def _pick(self, event) -> None:
@@ -85,7 +99,7 @@ class ManualColourPage(BrowserToleranceColourPage):
             )
             return
 
-        name = next(iter(active))
+        name = normalize_colour_name(next(iter(active)))
         if not self.base_colours:
             self.status.set(
                 f"Colour '{name}' heeft nog geen gepipette kleur; niets opgeslagen."
@@ -95,6 +109,7 @@ class ManualColourPage(BrowserToleranceColourPage):
         self.current_preset.set(name)
         unified_plus.ToleranceColourPage._save_current_preset(self)
         self._active_colour_names = {name}
+        self.current_preset.set(name)
         self._draw_colour_browser()
         self.status.set(
             f"Colour '{name}' bijgewerkt · {len(self.base_colours)} kleur(en) · "
