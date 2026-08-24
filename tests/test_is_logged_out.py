@@ -1,4 +1,7 @@
-from definitions.login import is_logged_out as logout_module
+import importlib
+
+
+logout_module = importlib.import_module("definitions.login.is_logged_out")
 
 
 def test_is_logged_out_true_when_disconnected_visible(monkeypatch):
