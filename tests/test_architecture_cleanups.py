@@ -8,13 +8,9 @@ from tools.unified_tester.result_utils import format_result, result_detail, resu
 from tools.unified_tester.scenario_code_editor import ScenarioCodeEditor
 from tools.unified_tester.scenario_runner import BANKING_SCENARIO, STEP_HANDLERS
 from tools.vision_tester.colour_browser import BrowserToleranceColourPage
-from tools.vision_tester.colour_delete_undo import DeleteUndoColourPage
-from tools.vision_tester.colour_recording import RecordedColourPage
-from tools.vision_tester.hp_stoplight_monitor import HpStoplightMonitorPage
-from tools.vision_tester.manual_colour_save import ManualColourPage
-from tools.vision_tester.prayer_stoplight_monitor import PrayerStoplightMonitorPage
-from tools.vision_tester.replay_reset import ReplayResetPage
+from tools.vision_tester.colour_page import ColourPage
 from tools.vision_tester.sensor_boolean_badge import EnhancedSensorPage
+from tools.vision_tester.stoplight_panel import StoplightPanel
 from tools.vision_tester.template_plus import SearchableTemplatePage
 from tools.vision_tester.unified_plus import ToleranceColourPage
 
@@ -73,17 +69,40 @@ def test_inventory_exclusions_share_required_and_optional_rules(monkeypatch) -> 
     assert missing == ("Missing",)
 
 
-def test_colour_features_form_an_explicit_inheritance_chain() -> None:
-    chain = (
-        (BrowserToleranceColourPage, ToleranceColourPage),
-        (ManualColourPage, BrowserToleranceColourPage),
-        (DeleteUndoColourPage, ManualColourPage),
-        (RecordedColourPage, DeleteUndoColourPage),
-        (ReplayResetPage, RecordedColourPage),
-        (HpStoplightMonitorPage, ReplayResetPage),
-        (PrayerStoplightMonitorPage, HpStoplightMonitorPage),
-    )
-    assert all(issubclass(child, parent) for child, parent in chain)
+def test_colour_page_uses_one_operator_page_instead_of_feature_subclasses() -> None:
+    assert ColourPage.__bases__ == (BrowserToleranceColourPage,)
+    assert issubclass(BrowserToleranceColourPage, ToleranceColourPage)
+
+    legacy_page_names = {
+        "ManualColourPage",
+        "DeleteUndoColourPage",
+        "RecordedColourPage",
+        "ReplayResetPage",
+        "HpStoplightMonitorPage",
+        "PrayerStoplightMonitorPage",
+    }
+    assert legacy_page_names.isdisjoint(cls.__name__ for cls in ColourPage.__mro__)
+
+
+def test_stoplight_feedback_is_composed_not_inherited() -> None:
+    assert not issubclass(ColourPage, StoplightPanel)
+    source = (
+        ROOT / "tools" / "vision_tester" / "colour_page.py"
+    ).read_text(encoding="utf-8")
+    assert "StoplightPanel(" in source
+
+
+def test_legacy_colour_feature_modules_are_removed() -> None:
+    legacy_modules = {
+        "manual_colour_save.py",
+        "colour_delete_undo.py",
+        "colour_recording.py",
+        "replay_reset.py",
+        "hp_stoplight_monitor.py",
+        "prayer_stoplight_monitor.py",
+    }
+    directory = ROOT / "tools" / "vision_tester"
+    assert not any((directory / name).exists() for name in legacy_modules)
 
 
 def test_template_and_sensor_features_are_explicit_pages() -> None:
@@ -94,12 +113,16 @@ def test_template_and_sensor_features_are_explicit_pages() -> None:
 
 
 def test_production_vision_app_has_no_runtime_installers() -> None:
-    source = (ROOT / "tools" / "vision_tester" / "app.py").read_text(encoding="utf-8")
+    source = (
+        ROOT / "tools" / "vision_tester" / "app.py"
+    ).read_text(encoding="utf-8")
     assert "install_" not in source
 
 
 def test_sensor_logic_stays_out_of_vision() -> None:
-    vision_files = {path.name for path in (ROOT / "core" / "vision").glob("*.py")}
+    vision_files = {
+        path.name for path in (ROOT / "core" / "vision").glob("*.py")
+    }
     assert not any("sensor" in name or "stoplight" in name for name in vision_files)
 
     forbidden_imports = (

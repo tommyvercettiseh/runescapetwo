@@ -1,366 +1,424 @@
 from __future__ import annotations
 
-import time
 import tkinter as tk
-from tkinter import ttk
+from tkinter import simpledialog, ttk
 
-import cv2
-import numpy as np
-from PIL import Image, ImageDraw, ImageTk
+import customtkinter as ctk
 
-from core.vision.colour_detection import (
-    build_mask_from_ranges,
-    count_mask_pixels,
-    hsv_ranges_around,
-    sample_hsv,
+from core.vision.colour_presets import (
+    delete_colour_preset,
+    list_colour_presets,
+    load_colour_preset,
+    normalize_colour_name,
+    save_colour_preset,
 )
-from core.vision.colour_presets import HSVRange
-from core.vision.screenshots import capture_area
-from .colour_debug import filter_mask_by_blob_size, isolate_colour
-from .common import (
-    COLOURS,
-    LiveToggle,
-    ModernButton,
-    ModernSwitch,
-    PreviewLabel,
-    SourceBar,
-)
-from .preferences import load_preferences, save_preferences
+
+from . import modern_ui
+from .colour_browser import BrowserToleranceColourPage
+from .colour_replay import ColourReplayController, REPLAY_SPEEDS
+from . import unified_plus
+from .stoplight_panel import StoplightPanel
 
 
-class ColourPage(ttk.Frame):
-    """Minimal live colour sampler with only the controls needed while tuning."""
+class ColourPage(BrowserToleranceColourPage):
+    """Production colour workspace with explicit editing, replay and sensor composition."""
 
-    def __init__(self, parent):
+    def __init__(self, parent) -> None:
+        self._deleted_colour_snapshot: dict[str, object] | None = None
+        self._colour_trash_hide_job: str | None = None
+        self.stoplight_panel: StoplightPanel | None = None
+        self.replay: ColourReplayController | None = None
         super().__init__(parent)
-        self.live = tk.BooleanVar(value=False)
-        self.pipette_active = tk.BooleanVar(value=False)
-        self.capture: np.ndarray | None = None
-        self.region: tuple[int, int, int, int] | None = None
-        self.sample: tuple[int, int, int] | None = None
-        self.ranges: tuple[HSVRange, ...] = ()
 
-        self.minimum = tk.IntVar(value=20)
-        self.maximum = tk.IntVar(value=0)
-        self.status = tk.StringVar(value="Kies een area en maak een capture.")
-        preferences = load_preferences()
-        self.auto_resize = tk.BooleanVar(value=bool(preferences["auto_resize"]))
-        self.zoom_percent = tk.IntVar(value=int(preferences["zoom_percent"]))
-        self.zoom_text = tk.StringVar(value=f"{self.zoom_percent.get()}%")
-        self.preview_views: list[PreviewLabel] = []
-        self._preference_job: str | None = None
-
-        # The former HSV fields are deliberately hidden. These defaults keep the
-        # same practical sampling behaviour when a colour is picked.
-        self.hue_tolerance = 5
-        self.saturation_tolerance = 40
-        self.value_tolerance = 40
-
-        self._build()
-        for variable in (self.minimum, self.maximum):
-            variable.trace_add("write", self._render_setting_changed)
-        self.zoom_percent.trace_add("write", self._zoom_changed)
-        self.after(100, self._tick)
+        self.replay = ColourReplayController(
+            self,
+            capture_getter=lambda: self.capture,
+            capture_setter=self._set_replay_capture,
+            area_getter=lambda: self.source.area.get(),
+            bot_id_getter=self.source.bot,
+            live_setter=self.live.set,
+            status_setter=self.status.set,
+            render=self._render,
+        )
+        self._add_recording_controls()
 
     def _build(self) -> None:
-        toolbar = ttk.Frame(self, style="Surface.TFrame", padding=(16, 14))
-        toolbar.pack(fill="x", padx=22, pady=(18, 12))
-        self.source = SourceBar(toolbar)
-        self.source.grid(row=0, column=0, sticky="ew", padx=(0, 22))
+        super()._build()
+        self._add_stoplight_panel()
 
-        fields = (
-            ("MIN BLOB PX", self.minimum, 1, 50000),
-            ("MAX BLOB PX", self.maximum, 0, 100000),
-        )
-        for column, (label, variable, low, high) in enumerate(fields, start=1):
-            field = ttk.Frame(toolbar, style="Surface.TFrame")
-            field.grid(row=0, column=column, sticky="sw", padx=(0, 10))
-            ttk.Label(field, text=label, style="SurfaceMuted.TLabel").pack(anchor="w")
-            ttk.Spinbox(
-                field,
-                from_=low,
-                to=high,
-                textvariable=variable,
-                width=11,
-            ).pack(anchor="w", pady=(3, 0))
+    # Colour editing -----------------------------------------------------
 
-        actions = ttk.Frame(toolbar, style="Surface.TFrame")
-        actions.grid(row=0, column=3, sticky="se")
-        ttk.Label(actions, text="KLEUR KIEZEN", style="SurfaceMuted.TLabel").grid(
-            row=0, column=0, columnspan=3, sticky="w"
-        )
-        self._pipette_icon = self._make_pipette_icon()
-        self.pipette_button = ttk.Button(
-            actions,
-            image=self._pipette_icon,
-            command=self._toggle_pipette,
-            style="Icon.TButton",
-        )
-        self.pipette_button.grid(row=1, column=0, padx=(0, 8), pady=(3, 0))
-        self.live_button = LiveToggle(actions, variable=self.live, command=self._toggle)
-        self.live_button.grid(row=1, column=1, padx=(0, 8), pady=(3, 0))
-        ModernButton(
-            actions,
-            text="CAPTURE",
-            command=self._once,
-            width=112,
-            variant="primary",
-        ).grid(
-            row=1, column=2, pady=(3, 0)
+    def _build_colour_browser(self) -> None:
+        super()._build_colour_browser()
+        self.new_colour_button.configure(
+            text="Add new colour",
+            command=self._new_colour_from_browser,
         )
 
-        toolbar.columnconfigure(0, weight=1)
+        sidebar = self.new_colour_button.master
+        for child in list(sidebar.grid_slaves()):
+            if child is self.new_colour_button:
+                continue
+            info = child.grid_info()
+            row = int(info.get("row", 0))
+            if row >= 3:
+                child.grid_configure(row=row + 1)
 
-        viewbar = ttk.Frame(self, style="Surface.TFrame", padding=(16, 10))
-        viewbar.pack(fill="x", padx=22, pady=(0, 12))
-        ttk.Label(
-            viewbar,
-            text="WEERGAVE",
-            style="SurfaceMuted.TLabel",
-        ).pack(side="left", padx=(0, 16))
-        self.auto_switch = ModernSwitch(
-            viewbar,
-            variable=self.auto_resize,
-            command=self._view_mode_changed,
+        sidebar.grid_rowconfigure(3, weight=0)
+        sidebar.grid_rowconfigure(4, weight=1)
+
+        self.save_colour_button = ctk.CTkButton(
+            sidebar,
+            text="Save updated colour",
+            command=self._save_colour_from_browser,
+            height=34,
+            corner_radius=7,
+            fg_color=modern_ui.CARD_ALT,
+            hover_color=modern_ui.ACCENT_SOFT,
+            text_color=modern_ui.TEXT,
         )
-        self.auto_switch.pack(side="left")
-        ttk.Label(viewbar, text="Auto resize", style="Surface.TLabel").pack(
-            side="left", padx=(7, 20)
+        self.save_colour_button.grid(
+            row=3,
+            column=0,
+            sticky="ew",
+            padx=14,
+            pady=(0, 9),
         )
-        ttk.Label(viewbar, text="ZOOM", style="SurfaceMuted.TLabel").pack(side="left")
-        self.zoom_slider = ttk.Scale(
-            viewbar,
-            from_=10,
-            to=100,
-            variable=self.zoom_percent,
-            orient="horizontal",
-            style="Modern.Horizontal.TScale",
-            length=190,
+
+        self.colour_undo_button = ctk.CTkButton(
+            sidebar,
+            text="Undo delete",
+            command=self._undo_deleted_colour,
+            height=32,
+            corner_radius=7,
+            fg_color=modern_ui.CARD_ALT,
+            hover_color=modern_ui.ACCENT_SOFT,
+            text_color=modern_ui.TEXT,
         )
-        self.zoom_slider.pack(side="left", padx=(10, 8))
-        ttk.Label(
-            viewbar,
-            textvariable=self.zoom_text,
-            style="Surface.TLabel",
-            width=5,
-            font=("Segoe UI Semibold", 10),
-        ).pack(side="left")
-        ttk.Label(
-            viewbar,
-            text="Auto vult het venster · handmatig gaat tot originele 100%",
-            style="SurfaceMuted.TLabel",
-        ).pack(side="right")
-
-        previews = ttk.Frame(self, padding=(18, 2, 18, 10))
-        previews.pack(fill="both", expand=True)
-        preview_specs = (
-            ("LIVE AREA", "Klik met het pipet om een kleur te pakken"),
-            ("BINAIR MASKER", "Wit is geselecteerd"),
-            ("KLEUR GEÏSOLEERD", "Alleen de geselecteerde kleur blijft zichtbaar"),
+        self.colour_undo_button.grid(
+            row=6,
+            column=0,
+            sticky="ew",
+            padx=14,
+            pady=(0, 10),
         )
-        views: list[PreviewLabel] = []
-        for column, (title, subtitle) in enumerate(preview_specs):
-            card = ttk.Frame(previews, style="Surface.TFrame", padding=(12, 11))
-            card.grid(row=0, column=column, sticky="nsew", padx=5)
-            ttk.Label(card, text=title, style="Surface.TLabel", font=("Segoe UI Semibold", 11)).pack(
-                anchor="w"
-            )
-            ttk.Label(card, text=subtitle, style="SurfaceMuted.TLabel").pack(
-                anchor="w", pady=(2, 10)
-            )
-            view = PreviewLabel(
-                card,
-                fallback_width=650,
-                fallback_height=650,
-                allow_upscale=True,
-                auto_resize=self.auto_resize.get(),
-                zoom_percent=self.zoom_percent.get(),
-            )
-            view.pack(fill="both", expand=True)
-            views.append(view)
+        self.colour_undo_button.grid_remove()
 
-        self.capture_view, self.mask_view, self.isolated_view = views
-        self.preview_views = views
-        self.capture_view.bind("<Button-1>", self._pick)
-        previews.rowconfigure(0, weight=1)
-        for column in range(3):
-            previews.columnconfigure(column, weight=1, uniform="preview")
-
-        status_bar = ttk.Frame(self, style="Surface.TFrame", padding=(18, 10))
-        status_bar.pack(fill="x", padx=22, pady=(0, 18))
-        self.colour_chip = tk.Frame(
-            status_bar,
-            width=18,
-            height=18,
-            background=COLOURS["surface_raised"],
-            highlightbackground=COLOURS["border"],
-            highlightthickness=1,
+    def _new_colour_from_browser(self) -> None:
+        name = simpledialog.askstring(
+            "Add new colour",
+            "Naam van de colour:",
+            parent=self.winfo_toplevel(),
         )
-        self.colour_chip.pack(side="left", padx=(0, 10))
-        self.colour_chip.pack_propagate(False)
-        ttk.Label(status_bar, textvariable=self.status, style="SurfaceMuted.TLabel").pack(
-            side="left", fill="x", expand=True
-        )
-        self._sync_zoom_state()
-
-    @staticmethod
-    def _make_pipette_icon() -> ImageTk.PhotoImage:
-        """Draw a crisp pipette icon without an external icon dependency."""
-        scale = 2
-        image = Image.new("RGBA", (24 * scale, 24 * scale), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(image)
-        ink = (23, 67, 93, 255)
-        accent = (66, 207, 232, 255)
-        draw.rounded_rectangle(
-            (13 * scale, 2 * scale, 20 * scale, 9 * scale),
-            radius=2 * scale,
-            fill=accent,
-        )
-        draw.line((16 * scale, 7 * scale, 7 * scale, 16 * scale), fill=ink, width=3 * scale)
-        draw.line((12 * scale, 5 * scale, 19 * scale, 12 * scale), fill=ink, width=2 * scale)
-        draw.polygon(
-            ((7 * scale, 14 * scale), (10 * scale, 17 * scale), (4 * scale, 21 * scale)),
-            fill=ink,
-        )
-        image = image.resize((24, 24), Image.Resampling.LANCZOS)
-        return ImageTk.PhotoImage(image)
-
-    def _toggle(self) -> None:
-        self.status.set("Live capture actief." if self.live.get() else "Live capture gepauzeerd.")
-
-    def _view_mode_changed(self) -> None:
-        self._sync_zoom_state()
-        self._apply_view_settings()
-
-    def _zoom_changed(self, *_args) -> None:
-        try:
-            value = min(100, max(10, int(round(self.zoom_percent.get()))))
-        except tk.TclError:
-            return
-        self.zoom_text.set(f"{value}%")
-        if not self.auto_resize.get():
-            self._apply_view_settings()
-
-    def _sync_zoom_state(self) -> None:
-        self.zoom_slider.configure(state="disabled" if self.auto_resize.get() else "normal")
-
-    def _apply_view_settings(self) -> None:
-        auto_resize = self.auto_resize.get()
-        zoom = self.zoom_percent.get()
-        for view in self.preview_views:
-            view.set_view(auto_resize=auto_resize, zoom_percent=zoom)
-        self._schedule_preference_save()
-
-    def _schedule_preference_save(self) -> None:
-        if self._preference_job is not None:
-            self.after_cancel(self._preference_job)
-        self._preference_job = self.after(200, self._save_view_preferences)
-
-    def _save_view_preferences(self) -> None:
-        self._preference_job = None
-        try:
-            save_preferences(
-                {
-                    "auto_resize": self.auto_resize.get(),
-                    "zoom_percent": self.zoom_percent.get(),
-                }
-            )
-        except OSError as exc:
-            self.status.set(f"Weergavevoorkeur kon niet worden opgeslagen: {exc}")
-
-    def _once(self) -> None:
-        self.live.set(False)
-        self._capture()
-
-    def _tick(self) -> None:
-        if self.live.get():
-            self._capture()
-        self.after(100, self._tick)
-
-    def _capture(self) -> None:
-        started = time.perf_counter()
-        try:
-            self.capture, self.region = capture_area(
-                self.source.area.get(), bot_id=self.source.bot_id.get()
-            )
-            self.capture_view.show(self.capture)
-            self._render(started)
-        except Exception as exc:
-            self.live.set(False)
-            self.status.set(f"Fout: {exc}")
-
-    def _render(self, started: float | None = None) -> None:
-        if self.capture is None:
+        if name is None:
             return
 
-        if not self.ranges:
-            blank = np.zeros(self.capture.shape[:2], dtype=np.uint8)
-            self.mask_view.show(cv2.cvtColor(blank, cv2.COLOR_GRAY2RGB))
-            self.isolated_view.show(np.zeros_like(self.capture))
-            self.status.set(
-                f"Bot {self.source.bot_id.get()}  •  {self.source.area.get()}  •  kies een kleur met het pipet"
-            )
+        try:
+            name = normalize_colour_name(name)
+        except ValueError:
+            self.status.set("Colour niet aangemaakt: naam ontbreekt.")
             return
 
-        started = time.perf_counter() if started is None else started
-        mask = build_mask_from_ranges(self.capture, self.ranges)
-        maximum = self.maximum.get() or None
-        filtered_mask, valid_blob_count = filter_mask_by_blob_size(
-            mask,
-            minimum_area_px=max(1, self.minimum.get()),
-            maximum_area_px=maximum,
-        )
+        if name in set(list_colour_presets()):
+            self._active_colour_names = {name}
+            self.current_preset.set(name)
+            self._load_current_preset()
+            self._draw_colour_browser()
+            self.status.set(f"Colour '{name}' bestaat al en is geselecteerd.")
+            return
 
-        selected_pixels = count_mask_pixels(filtered_mask)
-        total_pixels = max(1, filtered_mask.size)
-        self.mask_view.show(cv2.cvtColor(filtered_mask, cv2.COLOR_GRAY2RGB))
-        self.isolated_view.show(isolate_colour(self.capture, filtered_mask))
-        elapsed = (time.perf_counter() - started) * 1000.0
+        self.current_preset.set(name)
+        self.base_colours = []
+        self.colour_tolerance.set(unified_plus.DEFAULT_TOLERANCE)
+        self._active_colour_names = {name}
+        self._rebuild_ranges()
+
+        if not self.pipette:
+            self._toggle_pipette()
+
         self.status.set(
-            f"Bot {self.source.bot_id.get()}  •  {self.source.area.get()}  •  "
-            f"{selected_pixels} px geselecteerd ({selected_pixels / total_pixels * 100.0:.2f}%)  •  "
-            f"{valid_blob_count} geldige blobs  •  {elapsed:.1f} ms"
-        )
-
-    def _toggle_pipette(self) -> None:
-        active = not self.pipette_active.get()
-        self.pipette_active.set(active)
-        self.pipette_button.configure(style="IconActive.TButton" if active else "Icon.TButton")
-        self.capture_view.configure(cursor="crosshair" if active else "")
-        self.status.set(
-            "Pipet actief. Klik een kleur in Live Area."
-            if active
-            else "Pipet uitgeschakeld."
+            f"Nieuwe colour '{name}' klaar. "
+            "Klik kleur(en) met het pipet en daarna Save updated colour."
         )
 
     def _pick(self, event) -> None:
-        if self.capture is None or not self.pipette_active.get():
-            return
-        coordinates = self.capture_view.image_coordinates(event.x, event.y)
-        if coordinates is None:
-            return
-        x, y = coordinates
-        height, width = self.capture.shape[:2]
-        if not 0 <= x < width or not 0 <= y < height:
-            return
-        self.sample = sample_hsv(self.capture, x, y, radius=2)
-        self.ranges = hsv_ranges_around(
-            self.sample,
-            hue_tolerance=self.hue_tolerance,
-            saturation_tolerance=self.saturation_tolerance,
-            value_tolerance=self.value_tolerance,
-        )
-        hsv_pixel = np.array([[self.sample]], dtype=np.uint8)
-        rgb = cv2.cvtColor(hsv_pixel, cv2.COLOR_HSV2RGB)[0, 0]
-        self.colour_chip.configure(
-            background="#{:02x}{:02x}{:02x}".format(*(int(value) for value in rgb))
-        )
-        self._render()
+        """Pick without autosaving; persistence is always explicit."""
+        unified_plus.ToleranceColourPage._pick(self, event)
 
-    def _render_setting_changed(self, *_args) -> None:
-        try:
-            self.minimum.get()
-            self.maximum.get()
-        except tk.TclError:
+    def _save_colour_from_browser(self) -> None:
+        active = set(self._active_colour_names)
+        if len(active) != 1:
+            self.status.set(
+                "Selecteer precies één colour om op te slaan of te updaten."
+                if active
+                else "Selecteer eerst één colour om op te slaan of te updaten."
+            )
             return
-        self._render()
+
+        name = normalize_colour_name(next(iter(active)))
+        if not self.base_colours:
+            self.status.set(
+                f"Colour '{name}' heeft nog geen gepipette kleur; niets opgeslagen."
+            )
+            return
+
+        self.current_preset.set(name)
+        unified_plus.ToleranceColourPage._save_current_preset(self)
+        self._active_colour_names = {name}
+        self._draw_colour_browser()
+        self.status.set(
+            f"Colour '{name}' bijgewerkt · {len(self.base_colours)} kleur(en) · "
+            f"tolerance {self.colour_tolerance.get()}%."
+        )
+
+    # Delete and undo ----------------------------------------------------
+
+    def _draw_colour_browser(self) -> None:
+        if not self._browser_ready or self.colour_scroll is None:
+            return
+
+        for child in self.colour_scroll.winfo_children():
+            child.destroy()
+
+        self.colour_rows.clear()
+        for row_index, name in enumerate(self._filtered_colour_names()):
+            selected = name in self._active_colour_names
+            row = ctk.CTkFrame(
+                self.colour_scroll,
+                fg_color="transparent",
+                corner_radius=7,
+                height=36,
+            )
+            row.grid(row=row_index, column=0, sticky="ew", pady=1)
+            row.grid_columnconfigure(0, weight=1)
+
+            main = ctk.CTkButton(
+                row,
+                text=name,
+                anchor="w",
+                height=34,
+                corner_radius=7,
+                fg_color=modern_ui.ACCENT_SOFT if selected else "transparent",
+                hover_color=modern_ui.ACCENT_SOFT,
+                text_color=modern_ui.ACCENT_HOVER if selected else modern_ui.TEXT,
+            )
+            main.pack(side="left", fill="x", expand=True)
+            main.configure(command=lambda: None)
+            main.bind(
+                "<Button-1>",
+                lambda event, value=name: self._colour_clicked(event, value),
+            )
+
+            trash = ctk.CTkButton(
+                row,
+                text="🗑",
+                width=34,
+                height=30,
+                corner_radius=7,
+                fg_color="transparent",
+                hover_color=modern_ui.ACCENT_SOFT,
+                text_color=modern_ui.TEXT,
+                command=lambda value=name: self._delete_colour_from_browser(value),
+            )
+            for widget in (row, main, trash):
+                widget.bind(
+                    "<Enter>",
+                    lambda _event, r=row, t=trash: self._show_colour_trash(r, t),
+                    add="+",
+                )
+                widget.bind(
+                    "<Leave>",
+                    lambda _event, r=row, t=trash: self._hide_colour_trash_later(r, t),
+                    add="+",
+                )
+            self.colour_rows[name] = main
+
+    def _show_colour_trash(self, row, trash) -> None:
+        if self._colour_trash_hide_job is not None:
+            try:
+                self.after_cancel(self._colour_trash_hide_job)
+            except tk.TclError:
+                pass
+            self._colour_trash_hide_job = None
+        if trash.winfo_exists():
+            trash.pack(side="right", padx=(4, 2), pady=2)
+
+    def _hide_colour_trash_later(self, row, trash) -> None:
+        if self._colour_trash_hide_job is not None:
+            try:
+                self.after_cancel(self._colour_trash_hide_job)
+            except tk.TclError:
+                pass
+
+        def hide() -> None:
+            self._colour_trash_hide_job = None
+            try:
+                pointer = self.winfo_containing(
+                    self.winfo_pointerx(),
+                    self.winfo_pointery(),
+                )
+                if pointer in (row, trash) or (
+                    pointer is not None and pointer.master is row
+                ):
+                    return
+                trash.pack_forget()
+            except tk.TclError:
+                pass
+
+        self._colour_trash_hide_job = self.after(90, hide)
+
+    def _delete_colour_from_browser(self, name: str) -> None:
+        try:
+            preset = load_colour_preset(name)
+        except (KeyError, ValueError):
+            self.status.set(f"Colour '{name}' kon niet worden geladen.")
+            return
+
+        meta_all = unified_plus._load_meta()
+        self._deleted_colour_snapshot = {
+            "name": name,
+            "ranges": tuple(preset.ranges),
+            "meta": meta_all.get(name),
+        }
+
+        if not delete_colour_preset(name):
+            self.status.set(f"Colour '{name}' kon niet worden verwijderd.")
+            return
+
+        if name in meta_all:
+            meta_all.pop(name, None)
+            try:
+                unified_plus._save_meta(meta_all)
+            except OSError:
+                pass
+
+        was_active = (
+            name in self._active_colour_names
+            or self.current_preset.get().strip() == name
+        )
+        self._active_colour_names.discard(name)
+        if self.current_preset.get().strip() == name:
+            self.current_preset.set("")
+
+        if was_active:
+            self.base_colours = []
+            self.ranges = ()
+            self._reset_blob_history()
+            self._render()
+
+        self._draw_colour_browser()
+        self.colour_undo_button.configure(text=f"Undo delete · {name}")
+        self.colour_undo_button.grid()
+        self.status.set(
+            f"Colour '{name}' verwijderd. Klik Undo om hem terug te zetten."
+        )
+
+    def _undo_deleted_colour(self) -> None:
+        snapshot = self._deleted_colour_snapshot
+        if not snapshot:
+            return
+
+        name = str(snapshot["name"])
+        save_colour_preset(name, snapshot["ranges"])
+
+        meta = snapshot.get("meta")
+        if isinstance(meta, dict):
+            meta_all = unified_plus._load_meta()
+            meta_all[name] = meta
+            try:
+                unified_plus._save_meta(meta_all)
+            except OSError:
+                pass
+
+        self._deleted_colour_snapshot = None
+        self.colour_undo_button.grid_remove()
+        self._active_colour_names = {name}
+        self.current_preset.set(name)
+        self._load_current_preset()
+        self._draw_colour_browser()
+        self.status.set(f"Colour '{name}' hersteld.")
+
+    # Replay -------------------------------------------------------------
+
+    def _add_recording_controls(self) -> None:
+        replay = self.replay
+        if replay is None:
+            return
+
+        toolbar = self.source.master
+        controls = ttk.Frame(toolbar)
+        controls.grid(row=0, column=3, sticky="e", padx=(12, 8))
+
+        ttk.Button(
+            controls,
+            textvariable=replay.record_text,
+            command=replay.toggle_recording,
+        ).pack(side="left")
+        ttk.Button(
+            controls,
+            textvariable=replay.play_text,
+            command=replay.play_or_pause,
+        ).pack(side="left", padx=(6, 0))
+        ttk.Combobox(
+            controls,
+            values=REPLAY_SPEEDS,
+            textvariable=replay.replay_speed,
+            state="readonly",
+            width=5,
+        ).pack(side="left", padx=(6, 0))
+        ttk.Button(
+            controls,
+            text="Reset Replay",
+            command=replay.reset_replay,
+        ).pack(side="left", padx=(6, 0))
+        ttk.Label(controls, textvariable=replay.replay_info).pack(
+            side="left",
+            padx=(8, 0),
+        )
+
+    def _set_replay_capture(
+        self,
+        capture,
+        region: tuple[int, int, int, int],
+    ) -> None:
+        self.capture = capture
+        self.capture_region = region
+
+    # Sensor composition ------------------------------------------------
+
+    def _add_stoplight_panel(self) -> None:
+        toolbar = self.source.master
+        self.stoplight_panel = StoplightPanel(toolbar)
+        self.stoplight_panel.grid(
+            row=5,
+            column=0,
+            columnspan=7,
+            sticky="ew",
+            padx=8,
+            pady=(5, 0),
+        )
+
+    def _render(self, started=None) -> None:
+        super()._render(started)
+        if self.stoplight_panel is not None:
+            self.stoplight_panel.update_readings(
+                self.capture,
+                current_area=self.source.area.get().strip(),
+            )
+
+    # Lifecycle ---------------------------------------------------------
+
+    def _capture(self) -> None:
+        if self.replay is not None and self.replay.replay_active:
+            return
+        super()._capture()
+        if self.replay is not None:
+            self.replay.capture_frame()
+
+    def deactivate(self) -> None:
+        if self.replay is not None:
+            self.replay.deactivate()
+        super().deactivate()
+
+
+__all__ = ["ColourPage"]

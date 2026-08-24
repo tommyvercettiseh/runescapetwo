@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import tkinter as tk
 from tkinter import ttk
 
 from .enhanced_colour_page import EnhancedColourPage
@@ -59,8 +58,4 @@ class OverlayColourPage(EnhancedColourPage):
             self._screen_area_overlay.hide()
 
 
-def install_area_overlay_toggle() -> None:
-    """Compatibility no-op; the feature is now implemented by OverlayColourPage."""
-
-
-__all__ = ["OverlayColourPage", "install_area_overlay_toggle"]
+__all__ = ["OverlayColourPage"]
