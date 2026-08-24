@@ -18,7 +18,7 @@ def test_best_match_tries_next_shape_candidate_when_colour_rejects_first(monkeyp
     score_map = np.zeros((28, 28), dtype=np.float32)
     score_map[2, 2] = 0.99
     score_map[18, 18] = 0.95
-    colour_scores = iter((10.0, 92.0, 92.0))
+    colour_scores = iter((10.0, 10.0, 92.0))
 
     monkeypatch.setattr(template_analysis, "match_template", lambda *_args: score_map)
     monkeypatch.setattr(
