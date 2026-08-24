@@ -13,8 +13,9 @@ from core.vision.colour_presets import (
     normalize_colour_name,
     save_colour_preset,
 )
-from . import modern_ui
+from . import ui
 from .app_shell import VisionTesterShell
+from .colour_base import ColourBasePage
 
 
 DEFAULT_PRESET_NAME = "cyan"
@@ -58,27 +59,28 @@ def format_ranges(ranges) -> str:
 
 
 def apply_basic_theme() -> None:
-    """Apply the light tester palette without replacing UI factories."""
+    """Apply the light tester palette through the shared UI foundation."""
     ctk.set_appearance_mode("light")
-
-    modern_ui.BG = BASIC_BG
-    modern_ui.CARD = BASIC_PANEL
-    modern_ui.CARD_ALT = BASIC_CONTROL
-    modern_ui.BORDER = BASIC_BORDER
-    modern_ui.CONTROL_HOVER = "#e6e6e6"
-    modern_ui.TEXT = BASIC_TEXT
-    modern_ui.MUTED = BASIC_MUTED
-    modern_ui.ACCENT = BASIC_BLUE
-    modern_ui.ACCENT_HOVER = BASIC_BLUE_HOVER
-    modern_ui.ACCENT_SOFT = "#dbeafe"
-    modern_ui.GOLD = BASIC_TEXT
-    modern_ui.DANGER = BASIC_RED
-    modern_ui.SUCCESS = BASIC_GREEN
-    modern_ui.VIEW_BG = BASIC_VIEW
+    ui.set_palette(
+        background=BASIC_BG,
+        card=BASIC_PANEL,
+        card_alt=BASIC_CONTROL,
+        border=BASIC_BORDER,
+        control_hover="#e6e6e6",
+        text=BASIC_TEXT,
+        muted=BASIC_MUTED,
+        accent=BASIC_BLUE,
+        accent_hover=BASIC_BLUE_HOVER,
+        accent_soft="#dbeafe",
+        gold=BASIC_TEXT,
+        danger=BASIC_RED,
+        success=BASIC_GREEN,
+        view_background=BASIC_VIEW,
+    )
 
 
 class BasicSourceControls(ttk.Frame):
-    def __init__(self, parent, *, default_area: str = modern_ui.DEFAULT_AREA):
+    def __init__(self, parent, *, default_area: str = ui.DEFAULT_AREA):
         super().__init__(parent)
         areas = sorted(load_areas())
         selected_area = default_area if default_area in areas else (
@@ -118,7 +120,7 @@ class BasicProgressbar(ttk.Progressbar):
         self["value"] = min(100.0, max(0.0, float(value) * 100.0))
 
 
-class PresetColourPage(modern_ui.ColourPage):
+class PresetColourPage(ColourBasePage):
     """Compact colour tester with persistent, searchable HSV presets."""
 
     def __init__(self, parent):
@@ -353,7 +355,7 @@ class PresetColourPage(modern_ui.ColourPage):
                 text=subtitle,
                 foreground=BASIC_MUTED,
             ).grid(row=0, column=0, sticky="w", pady=(0, 4))
-            view = modern_ui.ImageView(
+            view = ui.ImageView(
                 frame,
                 auto_resize=self.auto_resize.get(),
                 zoom_percent=self.zoom.get(),
