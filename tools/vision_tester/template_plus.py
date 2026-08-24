@@ -76,6 +76,29 @@ class SearchableTemplatePage(TemplatePage):
         except (AttributeError, tk.TclError):
             pass
 
+    def _draw_templates(self) -> None:
+        for child in self.template_scroll.winfo_children():
+            child.destroy()
+        query = self.query.get().strip().casefold()
+        names = [name for name in self.templates if query in name.casefold()]
+        self.rows.clear()
+        for row, name in enumerate(names):
+            selected = name == self.selected
+            button = ctk.CTkButton(
+                self.template_scroll,
+                text=name,
+                command=lambda value=name: self._select(value),
+                anchor="w",
+                height=34,
+                corner_radius=7,
+                fg_color=ui.ACCENT_SOFT if selected else "transparent",
+                hover_color=ui.ACCENT_SOFT,
+                text_color=ui.ACCENT_HOVER if selected else ui.TEXT,
+                font=ui.font(11),
+            )
+            button.grid(row=row, column=0, sticky="ew", pady=1)
+            self.rows[name] = button
+
     @staticmethod
     def _area_names() -> list[str]:
         return sorted(load_areas(), key=str.casefold)
@@ -122,7 +145,7 @@ class SearchableTemplatePage(TemplatePage):
         sidebar.grid_rowconfigure(2, weight=1)
         sidebar.grid_columnconfigure(0, weight=1)
 
-        ui.label(sidebar, "AREAS", size=12, bold=True).grid(
+        ui.label(sidebar, "Areas", size=12, bold=True).grid(
             row=0,
             column=0,
             sticky="w",
@@ -132,12 +155,13 @@ class SearchableTemplatePage(TemplatePage):
         area_search = ctk.CTkEntry(
             sidebar,
             textvariable=self.area_query,
-            placeholder_text="Zoek area",
+            placeholder_text="Search areas...",
             height=38,
             corner_radius=8,
             fg_color=ui.CARD_ALT,
             border_color=ui.BORDER,
             text_color=ui.TEXT,
+            font=ui.font(11),
         )
         area_search.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 10))
         area_search.bind("<KeyRelease>", self._filter_areas)
@@ -147,7 +171,7 @@ class SearchableTemplatePage(TemplatePage):
             sidebar,
             fg_color="transparent",
             scrollbar_button_color=ui.BORDER,
-            scrollbar_button_hover_color=ui.GOLD,
+            scrollbar_button_hover_color=ui.ACCENT_HOVER,
         )
         self.area_scroll.grid(row=2, column=0, sticky="nsew", padx=8, pady=(0, 8))
         self.area_scroll.grid_columnconfigure(0, weight=1)
@@ -173,6 +197,7 @@ class SearchableTemplatePage(TemplatePage):
                 fg_color=ui.ACCENT_SOFT if selected else "transparent",
                 hover_color=ui.ACCENT_SOFT,
                 text_color=ui.ACCENT_HOVER if selected else ui.TEXT,
+                font=ui.font(11),
             )
             button.grid(row=row, column=0, sticky="ew", pady=1)
             self.area_rows[name] = button
@@ -182,7 +207,7 @@ class SearchableTemplatePage(TemplatePage):
             return
         self.source.area.set(name)
         self._draw_areas()
-        self.status.set(f"Area geselecteerd: {name}. Opnieuw analyseren…")
+        self.status.set(f"Area selected: {name}. Analysing again…")
         if self.selected:
             self.after_idle(self._capture)
 
@@ -210,7 +235,7 @@ class SearchableTemplatePage(TemplatePage):
     def _captured(self, name: str) -> None:
         super()._captured(name)
         self.live.set(True)
-        self.status.set(f"Nieuwe template {name} opgeslagen · Live matching actief.")
+        self.status.set(f"New template {name} saved · Live matching active.")
         self.after_idle(self._capture)
 
 
