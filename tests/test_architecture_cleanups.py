@@ -10,7 +10,9 @@ from tools.unified_tester.scenario_runner import BANKING_SCENARIO, STEP_HANDLERS
 from tools.vision_tester.colour_browser import BrowserToleranceColourPage
 from tools.vision_tester.colour_page import ColourPage
 from tools.vision_tester.sensor_boolean_badge import EnhancedSensorPage
+from tools.vision_tester.sensor_page import SensorPage
 from tools.vision_tester.stoplight_panel import StoplightPanel
+from tools.vision_tester.template_page import TemplatePage
 from tools.vision_tester.template_plus import SearchableTemplatePage
 from tools.vision_tester.unified_plus import ToleranceColourPage
 
@@ -106,11 +108,19 @@ def test_legacy_colour_feature_modules_are_removed() -> None:
     assert not any((directory / name).exists() for name in legacy_modules)
 
 
-def test_template_and_sensor_features_are_explicit_pages() -> None:
-    from tools.vision_tester import modern_ui
+def test_template_and_sensor_features_use_explicit_page_modules() -> None:
+    assert SearchableTemplatePage.__bases__ == (TemplatePage,)
+    assert EnhancedSensorPage.__bases__ == (SensorPage,)
 
-    assert issubclass(SearchableTemplatePage, modern_ui.TemplatePage)
-    assert issubclass(EnhancedSensorPage, modern_ui.SensorPage)
+
+def test_modern_ui_is_only_a_compatibility_facade() -> None:
+    source = _source("tools/vision_tester/modern_ui.py")
+    assert "class ColourPage" not in source
+    assert "class TemplatePage" not in source
+    assert "class SensorPage" not in source
+    assert "match_template(" not in source
+    assert "calculate_color_score(" not in source
+    assert len(source.splitlines()) < 100
 
 
 def test_production_vision_app_has_no_runtime_installers() -> None:
@@ -123,9 +133,16 @@ def test_colour_page_never_bypasses_the_inheritance_chain() -> None:
     assert "unified_plus._" not in source
 
 
-def test_template_tester_uses_core_template_analysis() -> None:
-    source = _source("tools/vision_tester/template_plus.py")
+def test_template_page_uses_core_template_analysis() -> None:
+    source = _source("tools/vision_tester/template_page.py")
     assert "analyse_template(" in source
+    assert "match_template(" not in source
+    assert "calculate_color_score(" not in source
+
+
+def test_template_plus_adds_ui_without_reimplementing_matching() -> None:
+    source = _source("tools/vision_tester/template_plus.py")
+    assert "def _analyse(" not in source
     assert "match_template(" not in source
     assert "calculate_color_score(" not in source
 
