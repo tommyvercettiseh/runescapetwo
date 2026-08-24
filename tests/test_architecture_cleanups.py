@@ -18,6 +18,10 @@ from tools.vision_tester.unified_plus import ToleranceColourPage
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _source(relative_path: str) -> str:
+    return (ROOT / relative_path).read_text(encoding="utf-8")
+
+
 def test_action_registry_has_unique_names() -> None:
     names = action_names()
     assert names
@@ -86,10 +90,7 @@ def test_colour_page_uses_one_operator_page_instead_of_feature_subclasses() -> N
 
 def test_stoplight_feedback_is_composed_not_inherited() -> None:
     assert not issubclass(ColourPage, StoplightPanel)
-    source = (
-        ROOT / "tools" / "vision_tester" / "colour_page.py"
-    ).read_text(encoding="utf-8")
-    assert "StoplightPanel(" in source
+    assert "StoplightPanel(" in _source("tools/vision_tester/colour_page.py")
 
 
 def test_legacy_colour_feature_modules_are_removed() -> None:
@@ -113,10 +114,49 @@ def test_template_and_sensor_features_are_explicit_pages() -> None:
 
 
 def test_production_vision_app_has_no_runtime_installers() -> None:
-    source = (
-        ROOT / "tools" / "vision_tester" / "app.py"
-    ).read_text(encoding="utf-8")
-    assert "install_" not in source
+    assert "install_" not in _source("tools/vision_tester/app.py")
+
+
+def test_colour_page_never_bypasses_the_inheritance_chain() -> None:
+    source = _source("tools/vision_tester/colour_page.py")
+    assert "ToleranceColourPage._" not in source
+    assert "unified_plus._" not in source
+
+
+def test_template_tester_uses_core_template_analysis() -> None:
+    source = _source("tools/vision_tester/template_plus.py")
+    assert "analyse_template(" in source
+    assert "match_template(" not in source
+    assert "calculate_color_score(" not in source
+
+
+def test_colour_analysis_implementation_lives_in_core() -> None:
+    adapter = _source("tools/vision_tester/colour_debug.py")
+    assert "core.vision.colour_analysis" in adapter
+    assert "cv2." not in adapter
+    assert "np." not in adapter
+
+
+def test_colour_preset_metadata_storage_lives_in_core() -> None:
+    for relative_path in (
+        "tools/vision_tester/unified_plus.py",
+        "tools/vision_tester/colour_browser.py",
+        "tools/vision_tester/colour_page.py",
+    ):
+        source = _source(relative_path)
+        assert "colour_preset_meta.json" not in source
+        assert "_load_meta" not in source
+        assert "_save_meta" not in source
+
+
+def test_cleaned_vision_modules_have_no_compatibility_installers() -> None:
+    for relative_path in (
+        "tools/vision_tester/colour_browser.py",
+        "tools/vision_tester/colour_page.py",
+        "tools/vision_tester/template_plus.py",
+        "tools/vision_tester/unified_plus.py",
+    ):
+        assert "def install_" not in _source(relative_path)
 
 
 def test_sensor_logic_stays_out_of_vision() -> None:

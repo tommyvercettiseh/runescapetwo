@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import time
 import tkinter as tk
 
 import customtkinter as ctk
+import cv2
 import numpy as np
 
+from core.targeting import image_target_bounds
 from core.vision.areas import load_areas
+from core.vision.template_analysis import analyse_template
+from core.vision.templates import load_template
 
 from . import modern_ui
 
@@ -206,6 +211,110 @@ class SearchableTemplatePage(modern_ui.TemplatePage):
             pass
         self._draw_areas()
 
+    def _analyse(self) -> None:
+        """Render diagnostics from the same analysis used by production matching."""
+        self._job = None
+        self.best_valid_bounds = None
+        if self.screenshot is None or not self.selected:
+            return
+
+        started = time.perf_counter()
+        try:
+            template_rgb, template_gray = load_template(self.selected)
+            maximum = max(1, int(self.maximum.get() or 1))
+            analysis = analyse_template(
+                self.screenshot,
+                template_rgb,
+                template_gray,
+                method=self.method.get(),
+                minimum_shape=self.shape.get(),
+                maximum_candidates=maximum,
+            )
+
+            visual = self.screenshot.copy()
+            rows = []
+            valid_candidates = []
+            for candidate in analysis.candidates:
+                valid = candidate.passes_colour(self.colour.get())
+                if valid:
+                    valid_candidates.append(candidate)
+                rows.append(
+                    (
+                        valid,
+                        candidate.shape_score,
+                        candidate.color_score,
+                        candidate.x,
+                        candidate.y,
+                    )
+                )
+                cv2.rectangle(
+                    visual,
+                    (candidate.x, candidate.y),
+                    (
+                        candidate.x + candidate.width,
+                        candidate.y + candidate.height,
+                    ),
+                    (37, 169, 105) if valid else (220, 82, 104),
+                    2,
+                )
+
+            if valid_candidates:
+                target = max(
+                    valid_candidates,
+                    key=lambda candidate: (
+                        candidate.shape_score,
+                        candidate.color_score,
+                    ),
+                )
+                local_bounds = image_target_bounds(
+                    target.x,
+                    target.y,
+                    target.x + target.width,
+                    target.y + target.height,
+                    image_edge_padding=self._x_padding_percent(),
+                )
+                origin_x, origin_y = self.region[0], self.region[1]
+                self.best_valid_bounds = (
+                    local_bounds[0] + origin_x,
+                    local_bounds[1] + origin_y,
+                    local_bounds[2] + origin_x,
+                    local_bounds[3] + origin_y,
+                )
+                cv2.rectangle(
+                    visual,
+                    (local_bounds[0], local_bounds[1]),
+                    (local_bounds[2], local_bounds[3]),
+                    (209, 166, 75),
+                    1,
+                )
+
+            self.preview.show(visual)
+            lines = ["STATUS         SHAPE    COLOUR      X      Y"]
+            lines.extend(
+                f"{'GELDIG' if valid else 'KLEUR FAALT':<14} "
+                f"{shape:>5.1f}%   {colour:>5.1f}%   {x:>4}   {y:>4}"
+                for valid, shape, colour, x, y in rows
+            )
+            self.results.configure(state="normal")
+            self.results.delete("1.0", "end")
+            self.results.insert("1.0", "\n".join(lines))
+            self.results.configure(state="disabled")
+            self.summary.configure(
+                text=(
+                    f"Beste shape  {analysis.best_shape_score:.1f}%\n"
+                    f"Kleur daarbij  {analysis.best_color_score:.1f}%\n"
+                    f"Geldige hits  {len(valid_candidates)}/{len(rows)}"
+                )
+            )
+            elapsed = (time.perf_counter() - started) * 1000
+            self.status.set(
+                f"Bot {self.source.bot()}  •  {self.source.area.get()}  •  "
+                f"{self.method.get()}  •  {elapsed:.1f} ms"
+            )
+        except Exception as exc:
+            self.live.set(False)
+            self.status.set(f"Fout: {exc}")
+
     def _captured(self, name: str) -> None:
         super()._captured(name)
         self.live.set(True)
@@ -213,12 +322,4 @@ class SearchableTemplatePage(modern_ui.TemplatePage):
         self.after_idle(self._capture)
 
 
-def install_template_plus() -> None:
-    """Compatibility no-op; use SearchableTemplatePage explicitly."""
-
-
-__all__ = [
-    "CleanTemplatePreview",
-    "SearchableTemplatePage",
-    "install_template_plus",
-]
+__all__ = ["CleanTemplatePreview", "SearchableTemplatePage"]

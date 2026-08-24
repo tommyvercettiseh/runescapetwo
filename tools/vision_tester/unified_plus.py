@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-import json
-import os
-from pathlib import Path
 import tkinter as tk
 from tkinter import ttk
 
 from core.vision.colour_detection import hsv_ranges_around, sample_hsv
+from core.vision.colour_preset_meta import (
+    delete_colour_preset_meta,
+    infer_base_colours,
+    load_colour_preset_meta,
+    save_colour_preset_meta,
+)
 
 from . import preset_ui
 from .colour_view_cleanup import CompactColourPage
@@ -14,7 +17,6 @@ from .enhanced_config import PIPETTE_EDGE_PADDING
 
 
 DEFAULT_TOLERANCE = 35
-META_PATH = Path(__file__).resolve().parents[2] / "config" / "colour_preset_meta.json"
 
 
 def tolerance_values(value: int) -> tuple[int, int, int]:
@@ -24,32 +26,6 @@ def tolerance_values(value: int) -> tuple[int, int, int]:
     saturation = 8 + round(92 * amount)
     brightness = 8 + round(92 * amount)
     return hue, saturation, brightness
-
-
-def _load_meta() -> dict[str, dict[str, object]]:
-    try:
-        data = json.loads(META_PATH.read_text(encoding="utf-8-sig"))
-    except (FileNotFoundError, OSError, json.JSONDecodeError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def _save_meta(data: dict[str, dict[str, object]]) -> None:
-    META_PATH.parent.mkdir(parents=True, exist_ok=True)
-    temporary = META_PATH.with_suffix(".tmp")
-    temporary.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    os.replace(temporary, META_PATH)
-
-
-def _infer_base_colours(ranges) -> list[tuple[int, int, int]]:
-    return [
-        (
-            round((int(lower[0]) + int(upper[0])) / 2),
-            round((int(lower[1]) + int(upper[1])) / 2),
-            round((int(lower[2]) + int(upper[2])) / 2),
-        )
-        for lower, upper in ranges
-    ]
 
 
 class ToleranceColourPage(CompactColourPage):
@@ -211,26 +187,15 @@ class ToleranceColourPage(CompactColourPage):
     def _load_current_preset(self) -> None:
         super()._load_current_preset()
         name = self.current_preset.get().strip()
-        meta = _load_meta().get(name, {})
-        colours = meta.get("colours") if isinstance(meta, dict) else None
-        if isinstance(colours, list):
-            self.base_colours = [
-                tuple(int(value) for value in item)
-                for item in colours
-                if isinstance(item, list) and len(item) == 3
-            ]
-        else:
-            self.base_colours = _infer_base_colours(self.ranges)
+        meta = load_colour_preset_meta(name) if name else None
 
-        try:
-            tolerance = (
-                int(meta.get("tolerance", DEFAULT_TOLERANCE))
-                if isinstance(meta, dict)
-                else DEFAULT_TOLERANCE
-            )
-        except (TypeError, ValueError):
-            tolerance = DEFAULT_TOLERANCE
-        self.colour_tolerance.set(min(100, max(0, tolerance)))
+        if meta is not None and meta.colours is not None:
+            self.base_colours = list(meta.colours)
+        else:
+            self.base_colours = list(infer_base_colours(self.ranges))
+
+        tolerance = meta.tolerance if meta is not None else DEFAULT_TOLERANCE
+        self.colour_tolerance.set(tolerance)
         self._rebuild_ranges()
 
     def _save_current_preset(self) -> None:
@@ -240,13 +205,12 @@ class ToleranceColourPage(CompactColourPage):
         if not name or not self.base_colours:
             return
 
-        data = _load_meta()
-        data[name] = {
-            "tolerance": int(self.colour_tolerance.get()),
-            "colours": [list(colour) for colour in self.base_colours],
-        }
         try:
-            _save_meta(data)
+            save_colour_preset_meta(
+                name,
+                tolerance=int(self.colour_tolerance.get()),
+                colours=self.base_colours,
+            )
         except OSError as exc:
             self.status.set(
                 f"Preset saved, but colour metadata failed: {exc}"
@@ -262,13 +226,10 @@ class ToleranceColourPage(CompactColourPage):
         name = self.current_preset.get().strip()
         super()._delete_current_preset()
         if name:
-            data = _load_meta()
-            if name in data:
-                data.pop(name, None)
-                try:
-                    _save_meta(data)
-                except OSError:
-                    pass
+            try:
+                delete_colour_preset_meta(name)
+            except OSError:
+                pass
         self.base_colours = []
         self._rebuild_ranges()
 
@@ -276,8 +237,5 @@ class ToleranceColourPage(CompactColourPage):
 __all__ = [
     "DEFAULT_TOLERANCE",
     "ToleranceColourPage",
-    "_infer_base_colours",
-    "_load_meta",
-    "_save_meta",
     "tolerance_values",
 ]
