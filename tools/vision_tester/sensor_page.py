@@ -16,12 +16,12 @@ class SensorPage(ctk.CTkFrame):
     """Live sensor calibration page used by the production Vision Tester."""
 
     def __init__(self, parent) -> None:
-        super().__init__(parent, fg_color="transparent")
+        super().__init__(parent, fg_color=ui.BG)
         self.live = tk.BooleanVar(value=False)
         self.sensor_name = tk.StringVar()
         self.bot_id = tk.StringVar(value="1")
-        self.status = tk.StringVar(value="Sensoren worden geladen.")
-        self.description = tk.StringVar(value="Kies een sensor.")
+        self.status = tk.StringVar(value="Sensors are loading.")
+        self.description = tk.StringVar(value="Choose a sensor.")
         self.checks: dict[str, SensorCheck] = {}
         self._build()
         self._load()
@@ -29,7 +29,7 @@ class SensorPage(ctk.CTkFrame):
 
     def activate(self) -> None:
         self.live.set(True)
-        self.status.set("Live sensormeting actief.")
+        self.status.set("Live sensor measurement active.")
         self.after_idle(self._measure)
 
     def deactivate(self) -> None:
@@ -38,15 +38,16 @@ class SensorPage(ctk.CTkFrame):
     def _build(self) -> None:
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(2, weight=1)
+
         toolbar = ui.card(self)
         toolbar.grid(row=0, column=0, sticky="ew", padx=14, pady=(12, 10))
         toolbar.grid_columnconfigure(0, weight=1)
 
-        group = ctk.CTkFrame(toolbar, fg_color="transparent")
-        group.grid(row=0, column=0, sticky="ew", padx=16, pady=14)
-        ui.label(group, "SENSOR", muted=True, size=11).pack(anchor="w")
+        selector = ctk.CTkFrame(toolbar, fg_color="transparent")
+        selector.grid(row=0, column=0, sticky="ew", padx=16, pady=14)
+        ui.label(selector, "Sensor", muted=True, size=10, bold=True).pack(anchor="w")
         self.sensor_box = ctk.CTkComboBox(
-            group,
+            selector,
             variable=self.sensor_name,
             values=[],
             command=lambda _value: self._changed(),
@@ -57,29 +58,43 @@ class SensorPage(ctk.CTkFrame):
             button_color=ui.BORDER,
             button_hover_color=ui.CONTROL_HOVER,
             text_color=ui.TEXT,
+            font=ui.font(11),
         )
         self.sensor_box.pack(fill="x", pady=(4, 0))
 
         actions = ctk.CTkFrame(toolbar, fg_color="transparent")
         actions.grid(row=0, column=1, padx=16, pady=14)
+        ui.label(actions, "Bot ID", muted=True, size=10, bold=True).grid(
+            row=0,
+            column=0,
+            sticky="w",
+            pady=(0, 4),
+        )
         ctk.CTkOptionMenu(
             actions,
             values=["1", "2", "3", "4"],
             variable=self.bot_id,
             width=76,
+            height=38,
+            corner_radius=8,
             fg_color=ui.CARD_ALT,
             button_color=ui.BORDER,
+            button_hover_color=ui.CONTROL_HOVER,
             text_color=ui.TEXT,
-        ).grid(row=0, column=0, padx=(0, 10))
+            font=ui.font(11),
+        ).grid(row=1, column=0, padx=(0, 12))
         ctk.CTkSwitch(
             actions,
             text="Live",
             variable=self.live,
             progress_color=ui.ACCENT,
+            button_color=ui.TEXT,
+            button_hover_color=ui.ACCENT_HOVER,
             text_color=ui.TEXT,
-        ).grid(row=0, column=1, padx=(0, 10))
-        ui.button(actions, "Meten", self._once, primary=True, width=100).grid(
-            row=0,
+            font=ui.font(11),
+        ).grid(row=1, column=1, padx=(0, 12))
+        ui.button(actions, "Measure", self._once, primary=True, width=104).grid(
+            row=1,
             column=2,
         )
 
@@ -89,7 +104,8 @@ class SensorPage(ctk.CTkFrame):
             desc,
             "",
             textvariable=self.description,
-            size=12,
+            size=11,
+            muted=True,
             wraplength=1200,
             justify="left",
         ).pack(anchor="w", padx=16, pady=12)
@@ -99,14 +115,24 @@ class SensorPage(ctk.CTkFrame):
         previews.grid_rowconfigure(0, weight=1)
         previews.grid_columnconfigure(0, weight=1, uniform="sensor")
         previews.grid_columnconfigure(1, weight=1, uniform="sensor")
+
         self.views: list[ui.ImageView] = []
-        for column, title in enumerate(("LIVE SENSOR AREA", "WAT DE SENSOR ZIET")):
+        specs = (
+            ("Live sensor area", "Raw pixels from the sensor area."),
+            ("Detected result", "What the configured sensor sees."),
+        )
+        for column, (title, subtitle) in enumerate(specs):
             card = ui.card(previews)
             card.grid(row=0, column=column, sticky="nsew", padx=4)
             ui.label(card, title, size=12, bold=True).pack(
                 anchor="w",
                 padx=14,
-                pady=12,
+                pady=(12, 2),
+            )
+            ui.label(card, subtitle, muted=True, size=10).pack(
+                anchor="w",
+                padx=14,
+                pady=(0, 8),
             )
             view = ui.ImageView(card)
             view.pack(fill="both", expand=True, padx=12, pady=(0, 12))
@@ -115,9 +141,9 @@ class SensorPage(ctk.CTkFrame):
 
         result = ui.card(self)
         result.grid(row=3, column=0, sticky="ew", padx=14, pady=(0, 10))
-        self.measurement = ui.label(result, "Nog niet gemeten", size=13)
+        self.measurement = ui.label(result, "Not measured yet", size=12)
         self.measurement.pack(side="left", padx=16, pady=12)
-        self.outcome = ui.label(result, "—", size=20, bold=True)
+        self.outcome = ui.label(result, "—", size=18, bold=True)
         self.outcome.pack(side="right", padx=18, pady=10)
 
         status = ui.card(self)
@@ -127,7 +153,7 @@ class SensorPage(ctk.CTkFrame):
             "",
             textvariable=self.status,
             muted=True,
-            size=11,
+            size=10,
         ).pack(anchor="w", padx=14, pady=9)
 
     def _load(self) -> None:
@@ -147,7 +173,7 @@ class SensorPage(ctk.CTkFrame):
         if check:
             self.description.set(sensor_description(check))
             self.status.set(
-                f"Klaar voor meting: {check.name} gebruikt area '{check.area}'."
+                f"Ready: {check.name} uses area '{check.area}'."
             )
 
     def _once(self) -> None:
@@ -182,8 +208,8 @@ class SensorPage(ctk.CTkFrame):
             self.detected_view.show(frame.detected)
             self.measurement.configure(
                 text=(
-                    f"Gevonden {frame.found} {frame.unit}  •  "
-                    f"Benodigd {frame.required} {frame.unit}"
+                    f"Found {frame.found} {frame.unit}  •  "
+                    f"Required {frame.required} {frame.unit}"
                 )
             )
             self.outcome.configure(
@@ -196,7 +222,7 @@ class SensorPage(ctk.CTkFrame):
             )
         except Exception as exc:
             self.live.set(False)
-            self.status.set(f"Fout: {exc}")
+            self.status.set(f"Error: {exc}")
 
 
 __all__ = ["SensorPage"]
