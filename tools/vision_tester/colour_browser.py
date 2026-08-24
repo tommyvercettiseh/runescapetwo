@@ -6,6 +6,7 @@ from tkinter import ttk
 import customtkinter as ctk
 
 from core.vision.areas import load_areas
+from core.vision.colour_preset_meta import infer_base_colours, load_colour_preset_meta
 from core.vision.colour_presets import list_colour_presets, load_colour_preset
 
 from . import modern_ui, unified_plus
@@ -440,17 +441,10 @@ class BrowserToleranceColourPage(unified_plus.ToleranceColourPage):
 
     def _bases_for_preset(self, name: str) -> list[tuple[int, int, int]]:
         preset = load_colour_preset(name)
-        meta = unified_plus._load_meta().get(name, {})
-        colours = meta.get("colours") if isinstance(meta, dict) else None
-        if isinstance(colours, list):
-            parsed = [
-                tuple(int(value) for value in item)
-                for item in colours
-                if isinstance(item, list) and len(item) == 3
-            ]
-            if parsed:
-                return parsed
-        return unified_plus._infer_base_colours(preset.ranges)
+        meta = load_colour_preset_meta(name)
+        if meta is not None and meta.colours:
+            return list(meta.colours)
+        return list(infer_base_colours(preset.ranges))
 
     def _apply_active_colours(self) -> None:
         names = sorted(self._active_colour_names, key=str.casefold)
@@ -489,12 +483,16 @@ class BrowserToleranceColourPage(unified_plus.ToleranceColourPage):
         finally:
             self._browser_applying = False
 
+    def _autosave_after_pick(self) -> bool:
+        """Allow concrete pages to opt out without bypassing the inheritance chain."""
+        return True
+
     def _pick(self, event) -> None:
         before = len(self.base_colours)
         super()._pick(event)
         if len(self.base_colours) == before:
             return
-        if len(self._active_colour_names) == 1:
+        if len(self._active_colour_names) == 1 and self._autosave_after_pick():
             super()._save_current_preset()
             name = self.current_preset.get().strip()
             if name:
@@ -531,8 +529,4 @@ class BrowserToleranceColourPage(unified_plus.ToleranceColourPage):
         self._draw_colour_browser()
 
 
-def install_colour_browser() -> None:
-    """Compatibility no-op; use BrowserToleranceColourPage explicitly."""
-
-
-__all__ = ["BrowserToleranceColourPage", "install_colour_browser"]
+__all__ = ["BrowserToleranceColourPage"]
