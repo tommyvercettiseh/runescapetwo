@@ -5,7 +5,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from core.vision.areas import load_areas
-from . import modern_ui
+from .ui import DEFAULT_AREA
 
 
 class SearchableSourceControls(ttk.Frame):
@@ -15,7 +15,7 @@ class SearchableSourceControls(ttk.Frame):
         self,
         parent,
         *,
-        default_area: str = modern_ui.DEFAULT_AREA,
+        default_area: str = DEFAULT_AREA,
         require_selection: bool = True,
         overlay_changed: Callable[[], None] | None = None,
     ) -> None:
