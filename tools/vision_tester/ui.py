@@ -25,6 +25,7 @@ DANGER = "#d06655"
 SUCCESS = "#8ec63f"
 VIEW_BG = "#040403"
 DEFAULT_AREA = "Bot_Area_Full"
+FONT_FAMILY = "Segoe UI"
 
 
 def set_palette(
@@ -65,6 +66,15 @@ def set_palette(
     VIEW_BG = view_background
 
 
+def font(size: int = 12, *, bold: bool = False) -> ctk.CTkFont:
+    """Return the one typography style used throughout the tester."""
+    return ctk.CTkFont(
+        family=FONT_FAMILY,
+        size=size,
+        weight="bold" if bold else "normal",
+    )
+
+
 def format_pixels(value: int) -> str:
     return f"{int(value):,}".replace(",", ".")
 
@@ -83,7 +93,7 @@ def label(
         parent,
         text=text,
         text_color=text_color,
-        font=ctk.CTkFont(size=size, weight="bold" if bold else "normal"),
+        font=font(size, bold=bold),
         **kwargs,
     )
 
@@ -113,7 +123,7 @@ def button(
         fg_color=foreground,
         hover_color=hover,
         text_color=colour,
-        font=ctk.CTkFont(size=12, weight="bold"),
+        font=font(12, bold=True),
         border_width=1,
         border_color=BORDER,
     )
@@ -227,7 +237,7 @@ class SourceControls(ctk.CTkFrame):
             )
         )
 
-        label(self, "BOT ID", muted=True, size=11).grid(
+        label(self, "Bot ID", muted=True, size=11).grid(
             row=0,
             column=0,
             sticky="w",
@@ -243,9 +253,11 @@ class SourceControls(ctk.CTkFrame):
             button_color=BORDER,
             button_hover_color=CONTROL_HOVER,
             text_color=TEXT,
+            font=font(11),
+            dropdown_font=font(11),
         ).grid(row=1, column=0, padx=(0, 12), pady=(4, 0), sticky="w")
 
-        label(self, "AREA", muted=True, size=11).grid(
+        label(self, "Area", muted=True, size=11).grid(
             row=0,
             column=1,
             sticky="w",
@@ -261,6 +273,8 @@ class SourceControls(ctk.CTkFrame):
             button_color=BORDER,
             button_hover_color=CONTROL_HOVER,
             text_color=TEXT,
+            font=font(11),
+            dropdown_font=font(11),
         )
         self.area_box.grid(row=1, column=1, pady=(4, 0), sticky="ew")
         self.grid_columnconfigure(1, weight=1)
@@ -280,6 +294,7 @@ __all__ = [
     "CONTROL_HOVER",
     "DANGER",
     "DEFAULT_AREA",
+    "FONT_FAMILY",
     "GOLD",
     "ImageView",
     "MUTED",
@@ -289,6 +304,7 @@ __all__ = [
     "VIEW_BG",
     "button",
     "card",
+    "font",
     "format_pixels",
     "label",
     "set_palette",
