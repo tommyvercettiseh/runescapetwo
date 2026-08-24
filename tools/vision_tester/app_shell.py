@@ -15,6 +15,17 @@ from .sensor_page import SensorPage
 from .template_page import TemplatePage
 
 
+def _is_dark_colour(value: str) -> bool:
+    try:
+        value = value.lstrip("#")
+        red, green, blue = (
+            int(value[index : index + 2], 16) for index in (0, 2, 4)
+        )
+    except (TypeError, ValueError):
+        return False
+    return (0.299 * red + 0.587 * green + 0.114 * blue) < 128
+
+
 class VisionTesterShell(tk.Tk):
     """Shared notebook shell with explicit page dependencies."""
 
@@ -32,8 +43,8 @@ class VisionTesterShell(tk.Tk):
         super().__init__()
         self.configure(background=background)
         self.title("RuneScape Two - Unified Vision Tester")
-        self.geometry("1180x760")
-        self.minsize(980, 650)
+        self.geometry("1480x900")
+        self.minsize(1080, 700)
 
         self._background = background
         self._muted_text = muted_text
@@ -46,6 +57,8 @@ class VisionTesterShell(tk.Tk):
         self._closing = False
         self.pages: list[object] = []
         self.current_page = None
+        self._dark_shell = _is_dark_colour(background)
+        self._notebook_style = "TNotebook"
 
         self._configure_style()
         self._build()
@@ -57,31 +70,42 @@ class VisionTesterShell(tk.Tk):
     def _configure_style(self) -> None:
         style = ttk.Style(self)
         available = style.theme_names()
+        if self._dark_shell and "clam" in available:
+            style.theme_use("clam")
+            self._notebook_style = "Vision.TNotebook"
+            style.configure(
+                "Vision.TNotebook",
+                background=self._background,
+                borderwidth=0,
+                tabmargins=(4, 4, 4, 0),
+            )
+            style.configure(
+                "Vision.TNotebook.Tab",
+                background=self._background,
+                foreground=self._muted_text,
+                borderwidth=0,
+                padding=(16, 9),
+                font=("Segoe UI", 10),
+            )
+            style.map(
+                "Vision.TNotebook.Tab",
+                background=[("selected", "#18212b"), ("active", "#151e27")],
+                foreground=[("selected", "#f1f5f8"), ("active", "#f1f5f8")],
+            )
+            return
+
         if sys.platform == "win32" and "vista" in available:
             style.theme_use("vista")
         style.configure("TNotebook.Tab", padding=(14, 6))
 
     def _build(self) -> None:
-        root = ttk.Frame(self, padding=10)
+        root = tk.Frame(self, background=self._background, padx=8, pady=6)
         root.pack(fill="both", expand=True)
-        root.rowconfigure(1, weight=1)
+        root.rowconfigure(0, weight=1)
         root.columnconfigure(0, weight=1)
 
-        header = ttk.Frame(root)
-        header.grid(row=0, column=0, sticky="ew", pady=(0, 8))
-        ttk.Label(
-            header,
-            text="Unified Vision Tester",
-            font=("Segoe UI", 17, "bold"),
-        ).pack(side="left")
-        ttk.Label(
-            header,
-            text="F2 Capture",
-            foreground=self._muted_text,
-        ).pack(side="right")
-
-        self.tabs = ttk.Notebook(root)
-        self.tabs.grid(row=1, column=0, sticky="nsew")
+        self.tabs = ttk.Notebook(root, style=self._notebook_style)
+        self.tabs.grid(row=0, column=0, sticky="nsew")
 
         colour_host = tk.Frame(self.tabs, background=self._background)
         template_host = tk.Frame(self.tabs, background=self._background)
