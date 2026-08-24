@@ -14,7 +14,7 @@ META_FILE = ROOT / "config" / "colour_preset_meta.json"
 @dataclass(frozen=True)
 class ColourPresetMeta:
     tolerance: int
-    colours: tuple[HSV, ...]
+    colours: tuple[HSV, ...] | None
 
 
 def infer_base_colours(ranges: tuple[HSVRange, ...]) -> tuple[HSV, ...]:
@@ -66,13 +66,15 @@ def load_colour_preset_meta(name: str) -> ColourPresetMeta | None:
         return None
 
     colours_raw = raw.get("colours")
-    colours = tuple(
-        colour
-        for colour in (
-            _parse_colour(item) for item in colours_raw
+    colours = (
+        tuple(
+            colour
+            for colour in (_parse_colour(item) for item in colours_raw)
+            if colour is not None
         )
-        if colour is not None
-    ) if isinstance(colours_raw, list) else ()
+        if isinstance(colours_raw, list)
+        else None
+    )
 
     try:
         tolerance = int(raw.get("tolerance", 35))
