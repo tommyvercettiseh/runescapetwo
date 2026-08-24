@@ -5,6 +5,11 @@ from tkinter import simpledialog, ttk
 
 import customtkinter as ctk
 
+from core.vision.colour_preset_meta import (
+    delete_colour_preset_meta,
+    restore_colour_preset_meta,
+    snapshot_colour_preset_meta,
+)
 from core.vision.colour_presets import (
     delete_colour_preset,
     list_colour_presets,
@@ -16,8 +21,8 @@ from core.vision.colour_presets import (
 from . import modern_ui
 from .colour_browser import BrowserToleranceColourPage
 from .colour_replay import ColourReplayController, REPLAY_SPEEDS
-from . import unified_plus
 from .stoplight_panel import StoplightPanel
+from .unified_plus import DEFAULT_TOLERANCE
 
 
 class ColourPage(BrowserToleranceColourPage):
@@ -129,7 +134,7 @@ class ColourPage(BrowserToleranceColourPage):
 
         self.current_preset.set(name)
         self.base_colours = []
-        self.colour_tolerance.set(unified_plus.DEFAULT_TOLERANCE)
+        self.colour_tolerance.set(DEFAULT_TOLERANCE)
         self._active_colour_names = {name}
         self._rebuild_ranges()
 
@@ -141,9 +146,9 @@ class ColourPage(BrowserToleranceColourPage):
             "Klik kleur(en) met het pipet en daarna Save updated colour."
         )
 
-    def _pick(self, event) -> None:
-        """Pick without autosaving; persistence is always explicit."""
-        unified_plus.ToleranceColourPage._pick(self, event)
+    def _autosave_after_pick(self) -> bool:
+        """Production editing is explicit; picking never persists automatically."""
+        return False
 
     def _save_colour_from_browser(self) -> None:
         active = set(self._active_colour_names)
@@ -163,7 +168,7 @@ class ColourPage(BrowserToleranceColourPage):
             return
 
         self.current_preset.set(name)
-        unified_plus.ToleranceColourPage._save_current_preset(self)
+        super()._save_current_preset()
         self._active_colour_names = {name}
         self._draw_colour_browser()
         self.status.set(
@@ -274,23 +279,20 @@ class ColourPage(BrowserToleranceColourPage):
             self.status.set(f"Colour '{name}' kon niet worden geladen.")
             return
 
-        meta_all = unified_plus._load_meta()
         self._deleted_colour_snapshot = {
             "name": name,
             "ranges": tuple(preset.ranges),
-            "meta": meta_all.get(name),
+            "meta": snapshot_colour_preset_meta(name),
         }
 
         if not delete_colour_preset(name):
             self.status.set(f"Colour '{name}' kon niet worden verwijderd.")
             return
 
-        if name in meta_all:
-            meta_all.pop(name, None)
-            try:
-                unified_plus._save_meta(meta_all)
-            except OSError:
-                pass
+        try:
+            delete_colour_preset_meta(name)
+        except OSError:
+            pass
 
         was_active = (
             name in self._active_colour_names
@@ -323,10 +325,8 @@ class ColourPage(BrowserToleranceColourPage):
 
         meta = snapshot.get("meta")
         if isinstance(meta, dict):
-            meta_all = unified_plus._load_meta()
-            meta_all[name] = meta
             try:
-                unified_plus._save_meta(meta_all)
+                restore_colour_preset_meta(name, meta)
             except OSError:
                 pass
 
