@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageTk
 
-from . import modern_ui
+from . import ui
 from .enhanced_config import (
     MARKER_HEX,
     MAX_ZOOM_PERCENT,
@@ -27,7 +27,7 @@ class ZoomImageView(tk.Canvas):
     ) -> None:
         super().__init__(
             parent,
-            background=modern_ui.VIEW_BG,
+            background=ui.VIEW_BG,
             borderwidth=0,
             highlightthickness=0,
         )
