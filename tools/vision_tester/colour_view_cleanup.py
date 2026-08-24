@@ -4,7 +4,7 @@ from .area_overlay_toggle import OverlayColourPage
 
 
 class CompactColourPage(OverlayColourPage):
-    """Keep the detector mask alive while showing only the useful operator views."""
+    """Keep detector state intact while hiding the redundant mask preview."""
 
     def _build_previews(self) -> None:
         super()._build_previews()
@@ -20,8 +20,4 @@ class CompactColourPage(OverlayColourPage):
         previews.columnconfigure(2, weight=0, uniform="")
 
 
-def install_colour_view_cleanup() -> None:
-    """Compatibility no-op; CompactColourPage owns the layout explicitly."""
-
-
-__all__ = ["CompactColourPage", "install_colour_view_cleanup"]
+__all__ = ["CompactColourPage"]

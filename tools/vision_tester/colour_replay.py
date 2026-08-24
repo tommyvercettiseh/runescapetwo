@@ -1,17 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 import json
 from pathlib import Path
 from queue import Full, Queue
 import threading
 import tkinter as tk
-from tkinter import filedialog, ttk
+from tkinter import filedialog
 
 import cv2
 import numpy as np
-
-from .colour_delete_undo import DeleteUndoColourPage
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -19,11 +18,44 @@ RECORDINGS_DIR = ROOT / "recordings" / "colour"
 REPLAY_SPEEDS = ("0.5x", "1x", "2x", "4x", "8x")
 NOMINAL_FPS = 10
 
+CaptureGetter = Callable[[], np.ndarray | None]
+CaptureSetter = Callable[[np.ndarray, tuple[int, int, int, int]], None]
+StringGetter = Callable[[], str]
+IntGetter = Callable[[], int]
+BoolSetter = Callable[[bool], None]
+StatusSetter = Callable[[str], None]
+RenderCallback = Callable[[], None]
 
-class RecordedColourPage(DeleteUndoColourPage):
-    """Lossless raw-area recording and replay layered on the operator colour page."""
 
-    def __init__(self, parent) -> None:
+class ColourReplayController:
+    """Own raw recording and replay state without becoming a UI page."""
+
+    def __init__(
+        self,
+        owner: tk.Misc,
+        *,
+        capture_getter: CaptureGetter,
+        capture_setter: CaptureSetter,
+        area_getter: StringGetter,
+        bot_id_getter: IntGetter,
+        live_setter: BoolSetter,
+        status_setter: StatusSetter,
+        render: RenderCallback,
+    ) -> None:
+        self.owner = owner
+        self._capture_getter = capture_getter
+        self._capture_setter = capture_setter
+        self._area_getter = area_getter
+        self._bot_id_getter = bot_id_getter
+        self._live_setter = live_setter
+        self._status_setter = status_setter
+        self._render = render
+
+        self.record_text = tk.StringVar(master=owner, value="Record Raw")
+        self.play_text = tk.StringVar(master=owner, value="Play Video")
+        self.replay_speed = tk.StringVar(master=owner, value="1x")
+        self.replay_info = tk.StringVar(master=owner, value="")
+
         self._recording = False
         self._record_dir: Path | None = None
         self._record_queue: Queue[tuple[int, np.ndarray] | None] = Queue(maxsize=180)
@@ -36,56 +68,73 @@ class RecordedColourPage(DeleteUndoColourPage):
         self._replay_playing = False
         self._replay_active = False
 
-        self.record_text = tk.StringVar(master=parent, value="Record Raw")
-        self.play_text = tk.StringVar(master=parent, value="Play Video")
-        self.replay_speed = tk.StringVar(master=parent, value="1x")
-        self.replay_info = tk.StringVar(master=parent, value="")
-        super().__init__(parent)
+    @property
+    def replay_active(self) -> bool:
+        return self._replay_active
 
-    def _build(self) -> None:
-        super()._build()
-        self._add_recording_controls()
-
-    def _add_recording_controls(self) -> None:
-        toolbar = self.source.master
-        controls = ttk.Frame(toolbar)
-        controls.grid(row=0, column=3, sticky="e", padx=(12, 8))
-
-        ttk.Button(
-            controls,
-            textvariable=self.record_text,
-            command=self._toggle_recording,
-        ).pack(side="left")
-        ttk.Button(
-            controls,
-            textvariable=self.play_text,
-            command=self._play_video,
-        ).pack(side="left", padx=(6, 0))
-        ttk.Combobox(
-            controls,
-            values=REPLAY_SPEEDS,
-            textvariable=self.replay_speed,
-            state="readonly",
-            width=5,
-        ).pack(side="left", padx=(6, 0))
-        ttk.Label(controls, textvariable=self.replay_info).pack(
-            side="left",
-            padx=(8, 0),
-        )
-
-    def _toggle_recording(self) -> None:
+    def toggle_recording(self) -> None:
         if self._recording:
             self._stop_recording()
         else:
             self._start_recording()
 
+    def play_or_pause(self) -> None:
+        if self._replay_playing:
+            self._pause_replay()
+            return
+        if not self._replay_frames and not self._choose_recording():
+            return
+
+        self._replay_playing = True
+        self.play_text.set("Pause")
+        self._live_setter(False)
+        self._replay_active = True
+        self._schedule_next_frame(immediate=True)
+
+    def reset_replay(self) -> None:
+        if not self._replay_frames:
+            self._status_setter("Geen replay geladen om te resetten.")
+            return
+
+        self._pause_replay()
+        self._replay_active = True
+        self._replay_index = 0
+        self._live_setter(False)
+        self._show_replay_frame(0)
+        self._update_replay_info()
+        self._status_setter("Replay gereset naar frame 1 en gepauzeerd.")
+
+    def capture_frame(self) -> None:
+        if not self._recording:
+            return
+
+        capture = self._capture_getter()
+        if capture is None:
+            return
+
+        index = self._record_frame_index
+        try:
+            self._record_queue.put_nowait((index, capture.copy()))
+        except Full:
+            self._status_setter(
+                "RAW recorder loopt achter; één frame overgeslagen."
+            )
+            return
+        self._record_frame_index += 1
+
+    def deactivate(self) -> None:
+        if self._recording:
+            self._stop_recording()
+        if self._replay_playing:
+            self._pause_replay()
+
     def _start_recording(self) -> None:
         if self._replay_active:
             self._stop_replay(clear=True)
 
-        area = self.source.area.get().strip()
+        area = self._area_getter().strip()
         if not area:
-            self.status.set("Kies eerst een area om raw op te nemen.")
+            self._status_setter("Kies eerst een area om raw op te nemen.")
             return
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -100,14 +149,14 @@ class RecordedColourPage(DeleteUndoColourPage):
         self._record_frame_index = 0
         self._recording = True
         self.record_text.set("Stop Raw")
-        self.live.set(True)
+        self._live_setter(True)
 
         metadata = {
             "format": 2,
             "type": "raw_colour_area",
             "created_at": datetime.now().isoformat(timespec="seconds"),
             "area": area,
-            "bot_id": self.source.bot(),
+            "bot_id": self._bot_id_getter(),
             "nominal_fps": NOMINAL_FPS,
             "lossless": True,
             "frame_count": 0,
@@ -124,7 +173,9 @@ class RecordedColourPage(DeleteUndoColourPage):
             daemon=True,
         )
         self._record_thread.start()
-        self.status.set(f"RAW recording: {area} · colours zijn niet nodig.")
+        self._status_setter(
+            f"RAW recording: {area} · colours zijn niet nodig."
+        )
 
     @staticmethod
     def _record_writer(record_dir: Path, queue: Queue) -> None:
@@ -143,17 +194,6 @@ class RecordedColourPage(DeleteUndoColourPage):
                 )
             finally:
                 queue.task_done()
-
-    def _queue_record_frame(self) -> None:
-        if not self._recording or self.capture is None:
-            return
-        index = self._record_frame_index
-        try:
-            self._record_queue.put_nowait((index, self.capture.copy()))
-        except Full:
-            self.status.set("RAW recorder loopt achter; één frame overgeslagen.")
-            return
-        self._record_frame_index += 1
 
     def _stop_recording(self) -> None:
         if not self._recording:
@@ -192,29 +232,16 @@ class RecordedColourPage(DeleteUndoColourPage):
             pass
 
         self._load_recording_folder(record_dir, autoplay=False)
-        self.status.set(
+        self._status_setter(
             f"RAW bewaard: {record_dir.name} · {frame_count} frames."
         )
-
-    def _play_video(self) -> None:
-        if self._replay_playing:
-            self._pause_replay()
-            return
-        if not self._replay_frames and not self._choose_recording():
-            return
-
-        self._replay_playing = True
-        self.play_text.set("Pause")
-        self.live.set(False)
-        self._replay_active = True
-        self._schedule_next_frame(immediate=True)
 
     def _choose_recording(self) -> bool:
         RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
         selected = filedialog.askdirectory(
             title="Kies RAW colour recording",
             initialdir=str(RECORDINGS_DIR),
-            parent=self.winfo_toplevel(),
+            parent=self.owner.winfo_toplevel(),
         )
         if not selected:
             return False
@@ -223,21 +250,21 @@ class RecordedColourPage(DeleteUndoColourPage):
     def _load_recording_folder(self, folder: Path, *, autoplay: bool) -> bool:
         frames = sorted((folder / "frames").glob("*.png"))
         if not frames:
-            self.status.set("Deze RAW recording bevat geen frames.")
+            self._status_setter("Deze RAW recording bevat geen frames.")
             return False
 
         self._stop_replay(clear=True)
         self._replay_frames = frames
         self._replay_index = 0
         self._replay_active = True
-        self.live.set(False)
+        self._live_setter(False)
         self._show_replay_frame(0)
         self._update_replay_info()
-        self.status.set(
+        self._status_setter(
             "RAW video geladen. Pauzeer op een frame en gebruik de pipet."
         )
         if autoplay:
-            self._play_video()
+            self.play_or_pause()
         return True
 
     def _pause_replay(self) -> None:
@@ -245,7 +272,7 @@ class RecordedColourPage(DeleteUndoColourPage):
         self.play_text.set("Play Video")
         if self._replay_job is not None:
             try:
-                self.after_cancel(self._replay_job)
+                self.owner.after_cancel(self._replay_job)
             except tk.TclError:
                 pass
             self._replay_job = None
@@ -268,6 +295,7 @@ class RecordedColourPage(DeleteUndoColourPage):
     def _schedule_next_frame(self, *, immediate: bool = False) -> None:
         if not self._replay_playing or not self._replay_frames:
             return
+
         delay = (
             1
             if immediate
@@ -276,7 +304,7 @@ class RecordedColourPage(DeleteUndoColourPage):
                 round((1000 / NOMINAL_FPS) / self._speed_multiplier()),
             )
         )
-        self._replay_job = self.after(delay, self._advance_replay)
+        self._replay_job = self.owner.after(delay, self._advance_replay)
 
     def _advance_replay(self) -> None:
         self._replay_job = None
@@ -291,13 +319,14 @@ class RecordedColourPage(DeleteUndoColourPage):
     def _show_replay_frame(self, index: int) -> None:
         if not self._replay_frames:
             return
+
         bgr = cv2.imread(str(self._replay_frames[index]), cv2.IMREAD_COLOR)
         if bgr is None:
             return
 
-        self.capture = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-        height, width = self.capture.shape[:2]
-        self.capture_region = (0, 0, width, height)
+        capture = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+        height, width = capture.shape[:2]
+        self._capture_setter(capture, (0, 0, width, height))
         self._render()
 
     def _update_replay_info(self) -> None:
@@ -308,22 +337,8 @@ class RecordedColourPage(DeleteUndoColourPage):
             f"{self._replay_index + 1}/{len(self._replay_frames)}"
         )
 
-    def _capture(self) -> None:
-        if self._replay_active:
-            return
-        super()._capture()
-        self._queue_record_frame()
 
-    def deactivate(self) -> None:
-        if self._recording:
-            self._stop_recording()
-        if self._replay_playing:
-            self._pause_replay()
-        super().deactivate()
-
-
-def install_colour_recording() -> None:
-    """Compatibility no-op; use RecordedColourPage explicitly."""
-
-
-__all__ = ["RecordedColourPage", "install_colour_recording"]
+__all__ = [
+    "ColourReplayController",
+    "REPLAY_SPEEDS",
+]
