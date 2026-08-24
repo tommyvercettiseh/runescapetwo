@@ -11,6 +11,7 @@ from . import mouse_engine
 from .movements import create_path
 from .mouse_plan import MousePlanValidationError, validate_mouse_plan
 from .mouse_runtime import (
+    PENDING_CLICK_TIMEOUT_S,
     MouseActionCancelled,
     MouseExecutionStatus,
     MouseRuntimeError,
