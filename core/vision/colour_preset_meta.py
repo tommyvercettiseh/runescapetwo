@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 import json
 import os
@@ -102,6 +103,27 @@ def save_colour_preset_meta(
     _write_raw(data)
 
 
+def snapshot_colour_preset_meta(name: str) -> dict[str, object] | None:
+    """Return an exact raw snapshot so undo can restore legacy metadata losslessly."""
+    normalized = normalize_colour_name(name)
+    raw = _read_raw().get(normalized)
+    return deepcopy(raw) if isinstance(raw, dict) else None
+
+
+def restore_colour_preset_meta(
+    name: str,
+    snapshot: dict[str, object] | None,
+) -> None:
+    """Restore a previously captured metadata snapshot exactly."""
+    normalized = normalize_colour_name(name)
+    data = _read_raw()
+    if snapshot is None:
+        data.pop(normalized, None)
+    else:
+        data[normalized] = deepcopy(snapshot)
+    _write_raw(data)
+
+
 def delete_colour_preset_meta(name: str) -> bool:
     normalized = normalize_colour_name(name)
     data = _read_raw()
@@ -117,5 +139,7 @@ __all__ = [
     "delete_colour_preset_meta",
     "infer_base_colours",
     "load_colour_preset_meta",
+    "restore_colour_preset_meta",
     "save_colour_preset_meta",
+    "snapshot_colour_preset_meta",
 ]
