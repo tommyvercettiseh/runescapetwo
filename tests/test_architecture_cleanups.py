@@ -13,7 +13,6 @@ from tools.vision_tester.colour_page import ColourPage
 from tools.vision_tester.preset_ui import PresetColourPage
 from tools.vision_tester.sensor_boolean_badge import EnhancedSensorPage
 from tools.vision_tester.sensor_page import SensorPage
-from tools.vision_tester.stoplight_panel import StoplightPanel
 from tools.vision_tester.template_page import TemplatePage
 from tools.vision_tester.template_plus import SearchableTemplatePage
 from tools.vision_tester.unified_plus import ToleranceColourPage
@@ -93,9 +92,11 @@ def test_colour_page_uses_one_operator_page_instead_of_feature_subclasses() -> N
     assert legacy_page_names.isdisjoint(cls.__name__ for cls in ColourPage.__mro__)
 
 
-def test_stoplight_feedback_is_composed_not_inherited() -> None:
-    assert not issubclass(ColourPage, StoplightPanel)
-    assert "StoplightPanel(" in _source("tools/vision_tester/colour_page.py")
+def test_colour_workspace_does_not_embed_replay_or_stoplights() -> None:
+    source = _source("tools/vision_tester/colour_page.py")
+    assert "StoplightPanel" not in source
+    assert "ColourReplayController" not in source
+    assert "REPLAY_SPEEDS" not in source
 
 
 def test_legacy_colour_feature_modules_are_removed() -> None:
@@ -128,7 +129,7 @@ def test_modern_ui_is_only_a_compatibility_facade() -> None:
 
 def test_modern_ui_dependency_cannot_spread() -> None:
     directory = ROOT / "tools" / "vision_tester"
-    allowed = {"colour_browser.py", "colour_page.py"}
+    allowed = {"colour_browser.py"}
     offenders = {
         path.name
         for path in directory.glob("*.py")
