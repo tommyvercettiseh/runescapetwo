@@ -5,29 +5,19 @@ import sys
 import time
 import tkinter as tk
 from queue import Empty, SimpleQueue
-from tkinter import ttk
 from typing import Type
 
+import customtkinter as ctk
 from pynput.keyboard import Key as KeyboardKey
 from pynput.keyboard import Listener as KeyboardListener
 
+from . import ui
 from .sensor_page import SensorPage
 from .template_page import TemplatePage
 
 
-def _is_dark_colour(value: str) -> bool:
-    try:
-        value = value.lstrip("#")
-        red, green, blue = (
-            int(value[index : index + 2], 16) for index in (0, 2, 4)
-        )
-    except (TypeError, ValueError):
-        return False
-    return (0.299 * red + 0.587 * green + 0.114 * blue) < 128
-
-
 class VisionTesterShell(tk.Tk):
-    """Shared notebook shell with explicit page dependencies."""
+    """Shared tester shell with one consistent custom navigation system."""
 
     def __init__(
         self,
@@ -55,106 +45,153 @@ class VisionTesterShell(tk.Tk):
         self._hotkey_listener: KeyboardListener | None = None
         self._last_f2_at = 0.0
         self._closing = False
-        self.pages: list[object] = []
-        self.current_page = None
-        self._dark_shell = _is_dark_colour(background)
-        self._notebook_style = "TNotebook"
 
-        self._configure_style()
+        self.pages: list[object] = []
+        self._page_hosts: list[ctk.CTkFrame] = []
+        self._nav_buttons: list[ctk.CTkButton] = []
+        self._nav_underlines: list[ctk.CTkFrame] = []
+        self._selected_index = 0
+        self.current_page = None
+
         self._build()
         self.protocol("WM_DELETE_WINDOW", self._close)
         self._start_hotkeys()
         self.after(50, self._poll_hotkeys)
         self.after(120, self._activate_current_page)
 
-    def _configure_style(self) -> None:
-        style = ttk.Style(self)
-        available = style.theme_names()
-        if self._dark_shell and "clam" in available:
-            style.theme_use("clam")
-            self._notebook_style = "Vision.TNotebook"
-            style.configure(
-                "Vision.TNotebook",
-                background=self._background,
-                borderwidth=0,
-                tabmargins=(4, 4, 4, 0),
-            )
-            style.configure(
-                "Vision.TNotebook.Tab",
-                background=self._background,
-                foreground=self._muted_text,
-                borderwidth=0,
-                padding=(16, 9),
-                font=("Segoe UI", 10),
-            )
-            style.map(
-                "Vision.TNotebook.Tab",
-                background=[("selected", "#18212b"), ("active", "#151e27")],
-                foreground=[("selected", "#f1f5f8"), ("active", "#f1f5f8")],
-            )
-            return
-
-        if sys.platform == "win32" and "vista" in available:
-            style.theme_use("vista")
-        style.configure("TNotebook.Tab", padding=(14, 6))
-
     def _build(self) -> None:
-        root = tk.Frame(self, background=self._background, padx=8, pady=6)
+        root = ctk.CTkFrame(self, fg_color=self._background, corner_radius=0)
         root.pack(fill="both", expand=True)
-        root.rowconfigure(0, weight=1)
-        root.columnconfigure(0, weight=1)
+        root.grid_columnconfigure(0, weight=1)
+        root.grid_rowconfigure(1, weight=1)
 
-        self.tabs = ttk.Notebook(root, style=self._notebook_style)
-        self.tabs.grid(row=0, column=0, sticky="nsew")
+        self.nav = ctk.CTkFrame(root, fg_color=self._background, corner_radius=0)
+        self.nav.grid(row=0, column=0, sticky="ew", padx=14, pady=(10, 6))
+        self.nav.grid_columnconfigure(0, weight=0)
+        self.nav.grid_columnconfigure(1, weight=1)
 
-        colour_host = tk.Frame(self.tabs, background=self._background)
-        template_host = tk.Frame(self.tabs, background=self._background)
-        sensor_host = tk.Frame(self.tabs, background=self._background)
-        self.tabs.add(colour_host, text="Colour")
-        self.tabs.add(template_host, text="Template")
-        self.tabs.add(sensor_host, text="Sensor")
+        self.nav_items = ctk.CTkFrame(self.nav, fg_color="transparent")
+        self.nav_items.grid(row=0, column=0, sticky="w")
 
-        self.colour_page = self._colour_page_type(colour_host)
-        self.template_page = self._template_page_type(template_host)
-        self.sensor_page = self._sensor_page_type(sensor_host)
+        ctk.CTkLabel(
+            self.nav,
+            text="F2  Capture",
+            text_color=ui.MUTED,
+            font=ui.font(10),
+        ).grid(row=0, column=1, sticky="e", padx=(16, 4))
 
-        self.pages = [
-            self.colour_page,
-            self.template_page,
-            self.sensor_page,
-        ]
-        for page in self.pages:
-            page.pack(fill="both", expand=True)
+        self.content = ctk.CTkFrame(
+            root,
+            fg_color=self._background,
+            corner_radius=0,
+        )
+        self.content.grid(row=1, column=0, sticky="nsew")
+        self.content.grid_rowconfigure(0, weight=1)
+        self.content.grid_columnconfigure(0, weight=1)
 
-        self.tabs.bind("<<NotebookTabChanged>>", self._tab_changed)
+        self.colour_page = self._add_page("Colour", self._colour_page_type)
+        self.template_page = self._add_page("Template", self._template_page_type)
+        self.sensor_page = self._add_page("Sensor", self._sensor_page_type)
+        self._show_host(0)
+        self._refresh_navigation()
 
-    def add_page(self, title: str, page_type: Type):
-        """Add one explicit extra notebook page and include it in lifecycle handling."""
-        host = tk.Frame(self.tabs, background=self._background)
-        self.tabs.add(host, text=title)
+    def _add_page(self, title: str, page_type: Type):
+        index = len(self.pages)
+
+        nav_item = ctk.CTkFrame(self.nav_items, fg_color="transparent")
+        nav_item.grid(row=0, column=index, padx=(0, 6))
+        button = ctk.CTkButton(
+            nav_item,
+            text=title,
+            command=lambda value=index: self._select_page(value),
+            width=max(92, 28 + len(title) * 8),
+            height=38,
+            corner_radius=8,
+            border_width=0,
+            fg_color="transparent",
+            hover_color=ui.CONTROL_HOVER,
+            text_color=ui.MUTED,
+            font=ui.font(12, bold=True),
+        )
+        button.grid(row=0, column=0, sticky="ew")
+        underline = ctk.CTkFrame(
+            nav_item,
+            height=2,
+            corner_radius=1,
+            fg_color="transparent",
+        )
+        underline.grid(row=1, column=0, sticky="ew", padx=10, pady=(3, 0))
+
+        host = ctk.CTkFrame(
+            self.content,
+            fg_color=self._background,
+            corner_radius=0,
+        )
+        host.grid(row=0, column=0, sticky="nsew")
+        if index != self._selected_index:
+            host.grid_remove()
+
         page = page_type(host)
         page.pack(fill="both", expand=True)
+
         self.pages.append(page)
+        self._page_hosts.append(host)
+        self._nav_buttons.append(button)
+        self._nav_underlines.append(underline)
         return page
+
+    def add_page(self, title: str, page_type: Type):
+        """Add an extra page and include it in navigation/lifecycle handling."""
+        page = self._add_page(title, page_type)
+        self._refresh_navigation()
+        return page
+
+    def _select_page(self, index: int) -> None:
+        if not 0 <= index < len(self.pages):
+            return
+        if index == self._selected_index and self.current_page is not None:
+            return
+        self._selected_index = index
+        self._show_host(index)
+        self._refresh_navigation()
+        self._activate_current_page()
+
+    def _show_host(self, selected_index: int) -> None:
+        for index, host in enumerate(self._page_hosts):
+            if index == selected_index:
+                host.grid()
+                host.tkraise()
+            else:
+                host.grid_remove()
+
+    def _refresh_navigation(self) -> None:
+        for index, (button, underline) in enumerate(
+            zip(self._nav_buttons, self._nav_underlines)
+        ):
+            selected = index == self._selected_index
+            button.configure(
+                fg_color=ui.CARD_ALT if selected else "transparent",
+                hover_color=ui.CONTROL_HOVER,
+                text_color=ui.TEXT if selected else ui.MUTED,
+            )
+            underline.configure(
+                fg_color=ui.ACCENT if selected else "transparent"
+            )
 
     def _selected_page(self):
         try:
-            return self.pages[self.tabs.index(self.tabs.select())]
-        except (IndexError, tk.TclError):
+            return self.pages[self._selected_index]
+        except IndexError:
             return None
 
     def _activate_current_page(self) -> None:
         page = self._selected_page()
         if page is None:
             return
-
         if self.current_page is not None and self.current_page is not page:
             self.current_page.deactivate()
         self.current_page = page
         self.current_page.activate()
-
-    def _tab_changed(self, _event=None) -> None:
-        self._activate_current_page()
 
     def _start_hotkeys(self) -> None:
         options = {"on_press": self._global_key_pressed}
