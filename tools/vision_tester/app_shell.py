@@ -11,7 +11,8 @@ from typing import Type
 from pynput.keyboard import Key as KeyboardKey
 from pynput.keyboard import Listener as KeyboardListener
 
-from . import modern_ui
+from .sensor_page import SensorPage
+from .template_page import TemplatePage
 
 
 class VisionTesterShell(tk.Tk):
@@ -24,8 +25,8 @@ class VisionTesterShell(tk.Tk):
         background: str,
         muted_text: str,
         theme_setup: Callable[[], None],
-        template_page_type: Type = modern_ui.TemplatePage,
-        sensor_page_type: Type = modern_ui.SensorPage,
+        template_page_type: Type = TemplatePage,
+        sensor_page_type: Type = SensorPage,
     ) -> None:
         theme_setup()
         super().__init__()
