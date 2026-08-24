@@ -7,8 +7,10 @@ from tools.unified_tester.action_registry import ACTION_SPECS, action_names, get
 from tools.unified_tester.result_utils import format_result, result_detail, result_success
 from tools.unified_tester.scenario_code_editor import ScenarioCodeEditor
 from tools.unified_tester.scenario_runner import BANKING_SCENARIO, STEP_HANDLERS
+from tools.vision_tester.colour_base import ColourBasePage
 from tools.vision_tester.colour_browser import BrowserToleranceColourPage
 from tools.vision_tester.colour_page import ColourPage
+from tools.vision_tester.preset_ui import PresetColourPage
 from tools.vision_tester.sensor_boolean_badge import EnhancedSensorPage
 from tools.vision_tester.sensor_page import SensorPage
 from tools.vision_tester.stoplight_panel import StoplightPanel
@@ -78,6 +80,7 @@ def test_inventory_exclusions_share_required_and_optional_rules(monkeypatch) -> 
 def test_colour_page_uses_one_operator_page_instead_of_feature_subclasses() -> None:
     assert ColourPage.__bases__ == (BrowserToleranceColourPage,)
     assert issubclass(BrowserToleranceColourPage, ToleranceColourPage)
+    assert PresetColourPage.__bases__ == (ColourBasePage,)
 
     legacy_page_names = {
         "ManualColourPage",
@@ -121,6 +124,17 @@ def test_modern_ui_is_only_a_compatibility_facade() -> None:
     assert "match_template(" not in source
     assert "calculate_color_score(" not in source
     assert len(source.splitlines()) < 100
+
+
+def test_modern_ui_dependency_cannot_spread() -> None:
+    directory = ROOT / "tools" / "vision_tester"
+    allowed = {"colour_browser.py", "colour_page.py"}
+    offenders = {
+        path.name
+        for path in directory.glob("*.py")
+        if path.name != "modern_ui.py" and "modern_ui" in path.read_text(encoding="utf-8")
+    }
+    assert offenders <= allowed
 
 
 def test_production_vision_app_has_no_runtime_installers() -> None:
