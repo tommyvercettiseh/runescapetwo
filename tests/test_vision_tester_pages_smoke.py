@@ -20,7 +20,10 @@ from tools.vision_tester.template_plus import SearchableTemplatePage
 )
 def test_production_vision_page_builds(page_type) -> None:
     apply_enhanced_theme()
-    root = tk.Tk()
+    try:
+        root = tk.Tk()
+    except tk.TclError as exc:
+        pytest.skip(f"Tk is unavailable on this CI runner: {exc}")
     root.withdraw()
     try:
         page = page_type(root)
