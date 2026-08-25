@@ -76,20 +76,18 @@ def test_inventory_exclusions_share_required_and_optional_rules(monkeypatch) -> 
     assert missing == ("Missing",)
 
 
-def test_colour_page_uses_one_operator_page_instead_of_feature_subclasses() -> None:
+def test_colour_page_has_one_clear_behaviour_base() -> None:
     assert ColourPage.__bases__ == (BrowserToleranceColourPage,)
-    assert issubclass(BrowserToleranceColourPage, ToleranceColourPage)
-    assert PresetColourPage.__bases__ == (ColourBasePage,)
+    assert BrowserToleranceColourPage.__bases__ == (ColourBasePage,)
+    assert ColourPage.__mro__[:3] == (
+        ColourPage,
+        BrowserToleranceColourPage,
+        ColourBasePage,
+    )
 
-    legacy_page_names = {
-        "ManualColourPage",
-        "DeleteUndoColourPage",
-        "RecordedColourPage",
-        "ReplayResetPage",
-        "HpStoplightMonitorPage",
-        "PrayerStoplightMonitorPage",
-    }
-    assert legacy_page_names.isdisjoint(cls.__name__ for cls in ColourPage.__mro__)
+    # Historical import names remain adapters, not extra inheritance layers.
+    assert PresetColourPage is BrowserToleranceColourPage
+    assert ToleranceColourPage is BrowserToleranceColourPage
 
 
 def test_colour_workspace_does_not_embed_replay_or_stoplights() -> None:
@@ -99,17 +97,26 @@ def test_colour_workspace_does_not_embed_replay_or_stoplights() -> None:
     assert "REPLAY_SPEEDS" not in source
 
 
-def test_legacy_colour_feature_modules_are_removed() -> None:
-    legacy_modules = {
-        "manual_colour_save.py",
+def test_dead_vision_tester_layers_stay_removed() -> None:
+    removed = {
+        "area_overlay_toggle.py",
         "colour_delete_undo.py",
         "colour_recording.py",
-        "replay_reset.py",
+        "colour_replay.py",
+        "colour_view_cleanup.py",
+        "common.py",
+        "enhanced_colour_page.py",
+        "hotkey_fix.py",
         "hp_stoplight_monitor.py",
+        "image_page.py",
+        "manual_colour_save.py",
         "prayer_stoplight_monitor.py",
+        "replay_palette_builder.py",
+        "replay_reset.py",
+        "stoplight_panel.py",
     }
     directory = ROOT / "tools" / "vision_tester"
-    assert not any((directory / name).exists() for name in legacy_modules)
+    assert not any((directory / name).exists() for name in removed)
 
 
 def test_template_and_sensor_features_use_explicit_page_modules() -> None:
@@ -129,13 +136,32 @@ def test_modern_ui_is_only_a_compatibility_facade() -> None:
 
 def test_modern_ui_dependency_cannot_spread() -> None:
     directory = ROOT / "tools" / "vision_tester"
-    allowed = {"colour_browser.py"}
     offenders = {
         path.name
         for path in directory.glob("*.py")
         if path.name != "modern_ui.py" and "modern_ui" in path.read_text(encoding="utf-8")
     }
-    assert offenders <= allowed
+    assert offenders == set()
+
+
+def test_definition_registry_lives_with_definitions() -> None:
+    adapter = _source("tools/definition_tester/registry.py")
+    canonical = _source("definitions/registry.py")
+    assert "from definitions.registry import" in adapter
+    assert "DefinitionEntry(" not in adapter
+    assert "DEFINITIONS:" in canonical
+
+
+def test_architecture_document_names_canonical_owners() -> None:
+    architecture = _source("ARCHITECTURE.md")
+    for owner in (
+        "core/vision/template_analysis.py",
+        "core/vision/colour_analysis.py",
+        "core/mouse_actions.py",
+        "definitions/registry.py",
+        "tools/vision_tester/",
+    ):
+        assert owner in architecture
 
 
 def test_production_vision_app_has_no_runtime_installers() -> None:
