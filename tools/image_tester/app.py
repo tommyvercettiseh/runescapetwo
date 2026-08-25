@@ -9,15 +9,15 @@ import cv2
 from PIL import Image, ImageTk
 
 from core.vision.areas import load_areas
-from core.vision.color_matching import calculate_color_score
 from core.vision.models import TemplateSettings
 from core.vision.screenshots import capture_area
-from core.vision.template_matching import available_methods, iter_candidates, match_template
+from core.vision.template_analysis import analyse_template, template_fits
+from core.vision.template_matching import available_methods
 from core.vision.templates import IMAGES_DIR, load_settings, load_template, save_settings
 
 
 class ImageTester(tk.Tk):
-    """Live calibration tool that uses the exact production matching engine."""
+    """Live method comparison using the canonical production template analysis."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -232,12 +232,10 @@ class ImageTester(tk.Tk):
         try:
             screenshot_rgb, region = capture_area(area, bot_id=self.bot_id.get())
             template_rgb, template_gray = load_template(name)
-            screenshot_gray = cv2.cvtColor(screenshot_rgb, cv2.COLOR_RGB2GRAY)
-            height, width = template_gray.shape[:2]
-            if screenshot_gray.shape[0] < height or screenshot_gray.shape[1] < width:
+            if not template_fits(screenshot_rgb, template_gray):
                 raise ValueError("Template is groter dan de geselecteerde area")
 
-            shape_limit = self.shape_threshold.get() / 100.0
+            shape_limit = self.shape_threshold.get()
             color_limit = self.color_threshold.get()
             maximum_hits = max(1, int(self.maximum_hits.get()))
 
@@ -250,38 +248,34 @@ class ImageTester(tk.Tk):
                     continue
 
                 method_started = time.perf_counter()
-                scores = match_template(screenshot_gray, template_gray, method)
+                analysis = analyse_template(
+                    screenshot_rgb,
+                    template_rgb,
+                    template_gray,
+                    method=method,
+                    minimum_shape=shape_limit,
+                    maximum_candidates=maximum_hits,
+                )
                 visual = screenshot_rgb.copy()
                 valid_hits = 0
-                candidates = 0
                 best_shape = 0.0
                 best_color = 0.0
 
-                for x, y, score in iter_candidates(
-                    scores,
-                    shape_limit,
-                    width,
-                    height,
-                    maximum_candidates=maximum_hits,
-                ):
-                    candidates += 1
-                    shape_score = score * 100.0
-                    patch = screenshot_rgb[y : y + height, x : x + width]
-                    color_score = calculate_color_score(template_rgb, patch)
-                    valid = color_score >= color_limit
+                for candidate in analysis.candidates:
+                    valid = candidate.passes_colour(color_limit)
                     valid_hits += int(valid)
-                    best_shape = max(best_shape, shape_score)
-                    best_color = max(best_color, color_score)
-
+                    best_shape = max(best_shape, candidate.shape_score)
+                    best_color = max(best_color, candidate.color_score)
                     box_color = (0, 255, 0) if valid else (255, 0, 0)
                     cv2.rectangle(
                         visual,
-                        (x, y),
-                        (x + width, y + height),
+                        (candidate.x, candidate.y),
+                        (candidate.x + candidate.width, candidate.y + candidate.height),
                         box_color,
                         2,
                     )
 
+                candidates = len(analysis.candidates)
                 elapsed_ms = (time.perf_counter() - method_started) * 1000.0
                 frame.configure(
                     text=(
