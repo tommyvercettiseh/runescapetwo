@@ -1,26 +1,84 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import ttk
+from tkinter import messagebox, simpledialog
 
 import customtkinter as ctk
 
 from core.vision.areas import load_areas
-from core.vision.colour_preset_meta import infer_base_colours, load_colour_preset_meta
-from core.vision.colour_presets import list_colour_presets, load_colour_preset
+from core.vision.colour_detection import hsv_ranges_around, sample_hsv
+from core.vision.colour_preset_meta import (
+    delete_colour_preset_meta,
+    infer_base_colours,
+    load_colour_preset_meta,
+    save_colour_preset_meta,
+)
+from core.vision.colour_presets import (
+    delete_colour_preset,
+    list_colour_presets,
+    load_colour_preset,
+    normalize_colour_name,
+    save_colour_preset,
+)
 
-from . import modern_ui, unified_plus
-
+from . import ui
+from .colour_base import ColourBasePage
+from .enhanced_config import PIPETTE_EDGE_PADDING, SAMPLE_SIZES
+from .screen_overlay import ScreenAreaOverlay
 
 CONTROL_MASK = 0x0004
 BLOB_MIN_LIMIT = 5000
 BLOB_MAX_LIMIT = 10000
+DEFAULT_PRESET_NAME = "cyan"
+DEFAULT_TOLERANCE = 35
 
 
-class BrowserToleranceColourPage(unified_plus.ToleranceColourPage):
-    """Tolerance colour page with dedicated searchable Colour and Area browsers."""
+def filter_preset_names(names: list[str], query: str) -> list[str]:
+    terms = [term for term in query.strip().casefold().split() if term]
+    if not terms:
+        return list(names)
+    return [name for name in names if all(term in name.casefold() for term in terms)]
+
+
+def format_ranges(ranges) -> str:
+    if not ranges:
+        return "No colour selected."
+    return " | ".join(
+        f"H {lower[0]}-{upper[0]}  S {lower[1]}-{upper[1]}  V {lower[2]}-{upper[2]}"
+        for lower, upper in ranges
+    )
+
+
+def tolerance_values(value: int) -> tuple[int, int, int]:
+    """Translate the friendly 0..100 slider to HSV tolerances."""
+    amount = min(100, max(0, int(value))) / 100.0
+    return (
+        1 + round(14 * amount),
+        8 + round(92 * amount),
+        8 + round(92 * amount),
+    )
+
+
+class BrowserToleranceColourPage(ColourBasePage):
+    """Single behaviour layer for the production Colour workspace.
+
+    The concrete ColourPage owns layout. This base owns only reusable workspace
+    state: presets, tolerance, browser selection, sampling and area-overlay
+    lifecycle. No historical UI subclasses are involved anymore.
+    """
 
     def __init__(self, parent) -> None:
+        self.preset_search = tk.StringVar(master=parent, value="")
+        self.current_preset = tk.StringVar(master=parent, value=DEFAULT_PRESET_NAME)
+        self.preset_summary = tk.StringVar(master=parent, value="No colour selected.")
+        self._preset_names: list[str] = []
+        self.preset_box = None
+
+        self.colour_tolerance = tk.IntVar(master=parent, value=DEFAULT_TOLERANCE)
+        self.base_colours: list[tuple[int, int, int]] = []
+        self.colour_count_text = tk.StringVar(master=parent, value="0 colours")
+        self.tolerance_text = tk.StringVar(master=parent, value=f"{DEFAULT_TOLERANCE}%")
+
         self.colour_filter = tk.StringVar(master=parent, value="")
         self.area_filter = tk.StringVar(master=parent, value="")
         self._active_colour_names: set[str] = set()
@@ -31,137 +89,14 @@ class BrowserToleranceColourPage(unified_plus.ToleranceColourPage):
         self.area_scroll: ctk.CTkScrollableFrame | None = None
         self.colour_rows: dict[str, ctk.CTkButton] = {}
         self.area_rows: dict[str, ctk.CTkButton] = {}
+
+        self.pipette_sample_size = tk.IntVar(master=parent, value=1)
+        self._screen_area_overlay: ScreenAreaOverlay | None = None
+
         super().__init__(parent)
+        self._reload_presets()
 
-    def _build(self) -> None:
-        super()._build()
-        self._simplify_existing_controls()
-
-        for child in [
-            child
-            for child in self.grid_slaves()
-            if child.winfo_manager() == "grid"
-        ]:
-            info = child.grid_info()
-            child.grid_configure(column=int(info.get("column", 0)) + 2)
-
-        self.grid_columnconfigure(0, weight=0, minsize=245)
-        self.grid_columnconfigure(1, weight=0, minsize=245)
-        self.grid_columnconfigure(2, weight=1)
-
-        self._build_colour_browser()
-        self._build_area_browser()
-        self._browser_ready = True
-        self._draw_colour_browser()
-        self._draw_area_browser()
-
-    def _simplify_existing_controls(self) -> None:
-        try:
-            toolbar = self.source.master
-            self.source.grid_remove()
-            compact = ttk.Frame(toolbar)
-            compact.grid(row=0, column=0, sticky="w")
-            ttk.Label(compact, text="Bot ID").pack(side="left")
-            ttk.Spinbox(
-                compact,
-                from_=1,
-                to=4,
-                textvariable=self.source.bot_id,
-                width=4,
-            ).pack(side="left", padx=(6, 14))
-            ttk.Checkbutton(
-                compact,
-                text="Show area overlay",
-                variable=self.source.show_area_overlay,
-                command=self._overlay_toggle_changed,
-            ).pack(side="left")
-        except (AttributeError, tk.TclError):
-            pass
-
-        for child in list(self.grid_slaves()):
-            try:
-                is_preset_bar = (
-                    isinstance(child, ttk.LabelFrame)
-                    and str(child.cget("text")) == "Colour preset"
-                )
-            except tk.TclError:
-                is_preset_bar = False
-            if is_preset_bar:
-                child.grid_remove()
-
-        self._replace_blob_entries_with_sliders()
-
-    def _replace_blob_entries_with_sliders(self) -> None:
-        controls = next(
-            (
-                child
-                for child in self.grid_slaves()
-                if isinstance(child, ttk.LabelFrame)
-                and str(child.cget("text")) == "Detection"
-            ),
-            None,
-        )
-        if controls is None:
-            return
-
-        for widget in list(controls.grid_slaves()):
-            info = widget.grid_info()
-            if int(info.get("row", 0)) == 0 and int(info.get("column", 0)) <= 3:
-                widget.destroy()
-
-        try:
-            minimum = max(1, int(self.minimum.get() or 1))
-        except ValueError:
-            minimum = 20
-        try:
-            maximum = max(0, int(self.maximum.get() or 0))
-        except ValueError:
-            maximum = 0
-
-        self.blob_min_slider_value = tk.DoubleVar(
-            master=self,
-            value=min(BLOB_MIN_LIMIT, minimum),
-        )
-        self.blob_max_slider_value = tk.DoubleVar(
-            master=self,
-            value=min(BLOB_MAX_LIMIT, maximum),
-        )
-        self.blob_min_slider_text = tk.StringVar(
-            master=self,
-            value=f"Min {minimum} px",
-        )
-        self.blob_max_slider_text = tk.StringVar(
-            master=self,
-            value="Max ∞" if maximum == 0 else f"Max {maximum} px",
-        )
-
-        min_group = ttk.Frame(controls)
-        min_group.grid(row=0, column=0, columnspan=2, sticky="ew", padx=(0, 10))
-        ttk.Label(min_group, textvariable=self.blob_min_slider_text, width=11).pack(
-            side="left"
-        )
-        ttk.Scale(
-            min_group,
-            from_=1,
-            to=BLOB_MIN_LIMIT,
-            variable=self.blob_min_slider_value,
-            command=self._blob_min_changed,
-            length=145,
-        ).pack(side="left", fill="x", expand=True, padx=(5, 0))
-
-        max_group = ttk.Frame(controls)
-        max_group.grid(row=0, column=2, columnspan=2, sticky="ew", padx=(0, 12))
-        ttk.Label(max_group, textvariable=self.blob_max_slider_text, width=11).pack(
-            side="left"
-        )
-        ttk.Scale(
-            max_group,
-            from_=0,
-            to=BLOB_MAX_LIMIT,
-            variable=self.blob_max_slider_value,
-            command=self._blob_max_changed,
-            length=145,
-        ).pack(side="left", fill="x", expand=True, padx=(5, 0))
+    # Blob controls -----------------------------------------------------
 
     def _schedule_blob_render(self) -> None:
         if self._blob_slider_job is not None:
@@ -187,122 +122,14 @@ class BrowserToleranceColourPage(unified_plus.ToleranceColourPage):
         self.maximum.set(str(maximum))
         self._schedule_blob_render()
 
-    def _build_colour_browser(self) -> None:
-        sidebar = modern_ui._card(self, width=245)
-        sidebar.grid(
-            row=0,
-            column=0,
-            rowspan=9,
-            sticky="nsew",
-            padx=(10, 8),
-            pady=(5, 8),
-        )
-        sidebar.grid_propagate(False)
-        sidebar.grid_rowconfigure(3, weight=1)
-        sidebar.grid_columnconfigure(0, weight=1)
-
-        modern_ui._label(sidebar, "COLOURS", size=12, bold=True).grid(
-            row=0,
-            column=0,
-            sticky="w",
-            padx=14,
-            pady=(14, 8),
-        )
-        search = ctk.CTkEntry(
-            sidebar,
-            textvariable=self.colour_filter,
-            placeholder_text="Zoek colour",
-            height=38,
-            corner_radius=8,
-            fg_color=modern_ui.CARD_ALT,
-            border_color=modern_ui.BORDER,
-            text_color=modern_ui.TEXT,
-        )
-        search.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 7))
-        search.bind("<KeyRelease>", self._colour_filter_changed)
-        search.bind("<Escape>", self._clear_colour_filter)
-
-        self.new_colour_button = modern_ui._button(
-            sidebar,
-            "New colour",
-            self._new_colour_from_browser,
-            primary=True,
-            width=205,
-        )
-        self.new_colour_button.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 9))
-
-        self.colour_scroll = ctk.CTkScrollableFrame(
-            sidebar,
-            fg_color="transparent",
-            scrollbar_button_color=modern_ui.BORDER,
-            scrollbar_button_hover_color=modern_ui.GOLD,
-        )
-        self.colour_scroll.grid(row=3, column=0, sticky="nsew", padx=8, pady=(0, 8))
-        self.colour_scroll.grid_columnconfigure(0, weight=1)
-
-        modern_ui._label(
-            sidebar,
-            "Klik = 1 colour  •  Ctrl+klik = meerdere",
-            muted=True,
-            size=10,
-            wraplength=210,
-            justify="left",
-        ).grid(row=4, column=0, sticky="w", padx=14, pady=(0, 12))
-
-    def _new_colour_from_browser(self) -> None:
-        previous = self.current_preset.get().strip()
-        super()._new_preset()
-        name = self.current_preset.get().strip()
-        if not name or name == previous:
-            return
-        self._active_colour_names = {name}
-        self._draw_colour_browser()
-        self.status.set(f"Nieuwe colour '{name}' klaar.")
+    # Browser state -----------------------------------------------------
 
     @staticmethod
     def _all_colour_names() -> list[str]:
         return sorted(list_colour_presets(), key=str.casefold)
 
     def _filtered_colour_names(self) -> list[str]:
-        terms = [
-            term
-            for term in self.colour_filter.get().strip().casefold().split()
-            if term
-        ]
-        return [
-            name
-            for name in self._all_colour_names()
-            if all(term in name.casefold() for term in terms)
-        ]
-
-    def _draw_colour_browser(self) -> None:
-        if not self._browser_ready or self.colour_scroll is None:
-            return
-        for child in self.colour_scroll.winfo_children():
-            child.destroy()
-
-        self.colour_rows.clear()
-        for row, name in enumerate(self._filtered_colour_names()):
-            selected = name in self._active_colour_names
-            button = ctk.CTkButton(
-                self.colour_scroll,
-                text=name,
-                anchor="w",
-                height=34,
-                corner_radius=7,
-                fg_color=modern_ui.ACCENT_SOFT if selected else "transparent",
-                hover_color=modern_ui.ACCENT_SOFT,
-                text_color=(
-                    modern_ui.ACCENT_HOVER if selected else modern_ui.TEXT
-                ),
-            )
-            button.configure(command=lambda: None)
-            button.bind(
-                "<Button-1>",
-                lambda event, value=name: self._colour_clicked(event, value),
-            )
-            button.grid(row=row, column=0, sticky="ew", pady=1)
-            self.colour_rows[name] = button
+        return filter_preset_names(self._all_colour_names(), self.colour_filter.get())
 
     def _colour_clicked(self, event, name: str):
         ctrl = bool(int(getattr(event, "state", 0)) & CONTROL_MASK)
@@ -313,7 +140,6 @@ class BrowserToleranceColourPage(unified_plus.ToleranceColourPage):
                 self._active_colour_names.add(name)
         else:
             self._active_colour_names = {name}
-
         self._draw_colour_browser()
         self._apply_active_colours()
         return "break"
@@ -325,69 +151,12 @@ class BrowserToleranceColourPage(unified_plus.ToleranceColourPage):
         self.colour_filter.set("")
         self._draw_colour_browser()
 
-    def _build_area_browser(self) -> None:
-        sidebar = modern_ui._card(self, width=245)
-        sidebar.grid(
-            row=0,
-            column=1,
-            rowspan=9,
-            sticky="nsew",
-            padx=(0, 8),
-            pady=(5, 8),
-        )
-        sidebar.grid_propagate(False)
-        sidebar.grid_rowconfigure(2, weight=1)
-        sidebar.grid_columnconfigure(0, weight=1)
-
-        modern_ui._label(sidebar, "AREAS", size=12, bold=True).grid(
-            row=0,
-            column=0,
-            sticky="w",
-            padx=14,
-            pady=(14, 8),
-        )
-        search = ctk.CTkEntry(
-            sidebar,
-            textvariable=self.area_filter,
-            placeholder_text="Zoek area",
-            height=38,
-            corner_radius=8,
-            fg_color=modern_ui.CARD_ALT,
-            border_color=modern_ui.BORDER,
-            text_color=modern_ui.TEXT,
-        )
-        search.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 10))
-        search.bind("<KeyRelease>", self._area_filter_changed)
-        search.bind("<Escape>", self._clear_area_filter)
-
-        self.area_scroll = ctk.CTkScrollableFrame(
-            sidebar,
-            fg_color="transparent",
-            scrollbar_button_color=modern_ui.BORDER,
-            scrollbar_button_hover_color=modern_ui.GOLD,
-        )
-        self.area_scroll.grid(row=2, column=0, sticky="nsew", padx=8, pady=(0, 8))
-        self.area_scroll.grid_columnconfigure(0, weight=1)
-
-        modern_ui._label(
-            sidebar,
-            "Klik een area om direct opnieuw te capturen.",
-            muted=True,
-            size=10,
-            wraplength=210,
-            justify="left",
-        ).grid(row=3, column=0, sticky="w", padx=14, pady=(0, 12))
-
     @staticmethod
     def _all_area_names() -> list[str]:
         return sorted(load_areas(), key=str.casefold)
 
     def _filtered_area_names(self) -> list[str]:
-        terms = [
-            term
-            for term in self.area_filter.get().strip().casefold().split()
-            if term
-        ]
+        terms = [term for term in self.area_filter.get().strip().casefold().split() if term]
         return [
             name
             for name in self._all_area_names()
@@ -411,11 +180,9 @@ class BrowserToleranceColourPage(unified_plus.ToleranceColourPage):
                 anchor="w",
                 height=34,
                 corner_radius=7,
-                fg_color=modern_ui.ACCENT_SOFT if selected else "transparent",
-                hover_color=modern_ui.ACCENT_SOFT,
-                text_color=(
-                    modern_ui.ACCENT_HOVER if selected else modern_ui.TEXT
-                ),
+                fg_color=ui.ACCENT_SOFT if selected else "transparent",
+                hover_color=ui.ACCENT_SOFT,
+                text_color=ui.ACCENT_HOVER if selected else ui.TEXT,
             )
             button.grid(row=row, column=0, sticky="ew", pady=1)
             self.area_rows[name] = button
@@ -461,7 +228,7 @@ class BrowserToleranceColourPage(unified_plus.ToleranceColourPage):
             if len(names) == 1:
                 name = names[0]
                 self.current_preset.set(name)
-                super()._load_current_preset()
+                self._load_current_preset()
                 self.status.set(f"Colour actief: {name}.")
                 return
 
@@ -472,7 +239,6 @@ class BrowserToleranceColourPage(unified_plus.ToleranceColourPage):
                     if hsv not in seen:
                         seen.add(hsv)
                         merged.append(hsv)
-
             self.base_colours = merged
             self._rebuild_ranges()
             self.status.set(
@@ -483,35 +249,149 @@ class BrowserToleranceColourPage(unified_plus.ToleranceColourPage):
         finally:
             self._browser_applying = False
 
-    def _autosave_after_pick(self) -> bool:
-        """Allow concrete pages to opt out without bypassing the inheritance chain."""
-        return True
+    # Tolerance and sampling -------------------------------------------
+
+    def _rebuild_ranges(self) -> None:
+        hue, saturation, brightness = tolerance_values(self.colour_tolerance.get())
+        combined = []
+        for hsv in self.base_colours:
+            combined.extend(
+                hsv_ranges_around(
+                    hsv,
+                    hue_tolerance=hue,
+                    saturation_tolerance=saturation,
+                    value_tolerance=brightness,
+                )
+            )
+        self.ranges = tuple(combined)
+        count = len(self.base_colours)
+        self.colour_count_text.set(f"{count} colour" if count == 1 else f"{count} colours")
+        self.tolerance_text.set(f"{int(self.colour_tolerance.get())}%")
+        self._update_preset_summary()
+        self._reset_blob_history()
+        self._render()
+
+    def _tolerance_changed(self, value) -> None:
+        self.colour_tolerance.set(round(float(value)))
+        self._rebuild_ranges()
+
+    def _selected_sample_size(self) -> int:
+        try:
+            value = int(self.pipette_sample_size.get())
+        except (TypeError, ValueError):
+            return 1
+        return value if value in SAMPLE_SIZES else 1
 
     def _pick(self, event) -> None:
-        before = len(self.base_colours)
-        super()._pick(event)
-        if len(self.base_colours) == before:
+        if self.capture is None or not self.pipette:
             return
-        if len(self._active_colour_names) == 1 and self._autosave_after_pick():
-            super()._save_current_preset()
-            name = self.current_preset.get().strip()
-            if name:
-                self._active_colour_names = {name}
-                self._draw_colour_browser()
+        point = self.capture_view.image_coordinates(event.x, event.y)
+        if point is None:
+            return
 
-    def _load_current_preset(self) -> None:
-        super()._load_current_preset()
-        if self._browser_ready and not self._browser_applying:
-            name = self.current_preset.get().strip()
-            self._active_colour_names = {name} if name else set()
-            self._draw_colour_browser()
+        x, y = point
+        height, width = self.capture.shape[:2]
+        padding = PIPETTE_EDGE_PADDING
+        if x < padding or y < padding or x >= width - padding or y >= height - padding:
+            self.status.set(
+                f"Pipette: choose inside the safe area ({padding}px edge padding)."
+            )
+            return
+
+        sample_size = self._selected_sample_size()
+        hsv = sample_hsv(self.capture, x, y, radius=sample_size // 2)
+        if hsv not in self.base_colours:
+            self.base_colours.append(hsv)
+        self.capture_view.set_marker(x, y, sample_size)
+        self._rebuild_ranges()
+        self.status.set(
+            f"Added colour {hsv} to {self.current_preset.get()} • "
+            f"{len(self.base_colours)} base colour(s) • "
+            f"tolerance {self.colour_tolerance.get()}%."
+        )
+
+        if len(self._active_colour_names) == 1 and self._autosave_after_pick():
+            self._save_current_preset()
+
+    def _autosave_after_pick(self) -> bool:
+        return True
+
+    def _remove_last_colour(self) -> None:
+        if self.base_colours:
+            self.base_colours.pop()
+            self._rebuild_ranges()
+            self.status.set("Last base colour removed.")
+
+    def _clear_colours(self) -> None:
+        self.base_colours.clear()
+        self.capture_view.clear_marker()
+        self._rebuild_ranges()
+        self.status.set("Base colours cleared.")
+
+    # Presets -----------------------------------------------------------
+
+    def _refresh_preset_box(self) -> None:
+        if self.preset_box is None:
+            return
+        values = filter_preset_names(self._preset_names, self.preset_search.get())
+        self.preset_box.configure(values=values or self._preset_names or [DEFAULT_PRESET_NAME])
 
     def _reload_presets(self, *, selected: str | None = None) -> None:
-        super()._reload_presets(selected=selected)
+        self._preset_names = list(list_colour_presets())
+        if selected:
+            self.current_preset.set(selected)
+        elif self.current_preset.get() not in self._preset_names:
+            self.current_preset.set(
+                self._preset_names[0] if self._preset_names else DEFAULT_PRESET_NAME
+            )
+        self._refresh_preset_box()
         if self._browser_ready:
-            available = set(self._all_colour_names())
-            self._active_colour_names.intersection_update(available)
+            self._active_colour_names.intersection_update(self._preset_names)
             self._draw_colour_browser()
+        if not self._preset_names:
+            self.status.set("No presets saved. Pick a colour and save it.")
+
+    def _load_current_preset(self) -> None:
+        name = self.current_preset.get().strip()
+        if not name:
+            messagebox.showerror("Preset", "Preset name is required.")
+            return
+        try:
+            preset = load_colour_preset(name)
+        except (KeyError, ValueError) as exc:
+            self.status.set(str(exc))
+            return
+
+        self.ranges = preset.ranges
+        self.current_preset.set(preset.name)
+        meta = load_colour_preset_meta(preset.name)
+        if meta is not None and meta.colours is not None:
+            self.base_colours = list(meta.colours)
+        else:
+            self.base_colours = list(infer_base_colours(preset.ranges))
+        self.colour_tolerance.set(meta.tolerance if meta is not None else DEFAULT_TOLERANCE)
+        self._rebuild_ranges()
+        self.status.set(f"Preset loaded: {preset.name}.")
+
+        if self._browser_ready and not self._browser_applying:
+            self._active_colour_names = {preset.name}
+            self._draw_colour_browser()
+
+    def _new_preset(self) -> None:
+        self.base_colours = []
+        self.colour_tolerance.set(DEFAULT_TOLERANCE)
+        self._rebuild_ranges()
+        name = simpledialog.askstring("New preset", "Preset name:", parent=self.winfo_toplevel())
+        if name is None:
+            return
+        try:
+            normalized = normalize_colour_name(name)
+        except ValueError as exc:
+            messagebox.showerror("Preset", str(exc))
+            return
+        self.current_preset.set(normalized)
+        self.preset_search.set("")
+        self.status.set(f"New preset ready: {normalized}. Pick a colour and save it.")
 
     def _save_current_preset(self) -> None:
         if len(self._active_colour_names) > 1:
@@ -519,14 +399,122 @@ class BrowserToleranceColourPage(unified_plus.ToleranceColourPage):
                 "Meerdere colours zijn actief; deze combinatie wordt niet als één preset opgeslagen."
             )
             return
-        super()._save_current_preset()
+        self._rebuild_ranges()
+        name = self.current_preset.get().strip()
+        if not name:
+            messagebox.showerror("Preset", "Preset name is required.")
+            return
+        if not self.ranges:
+            messagebox.showerror("Preset", "Pick a colour with the pipette before saving.")
+            return
+        try:
+            normalized = normalize_colour_name(name)
+            save_colour_preset(normalized, self.ranges)
+            if self.base_colours:
+                save_colour_preset_meta(
+                    normalized,
+                    tolerance=int(self.colour_tolerance.get()),
+                    colours=self.base_colours,
+                )
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Preset", str(exc))
+            return
+
+        self._reload_presets(selected=normalized)
+        self._update_preset_summary()
         self._draw_colour_browser()
+        self.status.set(f"Preset saved: {normalized}.")
 
     def _delete_current_preset(self) -> None:
         name = self.current_preset.get().strip()
-        super()._delete_current_preset()
+        if not name:
+            return
+        if not messagebox.askyesno(
+            "Delete preset",
+            f"Delete preset '{name}'?",
+            parent=self.winfo_toplevel(),
+        ):
+            return
+        try:
+            deleted = delete_colour_preset(name)
+            if deleted:
+                delete_colour_preset_meta(name)
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Preset", str(exc))
+            return
+        if not deleted:
+            self.status.set(f"Preset not found: {name}.")
+            return
+
         self._active_colour_names.discard(name)
+        self.base_colours = []
+        self.ranges = ()
+        self.preset_summary.set("No colour selected.")
+        self._reload_presets()
+        self._render()
         self._draw_colour_browser()
+        self.status.set(f"Preset deleted: {name}.")
+
+    def _update_preset_summary(self) -> None:
+        self.preset_summary.set(f"{self.current_preset.get()}: {format_ranges(self.ranges)}")
+
+    # Capture overlay ---------------------------------------------------
+
+    def _draw_blob_overlay(self, _blob, _safe_bounds=None):
+        """Keep the in-app live preview clean; desktop overlay owns target guides."""
+        return self.capture.copy()
+
+    def _overlay_toggle_changed(self) -> None:
+        overlay = self._screen_area_overlay
+        if overlay is None:
+            return
+        if not self.source.show_area_overlay.get():
+            overlay.hide()
+            return
+        if self.source.area.get().strip() and self.capture is not None:
+            overlay.show_region(self.capture_region)
+
+    def _capture(self) -> None:
+        if not self.source.area.get().strip():
+            if self._screen_area_overlay is not None:
+                self._screen_area_overlay.hide()
+            self.capture = None
+            self.status.set("Selecteer eerst een area.")
+            return
+
+        overlay = self._screen_area_overlay
+        if overlay is not None and not overlay.capture_excluded:
+            overlay.hide()
+            self.update_idletasks()
+
+        super()._capture()
+        if self.capture is None:
+            return
+
+        if overlay is None:
+            try:
+                overlay = ScreenAreaOverlay(self.winfo_toplevel())
+            except (tk.TclError, AttributeError):
+                overlay = None
+            self._screen_area_overlay = overlay
+        if overlay is not None:
+            overlay.show_region(self.capture_region)
+            if not self.source.show_area_overlay.get():
+                overlay.hide()
+
+    def deactivate(self) -> None:
+        super().deactivate()
+        if self._screen_area_overlay is not None:
+            self._screen_area_overlay.hide()
 
 
-__all__ = ["BrowserToleranceColourPage"]
+__all__ = [
+    "BLOB_MAX_LIMIT",
+    "BLOB_MIN_LIMIT",
+    "BrowserToleranceColourPage",
+    "DEFAULT_PRESET_NAME",
+    "DEFAULT_TOLERANCE",
+    "filter_preset_names",
+    "format_ranges",
+    "tolerance_values",
+]
