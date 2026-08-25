@@ -3,12 +3,6 @@ from __future__ import annotations
 import customtkinter as ctk
 
 from . import ui
-from .app_shell import VisionTesterShell
-from .deep_zoom import ZoomImageView
-from .enhanced_colour_page import EnhancedColourPage
-from .screen_overlay import ScreenAreaOverlay
-from .source_controls import SearchableSourceControls
-
 
 DARK_BG = "#10161d"
 DARK_CARD = "#171f28"
@@ -25,7 +19,7 @@ DARK_VIEW = "#0b1015"
 
 
 def apply_enhanced_theme() -> None:
-    """Apply the shared dark tester palette used by the production UI."""
+    """Apply the single dark palette used by the production Vision Tester."""
     ctk.set_appearance_mode("dark")
     ui.set_palette(
         background=DARK_BG,
@@ -45,28 +39,18 @@ def apply_enhanced_theme() -> None:
     )
 
 
-class VisionTester(VisionTesterShell):
-    def __init__(self) -> None:
-        super().__init__(
-            colour_page_type=EnhancedColourPage,
-            background=DARK_BG,
-            muted_text=DARK_MUTED,
-            theme_setup=apply_enhanced_theme,
-        )
-
-
-def main() -> None:
-    VisionTester().mainloop()
-
-
 __all__ = [
+    "DARK_ACCENT",
+    "DARK_ACCENT_HOVER",
+    "DARK_ACCENT_SOFT",
     "DARK_BG",
+    "DARK_BORDER",
+    "DARK_CARD",
+    "DARK_CARD_ALT",
+    "DARK_DANGER",
+    "DARK_HOVER",
     "DARK_MUTED",
-    "EnhancedColourPage",
-    "ScreenAreaOverlay",
-    "SearchableSourceControls",
-    "VisionTester",
-    "ZoomImageView",
+    "DARK_TEXT",
+    "DARK_VIEW",
     "apply_enhanced_theme",
-    "main",
 ]
