@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import time
-
 from core import mouse_actions
 from definitions.login.logout_state import (
     INTERFACE_SCREEN_CROSS_IMAGE,
@@ -11,11 +9,13 @@ from definitions.login.logout_state import (
     LogoutState,
     get_logout_state,
 )
+from actions.login.state_loop import run_bounded_state_loop
 
 
-DEFAULT_TIMEOUT_S = 30.0
+DEFAULT_TIMEOUT_S = 60.0
 POLL_INTERVAL_S = 0.40
 SAME_STATE_RETRY_S = 5.0
+MAX_ATTEMPTS_PER_STATE = 3
 
 CLICK_IMAGE_BY_STATE = {
     LogoutState.MENU_CLOSED: LOGOUT_DOOR_UNSELECTED_IMAGE,
@@ -46,53 +46,34 @@ def logout(
     timeout_s: float = DEFAULT_TIMEOUT_S,
     poll_interval_s: float = POLL_INTERVAL_S,
     same_state_retry_s: float = SAME_STATE_RETRY_S,
+    max_attempts_per_state: int = MAX_ATTEMPTS_PER_STATE,
 ) -> bool:
-    """Log out through visually confirmed states only.
+    """Log out through visually confirmed, bounded actions only.
 
-    The door is selected first when needed. If the logout button is hidden by
-    another interface, ``Interface_ScreenCross`` is closed and the state is
-    checked again. The explicit logout button is then clicked and success is
-    confirmed only by the strong logged-out state.
-
-    ``LogOut_Door_Unselected`` and ``LogOut_ClickHereToLogOut`` are not
-    re-confirmed after moving the mouse because their visual state can change
-    on hover. ``Interface_ScreenCross`` keeps the normal pre-click
-    confirmation.
+    Slow screens may be observed for the full timeout. Each clickable state is
+    attempted only ``max_attempts_per_state`` times during the entire run.
+    Hover-sensitive logout targets skip the second identical-image check;
+    ``Interface_ScreenCross`` keeps it.
     """
-    deadline = time.monotonic() + max(0.0, float(timeout_s))
-    previous_state: LogoutState | None = None
-    handled_state: LogoutState | None = None
-    last_click_at = float("-inf")
-    retry_delay = max(0.0, float(same_state_retry_s))
 
-    while time.monotonic() <= deadline:
-        state = get_logout_state(bot_id)
-        if state is LogoutState.LOGGED_OUT:
-            return True
+    def act(state: LogoutState) -> None:
+        _click(
+            CLICK_IMAGE_BY_STATE[state],
+            bot_id,
+            confirm_before_click=(state is LogoutState.BLOCKED_BY_INTERFACE),
+        )
 
-        if state is not previous_state:
-            handled_state = None
-            previous_state = state
-
-        image_name = CLICK_IMAGE_BY_STATE.get(state)
-        now = time.monotonic()
-        may_retry_same_state = now - last_click_at >= retry_delay
-        if image_name is not None and (
-            handled_state is not state or may_retry_same_state
-        ):
-            _click(
-                image_name,
-                bot_id,
-                confirm_before_click=(state is LogoutState.BLOCKED_BY_INTERFACE),
-            )
-            handled_state = state
-            last_click_at = now
-
-        # MENU_OPEN waits for a logout button or blocking interface to appear.
-        # UNKNOWN never receives input.
-        time.sleep(max(0.05, float(poll_interval_s)))
-
-    return get_logout_state(bot_id) is LogoutState.LOGGED_OUT
+    return run_bounded_state_loop(
+        get_state=lambda: get_logout_state(bot_id),
+        success_state=LogoutState.LOGGED_OUT,
+        actionable_states=CLICK_IMAGE_BY_STATE,
+        act=act,
+        timeout_s=timeout_s,
+        poll_interval_s=poll_interval_s,
+        retry_s=same_state_retry_s,
+        max_attempts_per_state=max_attempts_per_state,
+        final_check=lambda: get_logout_state(bot_id) is LogoutState.LOGGED_OUT,
+    )
 
 
 __all__ = ["logout"]
