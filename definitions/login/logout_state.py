@@ -3,13 +3,13 @@ from __future__ import annotations
 from enum import Enum
 
 from core import vision
+from definitions.login.is_logged_out import is_logged_out
 
 
 LOGOUT_AREA = "Bot_Area_Full"
 LOGOUT_CLICK_HERE_IMAGE = "LogOut_ClickHereToLogOut"
 LOGOUT_DOOR_SELECTED_IMAGE = "LogOut_Door_Selected"
 LOGOUT_DOOR_UNSELECTED_IMAGE = "LogOut_Door_Unselected"
-LOGIN_WORLD_SELECTION_IMAGE = "Login_World_Selection"
 INTERFACE_SCREEN_CROSS_IMAGE = "Interface_ScreenCross"
 
 
@@ -24,11 +24,7 @@ class LogoutState(str, Enum):
 
 def get_logout_state(bot_id: int = 1) -> LogoutState:
     """Return the current logout stage without changing anything on screen."""
-    if vision.image_exists(
-        LOGIN_WORLD_SELECTION_IMAGE,
-        area=LOGOUT_AREA,
-        bot_id=bot_id,
-    ):
+    if is_logged_out(bot_id):
         return LogoutState.LOGGED_OUT
 
     if vision.image_exists(
@@ -64,7 +60,6 @@ def get_logout_state(bot_id: int = 1) -> LogoutState:
 
 __all__ = [
     "INTERFACE_SCREEN_CROSS_IMAGE",
-    "LOGIN_WORLD_SELECTION_IMAGE",
     "LOGOUT_AREA",
     "LOGOUT_CLICK_HERE_IMAGE",
     "LOGOUT_DOOR_SELECTED_IMAGE",
