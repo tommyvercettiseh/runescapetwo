@@ -4,6 +4,8 @@ import importlib
 
 from definitions.login import state as login_state
 from definitions.login.state import LoginState
+from tools.unified_tester import action_registry
+from tools.unified_tester.action_registry import ActionContext
 
 
 login_action = importlib.import_module("actions.login.login")
@@ -87,3 +89,26 @@ def test_login_does_not_repeat_click_same_state_immediately(monkeypatch) -> None
 
     assert login_action.login(bot_id=1, timeout_s=10.0, same_state_retry_s=5.0)
     assert clicks == [login_state.LOGIN_PLAY_NOW_IMAGE]
+
+
+def test_login_action_dry_run_only_reports_state(monkeypatch) -> None:
+    monkeypatch.setattr(
+        action_registry,
+        "get_login_state",
+        lambda _bot_id: LoginState.CONNECTING,
+    )
+    monkeypatch.setattr(
+        action_registry,
+        "login",
+        lambda _bot_id: (_ for _ in ()).throw(AssertionError("login executed")),
+    )
+
+    result = action_registry.get_action("Login").execute(
+        ActionContext(bot_id=4, dry_run=True)
+    )
+    assert result == {
+        "action": "Login",
+        "executed": False,
+        "state": "connecting",
+        "note": "Dry run. No input sent.",
+    }
