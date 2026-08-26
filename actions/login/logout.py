@@ -24,13 +24,18 @@ CLICK_IMAGE_BY_STATE = {
 }
 
 
-def _click(image_name: str, bot_id: int) -> bool:
+def _click(
+    image_name: str,
+    bot_id: int,
+    *,
+    confirm_before_click: bool = True,
+) -> bool:
     return bool(
         mouse_actions.click_image(
             image_name=image_name,
             area_name=LOGOUT_AREA,
             bot_id=bot_id,
-            confirm_before_click=True,
+            confirm_before_click=confirm_before_click,
         )
     )
 
@@ -48,6 +53,10 @@ def logout(
     another interface, ``Interface_ScreenCross`` is closed and the state is
     checked again. The explicit logout button is then clicked and success is
     confirmed only when ``Login_World_Selection`` is visible.
+
+    ``LogOut_Door_Unselected`` is intentionally not re-confirmed after moving
+    the mouse because its visual state can change on hover. The screen cross
+    and explicit logout button keep the normal pre-click confirmation.
     """
     deadline = time.monotonic() + max(0.0, float(timeout_s))
     previous_state: LogoutState | None = None
@@ -70,7 +79,11 @@ def logout(
         if image_name is not None and (
             handled_state is not state or may_retry_same_state
         ):
-            _click(image_name, bot_id)
+            _click(
+                image_name,
+                bot_id,
+                confirm_before_click=(state is not LogoutState.MENU_CLOSED),
+            )
             handled_state = state
             last_click_at = now
 
