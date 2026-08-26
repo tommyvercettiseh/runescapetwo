@@ -92,15 +92,17 @@ def test_login_does_not_repeat_click_same_state_immediately(monkeypatch) -> None
     assert clicks == [login_state.LOGIN_PLAY_NOW_IMAGE]
 
 
-def test_login_never_exceeds_max_attempts_for_one_state(monkeypatch) -> None:
+def test_login_never_exceeds_max_attempts_even_if_state_flickers(monkeypatch) -> None:
     stages = iter(
         (
             LoginState.PLAY_NOW,
+            LoginState.HOME,
             LoginState.PLAY_NOW,
+            LoginState.HOME,
             LoginState.PLAY_NOW,
+            LoginState.HOME,
             LoginState.PLAY_NOW,
-            LoginState.PLAY_NOW,
-            LoginState.PLAY_NOW,
+            LoginState.HOME,
             LoginState.LOGGED_IN,
         )
     )
