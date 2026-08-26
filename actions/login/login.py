@@ -16,7 +16,7 @@ from definitions.login.state import (
 
 DEFAULT_TIMEOUT_S = 60.0
 POLL_INTERVAL_S = 0.40
-CLICK_RETRY_S = 1.00
+SAME_STATE_RETRY_S = 5.0
 
 CLICK_IMAGE_BY_STATE = {
     LoginState.DISCONNECTED: LOGIN_OK_IMAGE,
@@ -41,26 +41,42 @@ def login(
     *,
     timeout_s: float = DEFAULT_TIMEOUT_S,
     poll_interval_s: float = POLL_INTERVAL_S,
+    same_state_retry_s: float = SAME_STATE_RETRY_S,
 ) -> bool:
     """Move the current login screen forward until the player is logged in.
 
-    The current screen is analysed every cycle. Transitional states such as
-    Connecting to Server are deliberately left alone; the action only clicks
-    buttons that are safe for the detected stage.
+    Every cycle first determines the current screen. A newly reached actionable
+    state may be clicked immediately. If the same state remains visible after a
+    click, it is left alone for ``same_state_retry_s`` seconds before one retry.
+    Transitional states such as Connecting to Server never receive input.
     """
     deadline = time.monotonic() + max(0.0, float(timeout_s))
-    next_click_at = 0.0
+    previous_state: LoginState | None = None
+    handled_state: LoginState | None = None
+    last_click_at = float("-inf")
+    retry_delay = max(0.0, float(same_state_retry_s))
 
     while time.monotonic() <= deadline:
         state = get_login_state(bot_id)
         if state is LoginState.LOGGED_IN:
             return True
 
+        # A real screen transition starts a fresh step. This means the next
+        # actionable state can be handled immediately instead of inheriting a
+        # delay from the previous button.
+        if state is not previous_state:
+            handled_state = None
+            previous_state = state
+
         image_name = CLICK_IMAGE_BY_STATE.get(state)
         now = time.monotonic()
-        if image_name is not None and now >= next_click_at:
+        may_retry_same_state = now - last_click_at >= retry_delay
+        if image_name is not None and (
+            handled_state is not state or may_retry_same_state
+        ):
             _click(image_name, bot_id)
-            next_click_at = now + CLICK_RETRY_S
+            handled_state = state
+            last_click_at = now
 
         # CONNECTING, HOME and UNKNOWN intentionally do nothing here.
         time.sleep(max(0.05, float(poll_interval_s)))
