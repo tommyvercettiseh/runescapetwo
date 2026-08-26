@@ -52,11 +52,12 @@ def logout(
     The door is selected first when needed. If the logout button is hidden by
     another interface, ``Interface_ScreenCross`` is closed and the state is
     checked again. The explicit logout button is then clicked and success is
-    confirmed only when ``Login_World_Selection`` is visible.
+    confirmed only by the strong logged-out state.
 
-    ``LogOut_Door_Unselected`` is intentionally not re-confirmed after moving
-    the mouse because its visual state can change on hover. The screen cross
-    and explicit logout button keep the normal pre-click confirmation.
+    ``LogOut_Door_Unselected`` and ``LogOut_ClickHereToLogOut`` are not
+    re-confirmed after moving the mouse because their visual state can change
+    on hover. ``Interface_ScreenCross`` keeps the normal pre-click
+    confirmation.
     """
     deadline = time.monotonic() + max(0.0, float(timeout_s))
     previous_state: LogoutState | None = None
@@ -82,7 +83,7 @@ def logout(
             _click(
                 image_name,
                 bot_id,
-                confirm_before_click=(state is not LogoutState.MENU_CLOSED),
+                confirm_before_click=(state is LogoutState.BLOCKED_BY_INTERFACE),
             )
             handled_state = state
             last_click_at = now
