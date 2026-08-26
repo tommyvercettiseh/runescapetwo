@@ -9,10 +9,13 @@ from actions.bank.close_bank import close_bank
 from actions.bank.find_bank import find_bank
 from actions.bank.open_bank import open_bank
 from actions.inventory.drop_inventory import drop_inventory
+from actions.login import login, logout
 from definitions.bank.is_bank_all_selected import is_bank_all_selected
 from definitions.bank.is_bank_closed import is_bank_closed
 from definitions.bank.is_bank_open import is_bank_open
 from definitions.bank.is_bank_visible import is_bank_visible
+from definitions.login.logout_state import get_logout_state
+from definitions.login.state import get_login_state
 
 
 @dataclass(frozen=True)
@@ -29,6 +32,7 @@ class ActionContext:
 class ActionSpec:
     name: str
     execute: Callable[[ActionContext], Any]
+    source: Callable[..., Any]
     uses_inventory_options: bool = False
     uses_pattern: bool = False
     uses_selection: bool = False
@@ -58,6 +62,30 @@ def _simple_bank_action(
     return execute
 
 
+def _login(context: ActionContext):
+    if context.dry_run:
+        state = get_login_state(context.bot_id)
+        return {
+            "action": "Login",
+            "executed": False,
+            "state": state.value,
+            "note": "Dry run. No input sent.",
+        }
+    return login(context.bot_id)
+
+
+def _logout(context: ActionContext):
+    if context.dry_run:
+        state = get_logout_state(context.bot_id)
+        return {
+            "action": "Logout",
+            "executed": False,
+            "state": state.value,
+            "note": "Dry run. No input sent.",
+        }
+    return logout(context.bot_id)
+
+
 def _bank_inventory(context: ActionContext):
     return bank_inventory(
         context.bot_id,
@@ -79,19 +107,39 @@ def _drop_inventory(context: ActionContext):
 
 
 ACTION_SPECS: tuple[ActionSpec, ...] = (
+    ActionSpec("Login", _login, login),
+    ActionSpec("Logout", _logout, logout),
     ActionSpec(
         "Bank inventory",
         _bank_inventory,
+        bank_inventory,
         uses_inventory_options=True,
         uses_selection=True,
     ),
-    ActionSpec("Open bank", _simple_bank_action("Open bank", open_bank)),
-    ActionSpec("Close bank", _simple_bank_action("Close bank", close_bank)),
-    ActionSpec("Find bank", _simple_bank_action("Find bank", find_bank)),
-    ActionSpec("Click bank", _simple_bank_action("Click bank", click_bank)),
+    ActionSpec(
+        "Open bank",
+        _simple_bank_action("Open bank", open_bank),
+        open_bank,
+    ),
+    ActionSpec(
+        "Close bank",
+        _simple_bank_action("Close bank", close_bank),
+        close_bank,
+    ),
+    ActionSpec(
+        "Find bank",
+        _simple_bank_action("Find bank", find_bank),
+        find_bank,
+    ),
+    ActionSpec(
+        "Click bank",
+        _simple_bank_action("Click bank", click_bank),
+        click_bank,
+    ),
     ActionSpec(
         "Drop inventory",
         _drop_inventory,
+        drop_inventory,
         uses_inventory_options=True,
         uses_pattern=True,
     ),
