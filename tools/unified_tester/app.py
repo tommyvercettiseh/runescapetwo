@@ -9,6 +9,7 @@ from tkinter import messagebox, ttk
 from typing import Any, Callable
 
 from core import mouse_actions
+from core.action_trace import capture_action_trace, trace
 from tools.definition_tester.registry import categories, definitions_for, get_definition
 from tools.unified_tester.action_registry import ActionContext, action_names, get_action
 from tools.unified_tester.result_utils import format_result, result_success
@@ -60,6 +61,8 @@ class UnifiedTester(tk.Tk):
         self._worker_results: SimpleQueue[
             tuple[tk.Text, str, float, Any, Exception | None]
         ] = SimpleQueue()
+        self._trace_events: SimpleQueue[str] = SimpleQueue()
+        self._trace_target: tk.Text | None = None
 
         self._build_ui()
         self._load_sensor_categories()
@@ -121,7 +124,7 @@ class UnifiedTester(tk.Tk):
         )
 
     def _result_box(self, parent: ttk.Frame, row: int) -> tk.Text:
-        frame = ttk.LabelFrame(parent, text="Result", padding=8)
+        frame = ttk.LabelFrame(parent, text="Result / live trace", padding=8)
         frame.grid(
             row=row,
             column=0,
@@ -541,6 +544,32 @@ class UnifiedTester(tk.Tk):
         target.insert("1.0", value)
         target.configure(state="disabled")
 
+    @staticmethod
+    def _append_result(target: tk.Text, value: str) -> None:
+        target.configure(state="normal")
+        target.insert("end", value)
+        target.see("end")
+        target.configure(state="disabled")
+
+    def _clear_trace_events(self) -> None:
+        while True:
+            try:
+                self._trace_events.get_nowait()
+            except Empty:
+                return
+
+    def _drain_trace_events(self) -> None:
+        target = self._trace_target
+        if target is None:
+            return
+
+        while True:
+            try:
+                line = self._trace_events.get_nowait()
+            except Empty:
+                return
+            self._append_result(target, f"{line}\n")
+
     def _bot_id(self) -> int:
         bot_id = int(self.bot_id_var.get())
         if bot_id < 1:
@@ -588,21 +617,30 @@ class UnifiedTester(tk.Tk):
         self.after(25, self._poll_worker)
 
     def _poll_worker(self) -> None:
+        self._drain_trace_events()
         try:
             target, _label, elapsed, result, error = self._worker_results.get_nowait()
         except Empty:
             self.after(25, self._poll_worker)
             return
 
+        self._drain_trace_events()
+        traced_action = target is self.action_result and self._trace_target is target
+
         if error is not None:
-            self._set_result(
-                target,
-                f"ERROR\n\n{type(error).__name__}: {error}",
-            )
+            error_text = f"ERROR\n\n{type(error).__name__}: {error}"
+            if traced_action:
+                self._append_result(target, f"\nFINAL ERROR\n{error_text}\n")
+            else:
+                self._set_result(target, error_text)
             self._set_result_bar(target, "ERROR.", "failure")
             self.status_var.set(f"Failed after {elapsed * 1000:.1f} ms.")
         else:
-            self._set_result(target, format_result(result))
+            formatted = format_result(result)
+            if traced_action:
+                self._append_result(target, f"\nFINAL RESULT\n{formatted}\n")
+            else:
+                self._set_result(target, formatted)
             success = result_success(result)
             if success is True:
                 self._set_result_bar(target, "TRUE.", "success")
@@ -612,6 +650,8 @@ class UnifiedTester(tk.Tk):
                 self._set_result_bar(target, "DONE.", "neutral")
             self.status_var.set(f"Done in {elapsed * 1000:.1f} ms.")
 
+        if traced_action:
+            self._trace_target = None
         self._set_running(False)
 
     def _run_sensor(self) -> None:
@@ -625,6 +665,7 @@ class UnifiedTester(tk.Tk):
             messagebox.showerror("Sensor", str(exc))
             return
 
+        self._trace_target = None
         self._execute(
             self.sensor_result,
             entry.name,
@@ -672,10 +713,28 @@ class UnifiedTester(tk.Tk):
             if not messagebox.askyesno("Run action", f"Run {spec.name}?"):
                 return
 
+        self._clear_trace_events()
+        self._trace_target = self.action_result
+        self._set_result(self.action_result, "")
+
+        def execute_action() -> Any:
+            with capture_action_trace(self._trace_events.put):
+                trace(
+                    f"[START] {spec.name} bot={context.bot_id} "
+                    f"dry_run={context.dry_run}"
+                )
+                try:
+                    result = spec.execute(context)
+                except Exception as exc:
+                    trace(f"[ERROR] {type(exc).__name__}: {exc}")
+                    raise
+                trace(f"[DONE] success={result_success(result)}")
+                return result
+
         self._execute(
             self.action_result,
             spec.name,
-            lambda: spec.execute(context),
+            execute_action,
         )
 
     def _emergency_stop(self) -> None:
