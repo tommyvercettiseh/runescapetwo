@@ -9,6 +9,7 @@ from tools.unified_tester.action_registry import ActionContext
 
 
 login_action = importlib.import_module("actions.login.login")
+state_loop = importlib.import_module("actions.login.state_loop")
 
 
 def test_login_state_detects_known_stages(monkeypatch) -> None:
@@ -54,7 +55,7 @@ def test_login_flow_only_clicks_actionable_stages(monkeypatch) -> None:
         "_click",
         lambda image_name, _bot_id: clicks.append(image_name) or True,
     )
-    monkeypatch.setattr(login_action.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(state_loop.time, "sleep", lambda _seconds: None)
 
     assert login_action.login(
         bot_id=3,
@@ -85,10 +86,41 @@ def test_login_does_not_repeat_click_same_state_immediately(monkeypatch) -> None
         "_click",
         lambda image_name, _bot_id: clicks.append(image_name) or True,
     )
-    monkeypatch.setattr(login_action.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(state_loop.time, "sleep", lambda _seconds: None)
 
     assert login_action.login(bot_id=1, timeout_s=10.0, same_state_retry_s=5.0)
     assert clicks == [login_state.LOGIN_PLAY_NOW_IMAGE]
+
+
+def test_login_never_exceeds_max_attempts_for_one_state(monkeypatch) -> None:
+    stages = iter(
+        (
+            LoginState.PLAY_NOW,
+            LoginState.PLAY_NOW,
+            LoginState.PLAY_NOW,
+            LoginState.PLAY_NOW,
+            LoginState.PLAY_NOW,
+            LoginState.PLAY_NOW,
+            LoginState.LOGGED_IN,
+        )
+    )
+    clicks: list[str] = []
+
+    monkeypatch.setattr(login_action, "get_login_state", lambda _bot_id: next(stages))
+    monkeypatch.setattr(
+        login_action,
+        "_click",
+        lambda image_name, _bot_id: clicks.append(image_name) or True,
+    )
+    monkeypatch.setattr(state_loop.time, "sleep", lambda _seconds: None)
+
+    assert login_action.login(
+        bot_id=1,
+        timeout_s=10.0,
+        same_state_retry_s=0.0,
+        max_attempts_per_state=3,
+    )
+    assert clicks == [login_state.LOGIN_PLAY_NOW_IMAGE] * 3
 
 
 def test_login_action_dry_run_only_reports_state(monkeypatch) -> None:
