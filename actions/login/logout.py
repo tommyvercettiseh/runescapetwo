@@ -4,6 +4,7 @@ import time
 
 from core import mouse_actions
 from definitions.login.logout_state import (
+    INTERFACE_SCREEN_CROSS_IMAGE,
     LOGOUT_AREA,
     LOGOUT_CLICK_HERE_IMAGE,
     LOGOUT_DOOR_UNSELECTED_IMAGE,
@@ -18,6 +19,7 @@ SAME_STATE_RETRY_S = 5.0
 
 CLICK_IMAGE_BY_STATE = {
     LogoutState.MENU_CLOSED: LOGOUT_DOOR_UNSELECTED_IMAGE,
+    LogoutState.BLOCKED_BY_INTERFACE: INTERFACE_SCREEN_CROSS_IMAGE,
     LogoutState.READY_TO_LOGOUT: LOGOUT_CLICK_HERE_IMAGE,
 }
 
@@ -40,12 +42,12 @@ def logout(
     poll_interval_s: float = POLL_INTERVAL_S,
     same_state_retry_s: float = SAME_STATE_RETRY_S,
 ) -> bool:
-    """Open the logout menu, click logout, and verify the login home screen.
+    """Log out through visually confirmed states only.
 
-    The action never guesses. It only clicks the unselected logout door or the
-    explicit logout button after those states are visually confirmed. A still
-    visible state is left alone for ``same_state_retry_s`` seconds before one
-    retry. Success is confirmed by ``Login_World_Selection``.
+    The door is selected first when needed. If the logout button is hidden by
+    another interface, ``Interface_ScreenCross`` is closed and the state is
+    checked again. The explicit logout button is then clicked and success is
+    confirmed only when ``Login_World_Selection`` is visible.
     """
     deadline = time.monotonic() + max(0.0, float(timeout_s))
     previous_state: LogoutState | None = None
@@ -72,7 +74,8 @@ def logout(
             handled_state = state
             last_click_at = now
 
-        # MENU_OPEN waits for the logout button. UNKNOWN never receives input.
+        # MENU_OPEN waits for a logout button or blocking interface to appear.
+        # UNKNOWN never receives input.
         time.sleep(max(0.05, float(poll_interval_s)))
 
     return get_logout_state(bot_id) is LogoutState.LOGGED_OUT
