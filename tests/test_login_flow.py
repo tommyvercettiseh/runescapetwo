@@ -53,11 +53,37 @@ def test_login_flow_only_clicks_actionable_stages(monkeypatch) -> None:
         lambda image_name, _bot_id: clicks.append(image_name) or True,
     )
     monkeypatch.setattr(login_action.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(login_action, "CLICK_RETRY_S", 0.0)
 
-    assert login_action.login(bot_id=3, timeout_s=10.0)
+    assert login_action.login(
+        bot_id=3,
+        timeout_s=10.0,
+        same_state_retry_s=0.0,
+    )
     assert clicks == [
         login_state.LOGIN_OK_IMAGE,
         login_state.LOGIN_PLAY_NOW_IMAGE,
         login_state.LOGIN_CLICK_HERE_IMAGE,
     ]
+
+
+def test_login_does_not_repeat_click_same_state_immediately(monkeypatch) -> None:
+    stages = iter(
+        (
+            LoginState.PLAY_NOW,
+            LoginState.PLAY_NOW,
+            LoginState.PLAY_NOW,
+            LoginState.LOGGED_IN,
+        )
+    )
+    clicks: list[str] = []
+
+    monkeypatch.setattr(login_action, "get_login_state", lambda _bot_id: next(stages))
+    monkeypatch.setattr(
+        login_action,
+        "_click",
+        lambda image_name, _bot_id: clicks.append(image_name) or True,
+    )
+    monkeypatch.setattr(login_action.time, "sleep", lambda _seconds: None)
+
+    assert login_action.login(bot_id=1, timeout_s=10.0, same_state_retry_s=5.0)
+    assert clicks == [login_state.LOGIN_PLAY_NOW_IMAGE]
