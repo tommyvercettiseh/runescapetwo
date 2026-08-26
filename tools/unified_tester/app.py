@@ -11,6 +11,7 @@ from core import mouse_actions
 from tools.definition_tester.registry import categories, definitions_for, get_definition
 from tools.unified_tester.action_registry import ActionContext, action_names, get_action
 from tools.unified_tester.result_utils import format_result, result_success
+from tools.unified_tester.target_inspector import TargetInfo, discover_targets
 
 
 BAR_COLOURS = {
@@ -48,8 +49,11 @@ class UnifiedTester(tk.Tk):
         self.pattern_var = tk.StringVar(value="random_pattern")
         self.selection_var = tk.StringVar(value="nearest")
         self.dry_run_var = tk.BooleanVar(value=True)
+        self.target_var = tk.StringVar()
+        self.target_source_var = tk.StringVar()
 
         self._running = False
+        self._targets_by_name: dict[str, TargetInfo] = {}
         self._result_bars: dict[tk.Text, tk.Label] = {}
         self._worker_results: SimpleQueue[
             tuple[tk.Text, str, float, Any, Exception | None]
@@ -58,6 +62,7 @@ class UnifiedTester(tk.Tk):
         self._build_ui()
         self._load_sensor_categories()
         self._update_action_fields()
+        self._load_targets()
 
     def _build_ui(self) -> None:
         root = ttk.Frame(self, padding=14)
@@ -97,11 +102,14 @@ class UnifiedTester(tk.Tk):
 
         self.sensor_tab = ttk.Frame(self.tabs, padding=14)
         self.action_tab = ttk.Frame(self.tabs, padding=14)
+        self.inspector_tab = ttk.Frame(self.tabs, padding=14)
         self.tabs.add(self.sensor_tab, text="Sensors")
         self.tabs.add(self.action_tab, text="Actions")
+        self.tabs.add(self.inspector_tab, text="Inspector")
 
         self._build_sensor_tab()
         self._build_action_tab()
+        self._build_inspector_tab()
 
         ttk.Label(root, textvariable=self.status_var).grid(
             row=2,
@@ -339,6 +347,99 @@ class UnifiedTester(tk.Tk):
         )
         self.action_result = self._result_box(self.action_tab, 7)
 
+    def _build_inspector_tab(self) -> None:
+        self.inspector_tab.columnconfigure(1, weight=1)
+        self.inspector_tab.rowconfigure(2, weight=1)
+
+        ttk.Label(self.inspector_tab, text="Production target").grid(
+            row=0,
+            column=0,
+            sticky="w",
+            pady=5,
+        )
+        self.target_box = ttk.Combobox(
+            self.inspector_tab,
+            textvariable=self.target_var,
+            state="readonly",
+        )
+        self.target_box.grid(
+            row=0,
+            column=1,
+            sticky="ew",
+            padx=(12, 0),
+            pady=5,
+        )
+        self.target_box.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self._render_target(),
+        )
+
+        ttk.Label(self.inspector_tab, text="Source").grid(
+            row=1,
+            column=0,
+            sticky="nw",
+            pady=5,
+        )
+        ttk.Label(
+            self.inspector_tab,
+            textvariable=self.target_source_var,
+        ).grid(
+            row=1,
+            column=1,
+            sticky="w",
+            padx=(12, 0),
+            pady=5,
+        )
+
+        frame = ttk.LabelFrame(
+            self.inspector_tab,
+            text="Assigned production values",
+            padding=8,
+        )
+        frame.grid(
+            row=2,
+            column=0,
+            columnspan=2,
+            sticky="nsew",
+            pady=(12, 0),
+        )
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+
+        self.target_tree = ttk.Treeview(
+            frame,
+            columns=("setting", "value"),
+            show="headings",
+        )
+        self.target_tree.heading("setting", text="Setting")
+        self.target_tree.heading("value", text="Value")
+        self.target_tree.column("setting", width=300, anchor="w")
+        self.target_tree.column("value", width=420, anchor="w")
+        self.target_tree.grid(row=0, column=0, sticky="nsew")
+
+        scrollbar = ttk.Scrollbar(
+            frame,
+            orient="vertical",
+            command=self.target_tree.yview,
+        )
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        self.target_tree.configure(yscrollcommand=scrollbar.set)
+
+        ttk.Label(
+            self.inspector_tab,
+            text=(
+                "Read-only. Values are loaded directly from definitions/*/*_target.py, "
+                "so this view cannot drift away from production code."
+            ),
+            wraplength=760,
+        ).grid(
+            row=3,
+            column=0,
+            columnspan=2,
+            sticky="w",
+            pady=(10, 0),
+        )
+
     def _load_sensor_categories(self) -> None:
         values = categories()
         self.sensor_category_box["values"] = values
@@ -353,6 +454,27 @@ class UnifiedTester(tk.Tk):
 
     def _on_sensor_category(self, _event: tk.Event) -> None:
         self._load_sensors(self.sensor_category_var.get())
+
+    def _load_targets(self) -> None:
+        targets = discover_targets()
+        self._targets_by_name = {target.name: target for target in targets}
+        names = tuple(self._targets_by_name)
+        self.target_box["values"] = names
+        self.target_var.set(names[0] if names else "")
+        self._render_target()
+
+    def _render_target(self) -> None:
+        for item in self.target_tree.get_children():
+            self.target_tree.delete(item)
+
+        target = self._targets_by_name.get(self.target_var.get())
+        if target is None:
+            self.target_source_var.set("No production target modules found.")
+            return
+
+        self.target_source_var.set(target.source_path)
+        for name, value in target.values:
+            self.target_tree.insert("", "end", values=(name, str(value)))
 
     def _set_result_bar(self, target: tk.Text, text: str, state: str) -> None:
         self._result_bars[target].configure(text=text, bg=BAR_COLOURS[state])
