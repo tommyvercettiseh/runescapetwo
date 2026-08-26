@@ -10,6 +10,11 @@ from typing import Callable
 
 from core.action_trace import capture_action_trace
 from tools.unified_tester.result_utils import format_result
+from tools.unified_tester.yaml_scenario_builder import (
+    ScenarioCardBuilder,
+    default_scenario_data,
+    dump_scenario_yaml,
+)
 from tools.unified_tester.yaml_scenario_runner import (
     ScenarioError,
     parse_scenario,
@@ -20,21 +25,9 @@ from tools.unified_tester.yaml_scenario_runner import (
 ROOT = Path(__file__).resolve().parents[2]
 SCENARIOS_ROOT = ROOT / "scenarios"
 
-STARTER_YAML = """name: New scenario
-bot_id: 1
-
-steps:
-  - if:
-      definition:
-        category: Login
-        name: Logged in.
-    else:
-      - action: Login
-"""
-
 
 class YamlScenarioEditor(ttk.Frame):
-    """Edit, validate and run declarative YAML scenarios."""
+    """Visual scenario builder with YAML as its portable storage format."""
 
     def __init__(
         self,
@@ -49,6 +42,9 @@ class YamlScenarioEditor(ttk.Frame):
         self._scenario_path: Path | None = None
         self._scenario_files: list[Path] = []
         self._running = False
+        self._syncing = False
+        self._builder_dirty = False
+        self._yaml_dirty = False
         self._trace_events: SimpleQueue[str] = SimpleQueue()
         self._worker_results: SimpleQueue[tuple[object | None, Exception | None]] = (
             SimpleQueue()
@@ -81,7 +77,7 @@ class YamlScenarioEditor(ttk.Frame):
         toolbar.grid(row=0, column=1, sticky="ew", pady=(0, 8))
         toolbar.columnconfigure(0, weight=1)
 
-        self.path_label = ttk.Label(toolbar, text="Select or create a YAML scenario.")
+        self.path_label = ttk.Label(toolbar, text="Select or create a scenario.")
         self.path_label.grid(row=0, column=0, sticky="w")
 
         ttk.Button(toolbar, text="New", command=self._new).grid(
@@ -110,14 +106,39 @@ class YamlScenarioEditor(ttk.Frame):
         main.rowconfigure(0, weight=3)
         main.rowconfigure(2, weight=1)
 
+        self.mode_tabs = ttk.Notebook(main)
+        self.mode_tabs.grid(row=0, column=0, sticky="nsew")
+        self.mode_tabs.bind("<<NotebookTabChanged>>", self._mode_changed)
+
+        self.builder = ScenarioCardBuilder(
+            self.mode_tabs,
+            on_change=self._builder_changed,
+        )
+        self.mode_tabs.add(self.builder, text="Builder")
+
+        yaml_frame = ttk.Frame(self.mode_tabs, padding=6)
+        yaml_frame.columnconfigure(0, weight=1)
+        yaml_frame.rowconfigure(1, weight=1)
+        ttk.Label(
+            yaml_frame,
+            text=(
+                "Advanced view. Normally the Builder writes this YAML for you. "
+                "Switch back to Builder to apply manual YAML edits."
+            ),
+        ).grid(row=0, column=0, sticky="w", pady=(0, 6))
         self.editor = tk.Text(
-            main,
+            yaml_frame,
             wrap="none",
             undo=True,
             font=("Consolas", 11),
             tabs=(32,),
         )
-        self.editor.grid(row=0, column=0, sticky="nsew")
+        self.editor.grid(row=1, column=0, sticky="nsew")
+        self.editor.bind("<<Modified>>", self._yaml_modified)
+        yaml_scroll = ttk.Scrollbar(yaml_frame, command=self.editor.yview)
+        yaml_scroll.grid(row=1, column=1, sticky="ns")
+        self.editor.configure(yscrollcommand=yaml_scroll.set)
+        self.mode_tabs.add(yaml_frame, text="YAML / Advanced")
 
         result_bar = ttk.Frame(main)
         result_bar.grid(row=1, column=0, sticky="ew", pady=(8, 5))
@@ -174,29 +195,128 @@ class YamlScenarioEditor(ttk.Frame):
     def _open(self, path: Path) -> None:
         try:
             text = path.read_text(encoding="utf-8")
-        except OSError as exc:
+            data = parse_scenario(text)
+        except (OSError, ScenarioError) as exc:
             messagebox.showerror("Scenario", str(exc), parent=self)
             return
+
         self._scenario_path = path
         self.path_label.configure(text=str(path.relative_to(ROOT)))
-        self.editor.delete("1.0", "end")
-        self.editor.insert("1.0", text)
+        self._load_data(data, text)
         self._set_result("READY", "#6B7280")
         self._set_output("")
 
     def _new(self) -> None:
         self._scenario_path = None
         self.path_label.configure(text="New unsaved scenario")
-        self.editor.delete("1.0", "end")
-        self.editor.insert("1.0", STARTER_YAML)
+        data = default_scenario_data()
+        try:
+            data["bot_id"] = max(1, int(self._bot_id_var.get()))
+        except (TypeError, ValueError, tk.TclError):
+            data["bot_id"] = 1
+        self._load_data(data, dump_scenario_yaml(data))
         self._set_result("READY", "#6B7280")
         self._set_output("")
+        self.mode_tabs.select(self.builder)
 
     def _reload(self) -> None:
         if self._scenario_path is None:
             self._new()
             return
         self._open(self._scenario_path)
+
+    def _load_data(self, data: dict, text: str) -> None:
+        self._syncing = True
+        try:
+            self.builder.load_data(data)
+            self._set_editor_text(text)
+            try:
+                self._bot_id_var.set(int(data.get("bot_id", 1)))
+            except (TypeError, ValueError, tk.TclError):
+                pass
+            self._builder_dirty = False
+            self._yaml_dirty = False
+        finally:
+            self._syncing = False
+
+    def _set_editor_text(self, text: str) -> None:
+        old_syncing = self._syncing
+        self._syncing = True
+        try:
+            self.editor.configure(state="normal")
+            self.editor.delete("1.0", "end")
+            self.editor.insert("1.0", text)
+            self.editor.edit_modified(False)
+        finally:
+            self._syncing = old_syncing
+
+    def _builder_changed(self) -> None:
+        if self._syncing:
+            return
+        self._builder_dirty = True
+        self._set_result("EDITED", "#6B7280")
+
+    def _yaml_modified(self, _event=None) -> None:
+        if not self.editor.edit_modified():
+            return
+        self.editor.edit_modified(False)
+        if self._syncing:
+            return
+        self._yaml_dirty = True
+        self._set_result("EDITED", "#6B7280")
+
+    def _mode_changed(self, _event=None) -> None:
+        selected = self.mode_tabs.select()
+        if not selected:
+            return
+
+        if selected == str(self.builder):
+            if self._yaml_dirty and not self._sync_yaml_to_builder():
+                self.after_idle(lambda: self.mode_tabs.select(1))
+        elif self._builder_dirty:
+            self._sync_builder_to_yaml()
+
+    def _sync_builder_to_yaml(self) -> None:
+        data = self.builder.data()
+        try:
+            data["bot_id"] = max(1, int(self._bot_id_var.get()))
+        except (TypeError, ValueError, tk.TclError):
+            pass
+        text = dump_scenario_yaml(data)
+        self._set_editor_text(text)
+        self._builder_dirty = False
+        self._yaml_dirty = False
+
+    def _sync_yaml_to_builder(self) -> bool:
+        try:
+            data = parse_scenario(self.editor.get("1.0", "end-1c"))
+        except Exception as exc:
+            self._set_result("INVALID", "#B91C1C")
+            self._set_output(f"{type(exc).__name__}: {exc}")
+            return False
+
+        self._syncing = True
+        try:
+            self.builder.load_data(data)
+            self._builder_dirty = False
+            self._yaml_dirty = False
+        finally:
+            self._syncing = False
+        return True
+
+    def _builder_is_active(self) -> bool:
+        return self.mode_tabs.select() == str(self.builder)
+
+    def _current_scenario(self) -> tuple[dict, str]:
+        if self._builder_is_active():
+            data = self.builder.data()
+            data["bot_id"] = max(1, int(self._bot_id_var.get()))
+            text = dump_scenario_yaml(data)
+            validated = parse_scenario(text)
+            return validated, text
+
+        text = self.editor.get("1.0", "end-1c")
+        return parse_scenario(text), text.rstrip() + "\n"
 
     def _save(self) -> None:
         path = self._scenario_path
@@ -221,22 +341,23 @@ class YamlScenarioEditor(ttk.Frame):
                 messagebox.showerror("Save scenario", "File already exists.", parent=self)
                 return
 
-        text = self.editor.get("1.0", "end-1c")
         try:
-            parse_scenario(text)
-            path.write_text(text.rstrip() + "\n", encoding="utf-8")
-        except (OSError, ScenarioError) as exc:
+            data, text = self._current_scenario()
+            path.write_text(text, encoding="utf-8")
+        except (OSError, ScenarioError, ValueError, tk.TclError) as exc:
             messagebox.showerror("Save scenario", str(exc), parent=self)
             return
 
         self._scenario_path = path
         self.path_label.configure(text=str(path.relative_to(ROOT)))
+        self._load_data(data, text)
         self.refresh()
         self._set_status(f"Saved {path.relative_to(ROOT)}")
+        self._set_result("SAVED", "#15803D")
 
     def _validate(self) -> None:
         try:
-            data = parse_scenario(self.editor.get("1.0", "end-1c"))
+            data, _text = self._current_scenario()
         except Exception as exc:
             self._set_result("INVALID", "#B91C1C")
             self._set_output(f"{type(exc).__name__}: {exc}")
@@ -248,7 +369,7 @@ class YamlScenarioEditor(ttk.Frame):
         if self._running:
             return
         try:
-            data = parse_scenario(self.editor.get("1.0", "end-1c"))
+            data, _text = self._current_scenario()
             bot_id = int(self._bot_id_var.get())
             if bot_id < 1:
                 raise ValueError("Bot ID must be positive.")
