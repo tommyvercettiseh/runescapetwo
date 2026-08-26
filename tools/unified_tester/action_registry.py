@@ -32,6 +32,7 @@ class ActionContext:
 class ActionSpec:
     name: str
     execute: Callable[[ActionContext], Any]
+    source: Callable[..., Any]
     uses_inventory_options: bool = False
     uses_pattern: bool = False
     uses_selection: bool = False
@@ -106,21 +107,39 @@ def _drop_inventory(context: ActionContext):
 
 
 ACTION_SPECS: tuple[ActionSpec, ...] = (
-    ActionSpec("Login", _login),
-    ActionSpec("Logout", _logout),
+    ActionSpec("Login", _login, login),
+    ActionSpec("Logout", _logout, logout),
     ActionSpec(
         "Bank inventory",
         _bank_inventory,
+        bank_inventory,
         uses_inventory_options=True,
         uses_selection=True,
     ),
-    ActionSpec("Open bank", _simple_bank_action("Open bank", open_bank)),
-    ActionSpec("Close bank", _simple_bank_action("Close bank", close_bank)),
-    ActionSpec("Find bank", _simple_bank_action("Find bank", find_bank)),
-    ActionSpec("Click bank", _simple_bank_action("Click bank", click_bank)),
+    ActionSpec(
+        "Open bank",
+        _simple_bank_action("Open bank", open_bank),
+        open_bank,
+    ),
+    ActionSpec(
+        "Close bank",
+        _simple_bank_action("Close bank", close_bank),
+        close_bank,
+    ),
+    ActionSpec(
+        "Find bank",
+        _simple_bank_action("Find bank", find_bank),
+        find_bank,
+    ),
+    ActionSpec(
+        "Click bank",
+        _simple_bank_action("Click bank", click_bank),
+        click_bank,
+    ),
     ActionSpec(
         "Drop inventory",
         _drop_inventory,
+        drop_inventory,
         uses_inventory_options=True,
         uses_pattern=True,
     ),
