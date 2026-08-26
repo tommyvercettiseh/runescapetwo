@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import time
-
 from core import mouse_actions
 from definitions.login.is_logged_in import is_logged_in
 from definitions.login.state import (
@@ -12,11 +10,13 @@ from definitions.login.state import (
     LoginState,
     get_login_state,
 )
+from actions.login.state_loop import run_bounded_state_loop
 
 
-DEFAULT_TIMEOUT_S = 60.0
+DEFAULT_TIMEOUT_S = 120.0
 POLL_INTERVAL_S = 0.40
 SAME_STATE_RETRY_S = 5.0
+MAX_ATTEMPTS_PER_STATE = 3
 
 CLICK_IMAGE_BY_STATE = {
     LoginState.DISCONNECTED: LOGIN_OK_IMAGE,
@@ -42,46 +42,29 @@ def login(
     timeout_s: float = DEFAULT_TIMEOUT_S,
     poll_interval_s: float = POLL_INTERVAL_S,
     same_state_retry_s: float = SAME_STATE_RETRY_S,
+    max_attempts_per_state: int = MAX_ATTEMPTS_PER_STATE,
 ) -> bool:
     """Move the current login screen forward until the player is logged in.
 
-    Every cycle first determines the current screen. A newly reached actionable
-    state may be clicked immediately. If the same state remains visible after a
-    click, it is left alone for ``same_state_retry_s`` seconds before one retry.
-    Transitional states such as Connecting to Server never receive input.
+    The screen may remain on slow/transitional states for the full timeout, but
+    each clickable state is attempted only a bounded number of times. This
+    prevents a slow server or flickering UI from causing an endless click loop.
     """
-    deadline = time.monotonic() + max(0.0, float(timeout_s))
-    previous_state: LoginState | None = None
-    handled_state: LoginState | None = None
-    last_click_at = float("-inf")
-    retry_delay = max(0.0, float(same_state_retry_s))
 
-    while time.monotonic() <= deadline:
-        state = get_login_state(bot_id)
-        if state is LoginState.LOGGED_IN:
-            return True
+    def act(state: LoginState) -> None:
+        _click(CLICK_IMAGE_BY_STATE[state], bot_id)
 
-        # A real screen transition starts a fresh step. This means the next
-        # actionable state can be handled immediately instead of inheriting a
-        # delay from the previous button.
-        if state is not previous_state:
-            handled_state = None
-            previous_state = state
-
-        image_name = CLICK_IMAGE_BY_STATE.get(state)
-        now = time.monotonic()
-        may_retry_same_state = now - last_click_at >= retry_delay
-        if image_name is not None and (
-            handled_state is not state or may_retry_same_state
-        ):
-            _click(image_name, bot_id)
-            handled_state = state
-            last_click_at = now
-
-        # CONNECTING, HOME and UNKNOWN intentionally do nothing here.
-        time.sleep(max(0.05, float(poll_interval_s)))
-
-    return is_logged_in(bot_id)
+    return run_bounded_state_loop(
+        get_state=lambda: get_login_state(bot_id),
+        success_state=LoginState.LOGGED_IN,
+        actionable_states=CLICK_IMAGE_BY_STATE,
+        act=act,
+        timeout_s=timeout_s,
+        poll_interval_s=poll_interval_s,
+        retry_s=same_state_retry_s,
+        max_attempts_per_state=max_attempts_per_state,
+        final_check=lambda: is_logged_in(bot_id),
+    )
 
 
 __all__ = ["login"]
