@@ -69,6 +69,29 @@ class SearchableTemplatePage(TemplatePage):
         self._collapse_top_toolbar()
         self._show_selected_template()
 
+    def _content_frame(self):
+        """Return the main three/four-column workspace before or after toolbar collapse."""
+        for row in (1, 0):
+            matches = self.grid_slaves(row=row, column=0)
+            if matches:
+                candidate = matches[0]
+                if candidate is not getattr(self.source, "master", None):
+                    return candidate
+        return None
+
+    @staticmethod
+    def _column_child(parent, column: int):
+        if parent is None:
+            return None
+        return next(
+            (
+                child
+                for child in parent.grid_slaves(row=0)
+                if int(child.grid_info().get("column", -1)) == column
+            ),
+            None,
+        )
+
     def _replace_preview(self) -> None:
         parent = self.preview.master
         self.preview.destroy()
@@ -89,18 +112,33 @@ class SearchableTemplatePage(TemplatePage):
             pass
 
     def _add_template_actions(self) -> None:
-        """Put creation and capture where template selection already happens."""
-        sidebar = self.template_scroll.master
-        children = list(sidebar.grid_slaves())
-        for child in children:
-            row = int(child.grid_info().get("row", 0))
-            child.grid_configure(row=row + 1)
+        """Give creation controls their own rows so they never overlap the list."""
+        content = self._content_frame()
+        sidebar = self._column_child(content, 0)
+        if sidebar is None:
+            return
+
+        # Base layout: title=0, search=1, list=2, rename/delete=3.
+        # Move only the list/footer down and reserve row 2 for quick actions.
+        self.template_scroll.grid_configure(row=3)
+        footer = next(
+            (
+                child
+                for child in sidebar.grid_slaves()
+                if child is not self.template_scroll
+                and int(child.grid_info().get("row", -1)) == 3
+            ),
+            None,
+        )
+        if footer is not None:
+            footer.grid_configure(row=4)
 
         sidebar.grid_rowconfigure(2, weight=0)
         sidebar.grid_rowconfigure(3, weight=1)
+        sidebar.grid_rowconfigure(4, weight=0)
 
         quick_actions = ctk.CTkFrame(sidebar, fg_color="transparent")
-        quick_actions.grid(row=0, column=0, sticky="ew", padx=14, pady=(12, 6))
+        quick_actions.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 10))
         quick_actions.grid_columnconfigure(0, weight=1)
         quick_actions.grid_columnconfigure(1, weight=1)
 
@@ -108,45 +146,37 @@ class SearchableTemplatePage(TemplatePage):
             quick_actions,
             "Nieuw",
             self._new_template,
-            width=78,
+            width=82,
         ).grid(row=0, column=0, sticky="ew", padx=(0, 4))
         ui.button(
             quick_actions,
             "Capture",
             self._once,
             primary=True,
-            width=82,
-        ).grid(row=0, column=1, sticky="ew", padx=4)
+            width=88,
+        ).grid(row=0, column=1, sticky="ew", padx=(4, 0))
+
+        live_row = ctk.CTkFrame(quick_actions, fg_color="transparent")
+        live_row.grid(row=1, column=0, columnspan=2, sticky="e", pady=(7, 0))
         ctk.CTkSwitch(
-            quick_actions,
-            text="Live",
+            live_row,
+            text="Live matching",
             variable=self.live,
             command=self._toggle_live,
             progress_color=ui.ACCENT,
-            text_color=ui.TEXT,
-            font=ui.font(11),
-            width=62,
-        ).grid(row=0, column=2, padx=(7, 0))
+            text_color=ui.MUTED,
+            font=ui.font(10),
+        ).pack()
 
     def _polish_detection_panel(self) -> None:
-        """Show the search target and keep the settings column deliberately compact."""
-        content = self.template_scroll.master.master
-        detection = next(
-            (
-                child
-                for child in content.grid_slaves(row=0)
-                if int(child.grid_info().get("column", -1)) == 3
-            ),
-            None,
-        )
+        """Show the exact search target above compact detection controls."""
+        content = self._content_frame()
+        detection = self._column_child(content, 3)
         if detection is None:
             return
 
-        detection.configure(width=285)
+        detection.configure(width=292)
         self.results.configure(height=92)
-
-        packed = detection.pack_slaves()
-        insert_before = packed[2] if len(packed) >= 3 else None
 
         target = ctk.CTkFrame(
             detection,
@@ -155,18 +185,18 @@ class SearchableTemplatePage(TemplatePage):
             border_width=1,
             border_color=ui.BORDER,
         )
-        pack_options = {
-            "fill": "x",
-            "padx": 16,
-            "pady": (2, 14),
-        }
-        if insert_before is not None:
-            pack_options["before"] = insert_before
-        target.pack(**pack_options)
+        target.pack(
+            before=self.method_box,
+            fill="x",
+            padx=16,
+            pady=(2, 14),
+        )
 
         title_row = ctk.CTkFrame(target, fg_color="transparent")
-        title_row.pack(fill="x", padx=10, pady=(8, 4))
-        ui.label(title_row, "Zoektemplate", muted=True, size=10).pack(side="left")
+        title_row.pack(fill="x", padx=10, pady=(8, 5))
+        ui.label(title_row, "ZOEKTEMPLATE", muted=True, size=10, bold=True).pack(
+            side="left"
+        )
         self.template_thumbnail_name = ui.label(
             title_row,
             "—",
@@ -177,17 +207,18 @@ class SearchableTemplatePage(TemplatePage):
 
         preview_shell = ctk.CTkFrame(
             target,
-            height=96,
+            height=120,
             fg_color=ui.VIEW_BG,
             corner_radius=6,
         )
         preview_shell.pack(fill="x", padx=10, pady=(0, 10))
         preview_shell.pack_propagate(False)
+
         self.template_thumbnail = TemplateThumbnail(
             preview_shell,
             maximum_upscale=8.0,
         )
-        self.template_thumbnail.pack(fill="both", expand=True, padx=4, pady=4)
+        self.template_thumbnail.pack(fill="both", expand=True, padx=6, pady=6)
 
     def _show_selected_template(self) -> None:
         if self.template_thumbnail is None or self.template_thumbnail_name is None:
@@ -248,19 +279,12 @@ class SearchableTemplatePage(TemplatePage):
         ]
 
     def _add_area_browser(self) -> None:
-        content_matches = self.grid_slaves(row=1, column=0)
-        if not content_matches:
+        content = self._content_frame()
+        if content is None:
             return
-        content = content_matches[0]
 
-        center = None
-        detection = None
-        for child in content.grid_slaves(row=0):
-            column = int(child.grid_info().get("column", -1))
-            if column == 1:
-                center = child
-            elif column == 2:
-                detection = child
+        center = self._column_child(content, 1)
+        detection = self._column_child(content, 2)
         if center is None or detection is None:
             return
 
@@ -366,6 +390,7 @@ class SearchableTemplatePage(TemplatePage):
 
     def _captured(self, name: str) -> None:
         super()._captured(name)
+        self._show_selected_template()
         self.live.set(True)
         self.status.set(f"New template {name} saved · Live matching active.")
         self.after_idle(self._capture)
