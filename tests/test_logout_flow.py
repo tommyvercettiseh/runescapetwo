@@ -7,6 +7,60 @@ from definitions.login.logout_state import LogoutState
 
 
 logout_action = importlib.import_module("actions.login.logout")
+logged_out_definition = importlib.import_module("definitions.login.is_logged_out")
+
+
+def test_world_selection_alone_is_not_logged_out(monkeypatch) -> None:
+    visible = {logged_out_definition.LOGIN_WORLD_SELECTION_IMAGE}
+    monkeypatch.setattr(
+        logged_out_definition.vision,
+        "image_exists",
+        lambda image_name, **_kwargs: image_name in visible,
+    )
+
+    assert not logged_out_definition.is_logged_out(1)
+
+
+def test_world_selection_plus_play_now_is_logged_out(monkeypatch) -> None:
+    visible = {
+        logged_out_definition.LOGIN_WORLD_SELECTION_IMAGE,
+        logged_out_definition.LOGIN_PLAY_NOW_IMAGE,
+    }
+    monkeypatch.setattr(
+        logged_out_definition.vision,
+        "image_exists",
+        lambda image_name, **_kwargs: image_name in visible,
+    )
+
+    assert logged_out_definition.is_logged_out(1)
+
+
+def test_world_selection_plus_disconnected_is_logged_out(monkeypatch) -> None:
+    visible = {
+        logged_out_definition.LOGIN_WORLD_SELECTION_IMAGE,
+        logged_out_definition.LOGIN_DISCONNECTED_IMAGE,
+    }
+    monkeypatch.setattr(
+        logged_out_definition.vision,
+        "image_exists",
+        lambda image_name, **_kwargs: image_name in visible,
+    )
+
+    assert logged_out_definition.is_logged_out(1)
+
+
+def test_selected_door_does_not_finish_on_world_selection_alone(monkeypatch) -> None:
+    visible = {
+        logged_out_definition.LOGIN_WORLD_SELECTION_IMAGE,
+        logout_state.LOGOUT_DOOR_SELECTED_IMAGE,
+    }
+    monkeypatch.setattr(
+        logout_state.vision,
+        "image_exists",
+        lambda image_name, **_kwargs: image_name in visible,
+    )
+
+    assert logout_state.get_logout_state(1) is LogoutState.MENU_OPEN
 
 
 def test_logout_state_detects_blocking_interface(monkeypatch) -> None:
@@ -46,6 +100,7 @@ def test_logout_flow_closes_interface_then_logs_out(monkeypatch) -> None:
             LogoutState.BLOCKED_BY_INTERFACE,
             LogoutState.MENU_OPEN,
             LogoutState.READY_TO_LOGOUT,
+            LogoutState.MENU_OPEN,
             LogoutState.LOGGED_OUT,
         )
     )
