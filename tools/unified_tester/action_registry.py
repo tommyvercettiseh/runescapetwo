@@ -9,10 +9,12 @@ from actions.bank.close_bank import close_bank
 from actions.bank.find_bank import find_bank
 from actions.bank.open_bank import open_bank
 from actions.inventory.drop_inventory import drop_inventory
+from actions.login import login
 from definitions.bank.is_bank_all_selected import is_bank_all_selected
 from definitions.bank.is_bank_closed import is_bank_closed
 from definitions.bank.is_bank_open import is_bank_open
 from definitions.bank.is_bank_visible import is_bank_visible
+from definitions.login.state import get_login_state
 
 
 @dataclass(frozen=True)
@@ -58,6 +60,18 @@ def _simple_bank_action(
     return execute
 
 
+def _login(context: ActionContext):
+    if context.dry_run:
+        state = get_login_state(context.bot_id)
+        return {
+            "action": "Login",
+            "executed": False,
+            "state": state.value,
+            "note": "Dry run. No input sent.",
+        }
+    return login(context.bot_id)
+
+
 def _bank_inventory(context: ActionContext):
     return bank_inventory(
         context.bot_id,
@@ -79,6 +93,7 @@ def _drop_inventory(context: ActionContext):
 
 
 ACTION_SPECS: tuple[ActionSpec, ...] = (
+    ActionSpec("Login", _login),
     ActionSpec(
         "Bank inventory",
         _bank_inventory,
