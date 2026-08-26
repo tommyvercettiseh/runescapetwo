@@ -1,4 +1,5 @@
 from core import mouse_actions
+from core.action_trace import trace
 from definitions.interface.screen_target import (
     SCREEN_AREA,
     SCREEN_BUTTON,
@@ -8,7 +9,11 @@ from definitions.interface.screen_target import (
 
 
 def click_close_screen(bot_id: int = 1):
-    return mouse_actions.click_image(
+    trace(
+        f"[TARGET] image={SCREEN_CROSS_IMAGE} area={SCREEN_AREA} "
+        f"bot={bot_id} confirm=True"
+    )
+    result = mouse_actions.click_image(
         image_name=SCREEN_CROSS_IMAGE,
         area_name=SCREEN_AREA,
         bot_id=bot_id,
@@ -16,3 +21,10 @@ def click_close_screen(bot_id: int = 1):
         image_edge_padding=SCREEN_EDGE_PADDING,
         confirm_before_click=True,
     )
+    if result:
+        trace(f"[OK] {result.message}")
+    else:
+        trace(f"[FAIL] {result.message}")
+        if result.error:
+            trace(f"[ERROR] {result.error}")
+    return result
