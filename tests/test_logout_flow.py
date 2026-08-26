@@ -7,6 +7,7 @@ from definitions.login.logout_state import LogoutState
 
 
 logout_action = importlib.import_module("actions.login.logout")
+state_loop = importlib.import_module("actions.login.state_loop")
 logged_out_definition = importlib.import_module("definitions.login.is_logged_out")
 
 
@@ -118,12 +119,12 @@ def test_logout_flow_closes_interface_then_logs_out(monkeypatch) -> None:
             clicks.append((image_name, confirm_before_click)) or True
         ),
     )
-    monkeypatch.setattr(logout_action.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(state_loop.time, "sleep", lambda _seconds: None)
 
     assert logout_action.logout(
         bot_id=2,
         timeout_s=10.0,
-        same_state_retry_s=5.0,
+        same_state_retry_s=0.0,
     )
     assert clicks == [
         (logout_state.LOGOUT_DOOR_UNSELECTED_IMAGE, False),
@@ -154,6 +155,40 @@ def test_hover_sensitive_logout_targets_skip_reconfirm(monkeypatch) -> None:
     assert [call["confirm_before_click"] for call in calls] == [False, False]
 
 
+def test_logout_never_exceeds_max_attempts_for_one_state(monkeypatch) -> None:
+    stages = iter(
+        (
+            LogoutState.READY_TO_LOGOUT,
+            LogoutState.READY_TO_LOGOUT,
+            LogoutState.READY_TO_LOGOUT,
+            LogoutState.READY_TO_LOGOUT,
+            LogoutState.READY_TO_LOGOUT,
+            LogoutState.LOGGED_OUT,
+        )
+    )
+    clicks: list[str] = []
+
+    monkeypatch.setattr(
+        logout_action,
+        "get_logout_state",
+        lambda _bot_id: next(stages),
+    )
+    monkeypatch.setattr(
+        logout_action,
+        "_click",
+        lambda image_name, _bot_id, **_kwargs: clicks.append(image_name) or True,
+    )
+    monkeypatch.setattr(state_loop.time, "sleep", lambda _seconds: None)
+
+    assert logout_action.logout(
+        bot_id=1,
+        timeout_s=10.0,
+        same_state_retry_s=0.0,
+        max_attempts_per_state=3,
+    )
+    assert clicks == [logout_state.LOGOUT_CLICK_HERE_IMAGE] * 3
+
+
 def test_logout_unknown_state_never_clicks(monkeypatch) -> None:
     stages = iter((LogoutState.UNKNOWN, LogoutState.LOGGED_OUT))
     clicks: list[str] = []
@@ -168,7 +203,7 @@ def test_logout_unknown_state_never_clicks(monkeypatch) -> None:
         "_click",
         lambda image_name, _bot_id, **_kwargs: clicks.append(image_name) or True,
     )
-    monkeypatch.setattr(logout_action.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(state_loop.time, "sleep", lambda _seconds: None)
 
     assert logout_action.logout(bot_id=1, timeout_s=10.0)
     assert clicks == []
