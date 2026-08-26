@@ -1,0 +1,20 @@
+name: Login and open bank
+bot_id: 1
+
+steps:
+  - if:
+      definition:
+        category: Login
+        name: Logged in.
+    else:
+      - action: Login
+
+  - if:
+      definition:
+        category: Bank
+        name: Bank open.
+    then:
+      - stop: success
+    else:
+      - action: Find bank
+      - action: Open bank
