@@ -11,7 +11,7 @@ from definitions.interface.screen_target import (
 def click_close_screen(bot_id: int = 1):
     trace(
         f"[TARGET] image={SCREEN_CROSS_IMAGE} area={SCREEN_AREA} "
-        f"bot={bot_id} confirm=True"
+        f"bot={bot_id} confirm=False"
     )
     result = mouse_actions.click_image(
         image_name=SCREEN_CROSS_IMAGE,
@@ -19,7 +19,7 @@ def click_close_screen(bot_id: int = 1):
         bot_id=bot_id,
         button=SCREEN_BUTTON,
         image_edge_padding=SCREEN_EDGE_PADDING,
-        confirm_before_click=True,
+        confirm_before_click=False,
     )
     if result:
         trace(f"[OK] {result.message}")
