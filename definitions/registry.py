@@ -13,6 +13,7 @@ from definitions.inventory.is_inventory_empty import is_inventory_empty
 from definitions.inventory.is_inventory_full import is_inventory_full
 from definitions.login.is_logged_in import is_logged_in
 from definitions.login.is_logged_out import is_logged_out
+from definitions.login.state import get_login_state
 from definitions.prayer.is_low_prayer import is_low_prayer
 from definitions.skilling.is_skilling import is_skilling
 
@@ -27,6 +28,10 @@ class DefinitionEntry:
     description: str
 
 
+def _login_state_name(bot_id: int) -> str:
+    return get_login_state(bot_id).value
+
+
 DEFINITIONS: tuple[DefinitionEntry, ...] = (
     DefinitionEntry("Bank", "Bank visible.", is_bank_visible, "Detects the bank object."),
     DefinitionEntry("Bank", "Bank open.", is_bank_open, "Detects Bank_Deposit."),
@@ -36,6 +41,7 @@ DEFINITIONS: tuple[DefinitionEntry, ...] = (
     DefinitionEntry("Interface", "Screen open.", is_screen_open, "Detects ScreenCross."),
     DefinitionEntry("Inventory", "Inventory full.", is_inventory_full, "Checks all 28 slots."),
     DefinitionEntry("Inventory", "Inventory empty.", is_inventory_empty, "Checks all 28 slots."),
+    DefinitionEntry("Login", "Login state.", _login_state_name, "Shows the current login stage without clicking."),
     DefinitionEntry("Login", "Logged in.", is_logged_in, "Requires both Login_Exp and Login_Globe in Info_Area."),
     DefinitionEntry("Login", "Logged out.", is_logged_out, "Detects Login_Disconnected or Login_World_Selection in Bot_Area."),
     DefinitionEntry("Prayer", "Low prayer.", is_low_prayer, "Uses the prayer stoplight sensor; orange/red means low prayer."),
