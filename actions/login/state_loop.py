@@ -4,8 +4,14 @@ import time
 from collections.abc import Callable, Collection
 from typing import Hashable, TypeVar
 
+from core.action_trace import trace
+
 
 StateT = TypeVar("StateT", bound=Hashable)
+
+
+def _state_label(state: StateT) -> str:
+    return str(getattr(state, "value", state))
 
 
 def run_bounded_state_loop(
@@ -32,10 +38,17 @@ def run_bounded_state_loop(
     max_attempts = max(0, int(max_attempts_per_state))
     attempts: dict[StateT, int] = {}
     last_attempt_at: dict[StateT, float] = {}
+    limit_reported: set[StateT] = set()
+    previous_state: StateT | None = None
 
     while time.monotonic() <= deadline:
         state = get_state()
+        if state != previous_state:
+            trace(f"[STATE] {_state_label(state)}")
+            previous_state = state
+
         if state == success_state:
+            trace("[OK] success state reached")
             return True
 
         if state in actionable_states:
@@ -44,15 +57,30 @@ def run_bounded_state_loop(
             now = time.monotonic()
 
             if used < max_attempts and now - last_attempt >= retry_delay:
+                attempt_number = used + 1
+                trace(
+                    f"[ACTION] {_state_label(state)} attempt "
+                    f"{attempt_number}/{max_attempts}"
+                )
                 act(state)
-                attempts[state] = used + 1
+                attempts[state] = attempt_number
                 last_attempt_at[state] = now
+            elif used >= max_attempts and state not in limit_reported:
+                trace(
+                    f"[LIMIT] {_state_label(state)} reached "
+                    f"{max_attempts} attempts; observing only"
+                )
+                limit_reported.add(state)
 
         time.sleep(max(0.05, float(poll_interval_s)))
 
+    trace("[TIMEOUT] action timeout reached")
     if final_check is not None:
-        return bool(final_check())
-    return get_state() == success_state
+        result = bool(final_check())
+    else:
+        result = get_state() == success_state
+    trace(f"[RESULT] final check = {result}")
+    return result
 
 
 __all__ = ["run_bounded_state_loop"]
