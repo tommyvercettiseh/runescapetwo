@@ -118,9 +118,14 @@ class SearchableTemplatePage(TemplatePage):
         if sidebar is None:
             return
 
-        # Base layout: title=0, search=1, list=2, rename/delete=3.
-        # Move only the list/footer down and reserve row 2 for quick actions.
-        self.template_scroll.grid_configure(row=3)
+        # CTkScrollableFrame wraps its visible widget in a parent frame, so call
+        # grid() again instead of grid_configure() to move the complete control.
+        self.template_scroll.grid(
+            row=3,
+            column=0,
+            sticky="nsew",
+            padx=8,
+        )
         footer = next(
             (
                 child
