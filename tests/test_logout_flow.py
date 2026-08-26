@@ -49,7 +49,7 @@ def test_logout_flow_closes_interface_then_logs_out(monkeypatch) -> None:
             LogoutState.LOGGED_OUT,
         )
     )
-    clicks: list[str] = []
+    clicks: list[tuple[str, bool]] = []
 
     monkeypatch.setattr(
         logout_action,
@@ -59,7 +59,9 @@ def test_logout_flow_closes_interface_then_logs_out(monkeypatch) -> None:
     monkeypatch.setattr(
         logout_action,
         "_click",
-        lambda image_name, _bot_id: clicks.append(image_name) or True,
+        lambda image_name, _bot_id, *, confirm_before_click=True: (
+            clicks.append((image_name, confirm_before_click)) or True
+        ),
     )
     monkeypatch.setattr(logout_action.time, "sleep", lambda _seconds: None)
 
@@ -69,9 +71,33 @@ def test_logout_flow_closes_interface_then_logs_out(monkeypatch) -> None:
         same_state_retry_s=5.0,
     )
     assert clicks == [
+        (logout_state.LOGOUT_DOOR_UNSELECTED_IMAGE, False),
+        (logout_state.INTERFACE_SCREEN_CROSS_IMAGE, True),
+        (logout_state.LOGOUT_CLICK_HERE_IMAGE, True),
+    ]
+
+
+def test_logout_door_skips_reconfirm_because_hover_can_change_image(monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        logout_action.mouse_actions,
+        "click_image",
+        lambda **kwargs: calls.append(kwargs) or True,
+    )
+
+    assert logout_action._click(
         logout_state.LOGOUT_DOOR_UNSELECTED_IMAGE,
-        logout_state.INTERFACE_SCREEN_CROSS_IMAGE,
-        logout_state.LOGOUT_CLICK_HERE_IMAGE,
+        3,
+        confirm_before_click=False,
+    )
+    assert calls == [
+        {
+            "image_name": logout_state.LOGOUT_DOOR_UNSELECTED_IMAGE,
+            "area_name": logout_state.LOGOUT_AREA,
+            "bot_id": 3,
+            "confirm_before_click": False,
+        }
     ]
 
 
@@ -87,7 +113,7 @@ def test_logout_unknown_state_never_clicks(monkeypatch) -> None:
     monkeypatch.setattr(
         logout_action,
         "_click",
-        lambda image_name, _bot_id: clicks.append(image_name) or True,
+        lambda image_name, _bot_id, **_kwargs: clicks.append(image_name) or True,
     )
     monkeypatch.setattr(logout_action.time, "sleep", lambda _seconds: None)
 
