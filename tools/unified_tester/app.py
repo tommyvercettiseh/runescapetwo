@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import threading
 import time
 import tkinter as tk
@@ -36,14 +37,15 @@ class UnifiedTester(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("RuneScape Two - Unified Tester")
-        self.geometry("900x700")
-        self.minsize(800, 600)
+        self.geometry("1000x800")
+        self.minsize(850, 650)
 
         self.bot_id_var = tk.IntVar(value=1)
         self.status_var = tk.StringVar(value="Ready.")
         self.sensor_category_var = tk.StringVar()
         self.sensor_var = tk.StringVar()
         self.action_var = tk.StringVar(value=action_names()[0])
+        self.action_source_var = tk.StringVar()
         self.exclude_images_var = tk.StringVar()
         self.optional_exclude_images_var = tk.StringVar()
         self.pattern_var = tk.StringVar(value="random_pattern")
@@ -345,7 +347,44 @@ class UnifiedTester(tk.Tk):
             sticky="w",
             pady=(8, 0),
         )
-        self.action_result = self._result_box(self.action_tab, 7)
+
+        source_frame = ttk.LabelFrame(
+            self.action_tab,
+            text="Production code",
+            padding=8,
+        )
+        source_frame.grid(
+            row=7,
+            column=0,
+            columnspan=3,
+            sticky="nsew",
+            pady=(12, 0),
+        )
+        source_frame.columnconfigure(0, weight=1)
+        source_frame.rowconfigure(1, weight=1)
+
+        ttk.Label(
+            source_frame,
+            textvariable=self.action_source_var,
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 6))
+
+        self.action_source_text = tk.Text(
+            source_frame,
+            height=10,
+            wrap="none",
+            state="disabled",
+            font=("Consolas", 9),
+        )
+        self.action_source_text.grid(row=1, column=0, sticky="nsew")
+
+        source_scrollbar = ttk.Scrollbar(
+            source_frame,
+            command=self.action_source_text.yview,
+        )
+        source_scrollbar.grid(row=1, column=1, sticky="ns")
+        self.action_source_text.configure(yscrollcommand=source_scrollbar.set)
+
+        self.action_result = self._result_box(self.action_tab, 8)
 
     def _build_inspector_tab(self) -> None:
         self.inspector_tab.columnconfigure(1, weight=1)
@@ -476,6 +515,22 @@ class UnifiedTester(tk.Tk):
         for name, value in target.values:
             self.target_tree.insert("", "end", values=(name, str(value)))
 
+    def _render_action_source(self) -> None:
+        try:
+            spec = get_action(self.action_var.get())
+            source_path = inspect.getsourcefile(spec.source) or spec.source.__module__
+            source = inspect.getsource(spec.source)
+        except (KeyError, OSError, TypeError) as exc:
+            self.action_source_var.set("Source unavailable")
+            source = f"Unable to load source: {exc}"
+        else:
+            self.action_source_var.set(source_path)
+
+        self.action_source_text.configure(state="normal")
+        self.action_source_text.delete("1.0", "end")
+        self.action_source_text.insert("1.0", source)
+        self.action_source_text.configure(state="disabled")
+
     def _set_result_bar(self, target: tk.Text, text: str, state: str) -> None:
         self._result_bars[target].configure(text=text, bg=BAR_COLOURS[state])
 
@@ -591,6 +646,7 @@ class UnifiedTester(tk.Tk):
         self.selection_box.configure(
             state="readonly" if spec.uses_selection else "disabled"
         )
+        self._render_action_source()
 
     def _action_context(self) -> ActionContext:
         return ActionContext(
