@@ -128,11 +128,11 @@ def test_logout_flow_closes_interface_then_logs_out(monkeypatch) -> None:
     assert clicks == [
         (logout_state.LOGOUT_DOOR_UNSELECTED_IMAGE, False),
         (logout_state.INTERFACE_SCREEN_CROSS_IMAGE, True),
-        (logout_state.LOGOUT_CLICK_HERE_IMAGE, True),
+        (logout_state.LOGOUT_CLICK_HERE_IMAGE, False),
     ]
 
 
-def test_logout_door_skips_reconfirm_because_hover_can_change_image(monkeypatch) -> None:
+def test_hover_sensitive_logout_targets_skip_reconfirm(monkeypatch) -> None:
     calls: list[dict[str, object]] = []
 
     monkeypatch.setattr(
@@ -141,19 +141,17 @@ def test_logout_door_skips_reconfirm_because_hover_can_change_image(monkeypatch)
         lambda **kwargs: calls.append(kwargs) or True,
     )
 
-    assert logout_action._click(
+    for image_name in (
         logout_state.LOGOUT_DOOR_UNSELECTED_IMAGE,
-        3,
-        confirm_before_click=False,
-    )
-    assert calls == [
-        {
-            "image_name": logout_state.LOGOUT_DOOR_UNSELECTED_IMAGE,
-            "area_name": logout_state.LOGOUT_AREA,
-            "bot_id": 3,
-            "confirm_before_click": False,
-        }
-    ]
+        logout_state.LOGOUT_CLICK_HERE_IMAGE,
+    ):
+        assert logout_action._click(
+            image_name,
+            3,
+            confirm_before_click=False,
+        )
+
+    assert [call["confirm_before_click"] for call in calls] == [False, False]
 
 
 def test_logout_unknown_state_never_clicks(monkeypatch) -> None:
