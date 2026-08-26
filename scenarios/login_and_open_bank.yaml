@@ -6,15 +6,15 @@ steps:
       definition:
         category: Login
         name: Logged in.
-    else:
-      - action: Login
+      else:
+        - action: Login
 
   - if:
       definition:
         category: Bank
         name: Bank open.
-    then:
-      - stop: success
-    else:
-      - action: Find bank
-      - action: Open bank
+      then:
+        - stop: success
+      else:
+        - action: Find bank
+        - action: Open bank
