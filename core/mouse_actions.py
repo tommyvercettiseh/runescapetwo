@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import random
 from dataclasses import dataclass
 from typing import Literal
 
@@ -15,7 +16,7 @@ from .targeting import (
     validate_blob_edge_padding,
     validate_image_edge_padding,
 )
-from .vision.api import find_image
+from .vision.api import find_all_images, find_image
 from .vision.areas import get_region
 from .vision.colour_detection import find_colour
 from .vision.models import ColourBlob, Hit
@@ -82,6 +83,21 @@ def _find_target_image(
     bot_id: int,
 ) -> Hit | None:
     return find_image(image_name, area=area_name, bot_id=bot_id)
+
+
+def _find_random_target_image(
+    image_name: str,
+    *,
+    area_name: str,
+    bot_id: int,
+) -> Hit | None:
+    hits = find_all_images(
+        image_name,
+        area=area_name,
+        bot_id=bot_id,
+        maximum_hits=50,
+    )
+    return random.choice(hits) if hits else None
 
 
 def _validate_blob_settings(
@@ -312,14 +328,14 @@ def click_image(
     maximum_target_shift: float = 12,
     require_external_mouse: bool = True,
 ) -> MouseActionResult:
-    """Find, move and click as one serialized action."""
+    """Find all valid matches, choose one randomly, then move and click."""
     selected_button = _validate_button(button)
     validate_image_edge_padding(image_edge_padding)
     _validate_target_shift(maximum_target_shift)
 
     bounds: TargetBounds | None = None
     try:
-        hit = _find_target_image(
+        hit = _find_random_target_image(
             image_name,
             area_name=area_name,
             bot_id=bot_id,
@@ -339,12 +355,13 @@ def click_image(
                     require_external=require_external_mouse,
                     keep_pending_click=False,
                 )
-                confirmed_hit = _find_target_image(
+                confirmed_hits = find_all_images(
                     image_name,
-                    area_name=area_name,
+                    area=area_name,
                     bot_id=bot_id,
+                    maximum_hits=50,
                 )
-                if confirmed_hit is None:
+                if not confirmed_hits:
                     return _failure(
                         "click_image",
                         "Image verdween tijdens de muisbeweging; er is niet geklikt.",
@@ -352,6 +369,11 @@ def click_image(
                         bounds=bounds,
                         include_execution_status=True,
                     )
+                target_center = _center(bounds)
+                confirmed_hit = min(
+                    confirmed_hits,
+                    key=lambda candidate: math.dist(target_center, candidate.center),
+                )
                 confirmed_bounds = _image_bounds(confirmed_hit, image_edge_padding)
                 shift = _target_shift(bounds, confirmed_bounds)
                 if shift > maximum_target_shift:
@@ -371,7 +393,7 @@ def click_image(
             )
             return _success(
                 "click_image",
-                f"Image geklikt met {selected_button}.",
+                f"Willekeurige image-hit geklikt met {selected_button}.",
                 target_name=image_name,
                 bounds=bounds,
             )
