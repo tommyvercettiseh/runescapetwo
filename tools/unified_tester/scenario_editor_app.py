@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from tools.unified_tester.inventory_app import UnifiedTester as InventoryTester
-from tools.unified_tester.scenario_builder import ScenarioBuilder
+from tools.unified_tester.scenario_builder_dynamic import DynamicScenarioBuilder
 
 
 class UnifiedTester(InventoryTester):
@@ -12,7 +12,7 @@ class UnifiedTester(InventoryTester):
         self.geometry("1180x760")
         self.minsize(1000, 680)
 
-        self.scenario_builder = ScenarioBuilder(
+        self.scenario_builder = DynamicScenarioBuilder(
             self.tabs,
             bot_id_getter=self._bot_id,
             status_callback=self.status_var.set,
