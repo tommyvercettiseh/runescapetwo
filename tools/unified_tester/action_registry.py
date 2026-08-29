@@ -10,6 +10,8 @@ from actions.bank.find_bank import find_bank
 from actions.bank.open_bank import open_bank
 from actions.inventory.click_inventory_item import click_inventory_item
 from actions.inventory.drop_inventory import drop_inventory
+from core import mouse_actions
+from core.vision.api import find_image
 from definitions.bank.is_bank_all_selected import is_bank_all_selected
 from definitions.bank.is_bank_closed import is_bank_closed
 from definitions.bank.is_bank_open import is_bank_open
@@ -21,6 +23,7 @@ from definitions.inventory.get_inventory_item_slots import get_inventory_item_sl
 class ActionContext:
     bot_id: int
     image_name: str = ""
+    area_name: str = mouse_actions.DEFAULT_AREA_NAME
     protected_images: tuple[str, ...] = ()
     optional_images: tuple[str, ...] = ()
     pattern: str = "random_pattern"
@@ -33,6 +36,7 @@ class ActionSpec:
     name: str
     execute: Callable[[ActionContext], Any]
     uses_image: bool = False
+    uses_area: bool = False
     uses_inventory_options: bool = False
     uses_pattern: bool = False
     uses_selection: bool = False
@@ -60,6 +64,44 @@ def _simple_bank_action(
         return function(context.bot_id)
 
     return execute
+
+
+def _click_image(context: ActionContext) -> Any:
+    image_name = context.image_name.strip()
+    area_name = context.area_name.strip() or mouse_actions.DEFAULT_AREA_NAME
+    if not image_name:
+        return {
+            "action": "Click image",
+            "success": False,
+            "executed": False,
+            "area": area_name,
+            "message": "Image name is required.",
+        }
+
+    if context.dry_run:
+        hit = find_image(
+            image_name,
+            area=area_name,
+            bot_id=context.bot_id,
+        )
+        return {
+            "action": "Click image",
+            "success": hit is not None,
+            "executed": False,
+            "image": image_name,
+            "area": area_name,
+            "message": (
+                "Dry run. Image found in area."
+                if hit is not None
+                else "Dry run. Image not found in area."
+            ),
+        }
+
+    return mouse_actions.click_image(
+        image_name=image_name,
+        area_name=area_name,
+        bot_id=context.bot_id,
+    )
 
 
 def _click_inventory_item(context: ActionContext) -> dict[str, object]:
@@ -132,6 +174,12 @@ ACTION_SPECS: tuple[ActionSpec, ...] = (
     ActionSpec("Close bank", _simple_bank_action("Close bank", close_bank)),
     ActionSpec("Find bank", _simple_bank_action("Find bank", find_bank)),
     ActionSpec("Click bank", _simple_bank_action("Click bank", click_bank)),
+    ActionSpec(
+        "Click image",
+        _click_image,
+        uses_image=True,
+        uses_area=True,
+    ),
     ActionSpec(
         "Click inventory item",
         _click_inventory_item,
