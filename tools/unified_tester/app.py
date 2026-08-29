@@ -43,6 +43,7 @@ class UnifiedTester(tk.Tk):
         self.sensor_category_var = tk.StringVar()
         self.sensor_var = tk.StringVar()
         self.action_var = tk.StringVar(value=action_names()[0])
+        self.action_image_var = tk.StringVar()
         self.exclude_images_var = tk.StringVar()
         self.optional_exclude_images_var = tk.StringVar()
         self.pattern_var = tk.StringVar(value="random_pattern")
@@ -206,6 +207,7 @@ class UnifiedTester(tk.Tk):
     def _build_action_tab(self) -> None:
         labels = (
             "Action",
+            "Image",
             "Protected images",
             "Optional exclusions",
             "Pattern",
@@ -237,12 +239,24 @@ class UnifiedTester(tk.Tk):
             lambda _event: self._update_action_fields(),
         )
 
+        self.action_image_entry = ttk.Entry(
+            self.action_tab,
+            textvariable=self.action_image_var,
+        )
+        self.action_image_entry.grid(
+            row=1,
+            column=1,
+            sticky="ew",
+            padx=(12, 0),
+            pady=5,
+        )
+
         self.exclude_entry = ttk.Entry(
             self.action_tab,
             textvariable=self.exclude_images_var,
         )
         self.exclude_entry.grid(
-            row=1,
+            row=2,
             column=1,
             sticky="ew",
             padx=(12, 0),
@@ -254,7 +268,7 @@ class UnifiedTester(tk.Tk):
             textvariable=self.optional_exclude_images_var,
         )
         self.optional_exclude_entry.grid(
-            row=2,
+            row=3,
             column=1,
             sticky="ew",
             padx=(12, 0),
@@ -276,7 +290,7 @@ class UnifiedTester(tk.Tk):
             state="readonly",
         )
         self.pattern_box.grid(
-            row=3,
+            row=4,
             column=1,
             sticky="ew",
             padx=(12, 0),
@@ -290,7 +304,7 @@ class UnifiedTester(tk.Tk):
             state="readonly",
         )
         self.selection_box.grid(
-            row=4,
+            row=5,
             column=1,
             sticky="ew",
             padx=(12, 0),
@@ -302,7 +316,7 @@ class UnifiedTester(tk.Tk):
             text="Dry run",
             variable=self.dry_run_var,
         ).grid(
-            row=5,
+            row=6,
             column=1,
             sticky="w",
             padx=(12, 0),
@@ -317,7 +331,7 @@ class UnifiedTester(tk.Tk):
         self.action_run_button.grid(
             row=0,
             column=2,
-            rowspan=6,
+            rowspan=7,
             sticky="ns",
             padx=(16, 0),
             pady=5,
@@ -326,18 +340,18 @@ class UnifiedTester(tk.Tk):
         ttk.Label(
             self.action_tab,
             text=(
-                "Protected images must be found. Otherwise, the action stops. "
-                "Separate names with commas."
+                "Image is used by image-based actions. Protected images must be found. "
+                "Separate protected names with commas."
             ),
             wraplength=720,
         ).grid(
-            row=6,
+            row=7,
             column=0,
             columnspan=3,
             sticky="w",
             pady=(8, 0),
         )
-        self.action_result = self._result_box(self.action_tab, 7)
+        self.action_result = self._result_box(self.action_tab, 8)
 
     def _load_sensor_categories(self) -> None:
         values = categories()
@@ -460,6 +474,9 @@ class UnifiedTester(tk.Tk):
         except KeyError:
             return
 
+        self.action_image_entry.configure(
+            state="normal" if spec.uses_image else "disabled"
+        )
         inventory_state = "normal" if spec.uses_inventory_options else "disabled"
         self.exclude_entry.configure(state=inventory_state)
         self.optional_exclude_entry.configure(state=inventory_state)
@@ -473,6 +490,7 @@ class UnifiedTester(tk.Tk):
     def _action_context(self) -> ActionContext:
         return ActionContext(
             bot_id=self._bot_id(),
+            image_name=self.action_image_var.get().strip(),
             protected_images=tuple(parse_images(self.exclude_images_var.get())),
             optional_images=tuple(
                 parse_images(self.optional_exclude_images_var.get())
