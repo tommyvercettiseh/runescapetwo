@@ -1,19 +1,17 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-import time
+from pathlib import Path
 import tkinter as tk
 
 import customtkinter as ctk
-import cv2
 import numpy as np
 
-from core.targeting import image_target_bounds
 from core.vision.areas import load_areas
-from core.vision.template_analysis import analyse_template
 from core.vision.templates import load_template
 
-from . import modern_ui
+from . import ui
+from .template_page import TemplatePage
 
 
 ORIGINAL_VALID = np.array((37, 169, 105), dtype=np.uint8)
@@ -21,7 +19,7 @@ ORIGINAL_SAFE = np.array((209, 166, 75), dtype=np.uint8)
 BRIGHT_VALID = np.array((0, 255, 70), dtype=np.uint8)
 
 
-class CleanTemplatePreview(modern_ui.ImageView):
+class CleanTemplatePreview(ui.ImageView):
     """Template preview that normalizes overlay colours without patching show()."""
 
     def __init__(self, parent, screenshot: Callable[[], np.ndarray | None]) -> None:
@@ -39,20 +37,60 @@ class CleanTemplatePreview(modern_ui.ImageView):
         super().show(cleaned)
 
 
-class SearchableTemplatePage(modern_ui.TemplatePage):
+class TemplateThumbnail(ui.ImageView):
+    """Small reusable surface for the exact template currently being searched."""
+
+    def clear(self) -> None:
+        if self._job is not None:
+            self.after_cancel(self._job)
+            self._job = None
+        self._last_rgb = None
+        self._photo = None
+        self.configure(image="")
+
+
+class SearchableTemplatePage(TemplatePage):
     """Template tester with Template and Area browsers as primary navigation."""
 
     def __init__(self, parent) -> None:
         self.area_query = tk.StringVar(master=parent, value="")
         self.area_scroll: ctk.CTkScrollableFrame | None = None
         self.area_rows: dict[str, ctk.CTkButton] = {}
+        self.template_thumbnail: TemplateThumbnail | None = None
+        self.template_thumbnail_name: ctk.CTkLabel | None = None
         super().__init__(parent)
 
     def _build(self) -> None:
         super()._build()
         self._replace_preview()
-        self._simplify_top_toolbar()
         self._add_area_browser()
+        self._add_template_actions()
+        self._polish_detection_panel()
+        self._collapse_top_toolbar()
+        self._show_selected_template()
+
+    def _content_frame(self):
+        """Return the main three/four-column workspace before or after toolbar collapse."""
+        for row in (1, 0):
+            matches = self.grid_slaves(row=row, column=0)
+            if matches:
+                candidate = matches[0]
+                if candidate is not getattr(self.source, "master", None):
+                    return candidate
+        return None
+
+    @staticmethod
+    def _column_child(parent, column: int):
+        if parent is None:
+            return None
+        return next(
+            (
+                child
+                for child in parent.grid_slaves(row=0)
+                if int(child.grid_info().get("column", -1)) == column
+            ),
+            None,
+        )
 
     def _replace_preview(self) -> None:
         parent = self.preview.master
@@ -60,25 +98,174 @@ class SearchableTemplatePage(modern_ui.TemplatePage):
         self.preview = CleanTemplatePreview(parent, lambda: self.screenshot)
         self.preview.grid(row=2, column=0, sticky="nsew", padx=12)
 
-    def _simplify_top_toolbar(self) -> None:
-        """The Area sidebar owns area selection; keep only useful actions above."""
+    def _collapse_top_toolbar(self) -> None:
+        """Keep source state alive but reclaim the full toolbar height for previews."""
         try:
             toolbar = self.source.master
-            self.source.grid_remove()
-            actions = next(
-                (
-                    child
-                    for child in toolbar.grid_slaves(row=0)
-                    if child is not self.source
-                ),
-                None,
-            )
-            if actions is not None:
-                actions.grid_configure(column=0, sticky="e", padx=16, pady=10)
-            toolbar.grid_columnconfigure(0, weight=1)
-            toolbar.grid_columnconfigure(1, weight=0)
+            toolbar.grid_remove()
+            content_matches = self.grid_slaves(row=1, column=0)
+            if content_matches:
+                content_matches[0].grid_configure(row=0, pady=(12, 10))
+                self.grid_rowconfigure(0, weight=1)
+                self.grid_rowconfigure(1, weight=0)
         except (AttributeError, tk.TclError):
             pass
+
+    def _add_template_actions(self) -> None:
+        """Give creation controls their own rows so they never overlap the list."""
+        content = self._content_frame()
+        sidebar = self._column_child(content, 0)
+        if sidebar is None:
+            return
+
+        # CTkScrollableFrame wraps its visible widget in a parent frame, so call
+        # grid() again instead of grid_configure() to move the complete control.
+        self.template_scroll.grid(
+            row=3,
+            column=0,
+            sticky="nsew",
+            padx=8,
+        )
+        footer = next(
+            (
+                child
+                for child in sidebar.grid_slaves()
+                if child is not self.template_scroll
+                and int(child.grid_info().get("row", -1)) == 3
+            ),
+            None,
+        )
+        if footer is not None:
+            footer.grid_configure(row=4)
+
+        sidebar.grid_rowconfigure(2, weight=0)
+        sidebar.grid_rowconfigure(3, weight=1)
+        sidebar.grid_rowconfigure(4, weight=0)
+
+        quick_actions = ctk.CTkFrame(sidebar, fg_color="transparent")
+        quick_actions.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 10))
+        quick_actions.grid_columnconfigure(0, weight=1)
+        quick_actions.grid_columnconfigure(1, weight=1)
+
+        ui.button(
+            quick_actions,
+            "Nieuw",
+            self._new_template,
+            width=82,
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        ui.button(
+            quick_actions,
+            "Capture",
+            self._once,
+            primary=True,
+            width=88,
+        ).grid(row=0, column=1, sticky="ew", padx=(4, 0))
+
+        live_row = ctk.CTkFrame(quick_actions, fg_color="transparent")
+        live_row.grid(row=1, column=0, columnspan=2, sticky="e", pady=(7, 0))
+        ctk.CTkSwitch(
+            live_row,
+            text="Live matching",
+            variable=self.live,
+            command=self._toggle_live,
+            progress_color=ui.ACCENT,
+            text_color=ui.MUTED,
+            font=ui.font(10),
+        ).pack()
+
+    def _polish_detection_panel(self) -> None:
+        """Show the exact search target above compact detection controls."""
+        content = self._content_frame()
+        detection = self._column_child(content, 3)
+        if detection is None:
+            return
+
+        detection.configure(width=292)
+        self.results.configure(height=92)
+
+        target = ctk.CTkFrame(
+            detection,
+            fg_color=ui.CARD_ALT,
+            corner_radius=8,
+            border_width=1,
+            border_color=ui.BORDER,
+        )
+        target.pack(
+            before=self.method_box,
+            fill="x",
+            padx=16,
+            pady=(2, 14),
+        )
+
+        title_row = ctk.CTkFrame(target, fg_color="transparent")
+        title_row.pack(fill="x", padx=10, pady=(8, 5))
+        ui.label(title_row, "ZOEKTEMPLATE", muted=True, size=10, bold=True).pack(
+            side="left"
+        )
+        self.template_thumbnail_name = ui.label(
+            title_row,
+            "—",
+            size=10,
+            bold=True,
+        )
+        self.template_thumbnail_name.pack(side="right")
+
+        preview_shell = ctk.CTkFrame(
+            target,
+            height=120,
+            fg_color=ui.VIEW_BG,
+            corner_radius=6,
+        )
+        preview_shell.pack(fill="x", padx=10, pady=(0, 10))
+        preview_shell.pack_propagate(False)
+
+        self.template_thumbnail = TemplateThumbnail(
+            preview_shell,
+            maximum_upscale=8.0,
+        )
+        self.template_thumbnail.pack(fill="both", expand=True, padx=6, pady=6)
+
+    def _show_selected_template(self) -> None:
+        if self.template_thumbnail is None or self.template_thumbnail_name is None:
+            return
+        if not self.selected:
+            self.template_thumbnail_name.configure(text="Geen selectie")
+            self.template_thumbnail.clear()
+            return
+        try:
+            template_rgb, _template_gray = load_template(self.selected)
+            self.template_thumbnail_name.configure(text=Path(self.selected).stem)
+            self.template_thumbnail.show(template_rgb)
+        except Exception:
+            self.template_thumbnail_name.configure(text="Preview niet beschikbaar")
+            self.template_thumbnail.clear()
+
+    def _select(self, name: str) -> None:
+        super()._select(name)
+        self._show_selected_template()
+
+    def _draw_templates(self) -> None:
+        for child in self.template_scroll.winfo_children():
+            child.destroy()
+        query = self.query.get().strip().casefold()
+        names = [name for name in self.templates if query in name.casefold()]
+        self.rows.clear()
+        for row, name in enumerate(names):
+            selected = name == self.selected
+            button = ctk.CTkButton(
+                self.template_scroll,
+                text=name,
+                command=lambda value=name: self._select(value),
+                anchor="w",
+                height=34,
+                corner_radius=7,
+                fg_color=ui.ACCENT_SOFT if selected else "transparent",
+                hover_color=ui.ACCENT_SOFT,
+                text_color=ui.ACCENT_HOVER if selected else ui.TEXT,
+                font=ui.font(11),
+            )
+            button.grid(row=row, column=0, sticky="ew", pady=1)
+            self.rows[name] = button
 
     @staticmethod
     def _area_names() -> list[str]:
@@ -97,19 +284,12 @@ class SearchableTemplatePage(modern_ui.TemplatePage):
         ]
 
     def _add_area_browser(self) -> None:
-        content_matches = self.grid_slaves(row=1, column=0)
-        if not content_matches:
+        content = self._content_frame()
+        if content is None:
             return
-        content = content_matches[0]
 
-        center = None
-        detection = None
-        for child in content.grid_slaves(row=0):
-            column = int(child.grid_info().get("column", -1))
-            if column == 1:
-                center = child
-            elif column == 2:
-                detection = child
+        center = self._column_child(content, 1)
+        detection = self._column_child(content, 2)
         if center is None or detection is None:
             return
 
@@ -120,13 +300,13 @@ class SearchableTemplatePage(modern_ui.TemplatePage):
         content.grid_columnconfigure(2, weight=1)
         content.grid_columnconfigure(3, weight=0)
 
-        sidebar = modern_ui._card(content, width=245)
+        sidebar = ui.card(content, width=245)
         sidebar.grid(row=0, column=1, sticky="nsew", padx=(0, 8))
         sidebar.grid_propagate(False)
         sidebar.grid_rowconfigure(2, weight=1)
         sidebar.grid_columnconfigure(0, weight=1)
 
-        modern_ui._label(sidebar, "AREAS", size=12, bold=True).grid(
+        ui.label(sidebar, "Areas", size=12, bold=True).grid(
             row=0,
             column=0,
             sticky="w",
@@ -136,12 +316,13 @@ class SearchableTemplatePage(modern_ui.TemplatePage):
         area_search = ctk.CTkEntry(
             sidebar,
             textvariable=self.area_query,
-            placeholder_text="Zoek area",
+            placeholder_text="Search areas...",
             height=38,
             corner_radius=8,
-            fg_color=modern_ui.CARD_ALT,
-            border_color=modern_ui.BORDER,
-            text_color=modern_ui.TEXT,
+            fg_color=ui.CARD_ALT,
+            border_color=ui.BORDER,
+            text_color=ui.TEXT,
+            font=ui.font(11),
         )
         area_search.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 10))
         area_search.bind("<KeyRelease>", self._filter_areas)
@@ -150,8 +331,8 @@ class SearchableTemplatePage(modern_ui.TemplatePage):
         self.area_scroll = ctk.CTkScrollableFrame(
             sidebar,
             fg_color="transparent",
-            scrollbar_button_color=modern_ui.BORDER,
-            scrollbar_button_hover_color=modern_ui.GOLD,
+            scrollbar_button_color=ui.BORDER,
+            scrollbar_button_hover_color=ui.ACCENT_HOVER,
         )
         self.area_scroll.grid(row=2, column=0, sticky="nsew", padx=8, pady=(0, 8))
         self.area_scroll.grid_columnconfigure(0, weight=1)
@@ -174,9 +355,10 @@ class SearchableTemplatePage(modern_ui.TemplatePage):
                 anchor="w",
                 height=34,
                 corner_radius=7,
-                fg_color=modern_ui.ACCENT_SOFT if selected else "transparent",
-                hover_color=modern_ui.ACCENT_SOFT,
-                text_color=modern_ui.ACCENT_HOVER if selected else modern_ui.TEXT,
+                fg_color=ui.ACCENT_SOFT if selected else "transparent",
+                hover_color=ui.ACCENT_SOFT,
+                text_color=ui.ACCENT_HOVER if selected else ui.TEXT,
+                font=ui.font(11),
             )
             button.grid(row=row, column=0, sticky="ew", pady=1)
             self.area_rows[name] = button
@@ -186,7 +368,7 @@ class SearchableTemplatePage(modern_ui.TemplatePage):
             return
         self.source.area.set(name)
         self._draw_areas()
-        self.status.set(f"Area geselecteerd: {name}. Opnieuw analyseren…")
+        self.status.set(f"Area selected: {name}. Analysing again…")
         if self.selected:
             self.after_idle(self._capture)
 
@@ -211,115 +393,16 @@ class SearchableTemplatePage(modern_ui.TemplatePage):
             pass
         self._draw_areas()
 
-    def _analyse(self) -> None:
-        """Render diagnostics from the same analysis used by production matching."""
-        self._job = None
-        self.best_valid_bounds = None
-        if self.screenshot is None or not self.selected:
-            return
-
-        started = time.perf_counter()
-        try:
-            template_rgb, template_gray = load_template(self.selected)
-            maximum = max(1, int(self.maximum.get() or 1))
-            analysis = analyse_template(
-                self.screenshot,
-                template_rgb,
-                template_gray,
-                method=self.method.get(),
-                minimum_shape=self.shape.get(),
-                maximum_candidates=maximum,
-            )
-
-            visual = self.screenshot.copy()
-            rows = []
-            valid_candidates = []
-            for candidate in analysis.candidates:
-                valid = candidate.passes_colour(self.colour.get())
-                if valid:
-                    valid_candidates.append(candidate)
-                rows.append(
-                    (
-                        valid,
-                        candidate.shape_score,
-                        candidate.color_score,
-                        candidate.x,
-                        candidate.y,
-                    )
-                )
-                cv2.rectangle(
-                    visual,
-                    (candidate.x, candidate.y),
-                    (
-                        candidate.x + candidate.width,
-                        candidate.y + candidate.height,
-                    ),
-                    (37, 169, 105) if valid else (220, 82, 104),
-                    2,
-                )
-
-            if valid_candidates:
-                target = max(
-                    valid_candidates,
-                    key=lambda candidate: (
-                        candidate.shape_score,
-                        candidate.color_score,
-                    ),
-                )
-                local_bounds = image_target_bounds(
-                    target.x,
-                    target.y,
-                    target.x + target.width,
-                    target.y + target.height,
-                    image_edge_padding=self._x_padding_percent(),
-                )
-                origin_x, origin_y = self.region[0], self.region[1]
-                self.best_valid_bounds = (
-                    local_bounds[0] + origin_x,
-                    local_bounds[1] + origin_y,
-                    local_bounds[2] + origin_x,
-                    local_bounds[3] + origin_y,
-                )
-                cv2.rectangle(
-                    visual,
-                    (local_bounds[0], local_bounds[1]),
-                    (local_bounds[2], local_bounds[3]),
-                    (209, 166, 75),
-                    1,
-                )
-
-            self.preview.show(visual)
-            lines = ["STATUS         SHAPE    COLOUR      X      Y"]
-            lines.extend(
-                f"{'GELDIG' if valid else 'KLEUR FAALT':<14} "
-                f"{shape:>5.1f}%   {colour:>5.1f}%   {x:>4}   {y:>4}"
-                for valid, shape, colour, x, y in rows
-            )
-            self.results.configure(state="normal")
-            self.results.delete("1.0", "end")
-            self.results.insert("1.0", "\n".join(lines))
-            self.results.configure(state="disabled")
-            self.summary.configure(
-                text=(
-                    f"Beste shape  {analysis.best_shape_score:.1f}%\n"
-                    f"Kleur daarbij  {analysis.best_color_score:.1f}%\n"
-                    f"Geldige hits  {len(valid_candidates)}/{len(rows)}"
-                )
-            )
-            elapsed = (time.perf_counter() - started) * 1000
-            self.status.set(
-                f"Bot {self.source.bot()}  •  {self.source.area.get()}  •  "
-                f"{self.method.get()}  •  {elapsed:.1f} ms"
-            )
-        except Exception as exc:
-            self.live.set(False)
-            self.status.set(f"Fout: {exc}")
-
     def _captured(self, name: str) -> None:
         super()._captured(name)
+        self._show_selected_template()
         self.live.set(True)
-        self.status.set(f"Nieuwe template {name} opgeslagen · Live matching actief.")
+        self.status.set(f"New template {name} saved · Live matching active.")
         self.after_idle(self._capture)
 
 
-__all__ = ["CleanTemplatePreview", "SearchableTemplatePage"]
+__all__ = [
+    "CleanTemplatePreview",
+    "SearchableTemplatePage",
+    "TemplateThumbnail",
+]

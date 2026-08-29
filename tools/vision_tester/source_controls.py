@@ -5,7 +5,35 @@ import tkinter as tk
 from tkinter import ttk
 
 from core.vision.areas import load_areas
-from . import modern_ui
+from .ui import DEFAULT_AREA
+
+
+class SourceState:
+    """Small shared source model for pages that render their own controls."""
+
+    def __init__(
+        self,
+        master,
+        *,
+        default_area: str = DEFAULT_AREA,
+        require_selection: bool = True,
+    ) -> None:
+        self.areas = sorted(load_areas())
+        selected = (
+            ""
+            if require_selection
+            else default_area
+            if default_area in self.areas
+            else self.areas[0]
+            if self.areas
+            else "game"
+        )
+        self.bot_id = tk.StringVar(master=master, value="1")
+        self.area = tk.StringVar(master=master, value=selected)
+        self.show_area_overlay = tk.BooleanVar(master=master, value=True)
+
+    def bot(self) -> int:
+        return int(self.bot_id.get())
 
 
 class SearchableSourceControls(ttk.Frame):
@@ -15,26 +43,22 @@ class SearchableSourceControls(ttk.Frame):
         self,
         parent,
         *,
-        default_area: str = modern_ui.DEFAULT_AREA,
+        default_area: str = DEFAULT_AREA,
         require_selection: bool = True,
         overlay_changed: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(parent)
-        self._areas = sorted(load_areas())
         self._overlay_changed = overlay_changed
-        selected = (
-            ""
-            if require_selection
-            else default_area
-            if default_area in self._areas
-            else self._areas[0]
-            if self._areas
-            else "game"
+        self.state = SourceState(
+            self,
+            default_area=default_area,
+            require_selection=require_selection,
         )
-        self.bot_id = tk.StringVar(value="1")
-        self.area = tk.StringVar(value=selected)
-        self.area_search = tk.StringVar()
-        self.show_area_overlay = tk.BooleanVar(value=True)
+        self._areas = self.state.areas
+        self.bot_id = self.state.bot_id
+        self.area = self.state.area
+        self.show_area_overlay = self.state.show_area_overlay
+        self.area_search = tk.StringVar(master=self)
 
         ttk.Label(self, text="Bot ID").grid(row=0, column=0, sticky="w")
         ttk.Spinbox(
@@ -95,7 +119,7 @@ class SearchableSourceControls(ttk.Frame):
             self._overlay_changed()
 
     def bot(self) -> int:
-        return int(self.bot_id.get())
+        return self.state.bot()
 
 
-__all__ = ["SearchableSourceControls"]
+__all__ = ["SearchableSourceControls", "SourceState"]

@@ -7,10 +7,13 @@ from tools.unified_tester.action_registry import ACTION_SPECS, action_names, get
 from tools.unified_tester.result_utils import format_result, result_detail, result_success
 from tools.unified_tester.scenario_code_editor import ScenarioCodeEditor
 from tools.unified_tester.scenario_runner import BANKING_SCENARIO, STEP_HANDLERS
+from tools.vision_tester.colour_base import ColourBasePage
 from tools.vision_tester.colour_browser import BrowserToleranceColourPage
 from tools.vision_tester.colour_page import ColourPage
+from tools.vision_tester.preset_ui import PresetColourPage
 from tools.vision_tester.sensor_boolean_badge import EnhancedSensorPage
-from tools.vision_tester.stoplight_panel import StoplightPanel
+from tools.vision_tester.sensor_page import SensorPage
+from tools.vision_tester.template_page import TemplatePage
 from tools.vision_tester.template_plus import SearchableTemplatePage
 from tools.vision_tester.unified_plus import ToleranceColourPage
 
@@ -73,44 +76,92 @@ def test_inventory_exclusions_share_required_and_optional_rules(monkeypatch) -> 
     assert missing == ("Missing",)
 
 
-def test_colour_page_uses_one_operator_page_instead_of_feature_subclasses() -> None:
+def test_colour_page_has_one_clear_behaviour_base() -> None:
     assert ColourPage.__bases__ == (BrowserToleranceColourPage,)
-    assert issubclass(BrowserToleranceColourPage, ToleranceColourPage)
+    assert BrowserToleranceColourPage.__bases__ == (ColourBasePage,)
+    assert ColourPage.__mro__[:3] == (
+        ColourPage,
+        BrowserToleranceColourPage,
+        ColourBasePage,
+    )
 
-    legacy_page_names = {
-        "ManualColourPage",
-        "DeleteUndoColourPage",
-        "RecordedColourPage",
-        "ReplayResetPage",
-        "HpStoplightMonitorPage",
-        "PrayerStoplightMonitorPage",
-    }
-    assert legacy_page_names.isdisjoint(cls.__name__ for cls in ColourPage.__mro__)
-
-
-def test_stoplight_feedback_is_composed_not_inherited() -> None:
-    assert not issubclass(ColourPage, StoplightPanel)
-    assert "StoplightPanel(" in _source("tools/vision_tester/colour_page.py")
+    # Historical import names remain adapters, not extra inheritance layers.
+    assert PresetColourPage is BrowserToleranceColourPage
+    assert ToleranceColourPage is BrowserToleranceColourPage
 
 
-def test_legacy_colour_feature_modules_are_removed() -> None:
-    legacy_modules = {
-        "manual_colour_save.py",
+def test_colour_workspace_does_not_embed_replay_or_stoplights() -> None:
+    source = _source("tools/vision_tester/colour_page.py")
+    assert "StoplightPanel" not in source
+    assert "ColourReplayController" not in source
+    assert "REPLAY_SPEEDS" not in source
+
+
+def test_dead_vision_tester_layers_stay_removed() -> None:
+    removed = {
+        "area_overlay_toggle.py",
         "colour_delete_undo.py",
         "colour_recording.py",
-        "replay_reset.py",
+        "colour_replay.py",
+        "colour_view_cleanup.py",
+        "common.py",
+        "enhanced_colour_page.py",
+        "hotkey_fix.py",
         "hp_stoplight_monitor.py",
+        "image_page.py",
+        "manual_colour_save.py",
         "prayer_stoplight_monitor.py",
+        "replay_palette_builder.py",
+        "replay_reset.py",
+        "stoplight_panel.py",
     }
     directory = ROOT / "tools" / "vision_tester"
-    assert not any((directory / name).exists() for name in legacy_modules)
+    assert not any((directory / name).exists() for name in removed)
 
 
-def test_template_and_sensor_features_are_explicit_pages() -> None:
-    from tools.vision_tester import modern_ui
+def test_template_and_sensor_features_use_explicit_page_modules() -> None:
+    assert SearchableTemplatePage.__bases__ == (TemplatePage,)
+    assert EnhancedSensorPage.__bases__ == (SensorPage,)
 
-    assert issubclass(SearchableTemplatePage, modern_ui.TemplatePage)
-    assert issubclass(EnhancedSensorPage, modern_ui.SensorPage)
+
+def test_modern_ui_is_only_a_compatibility_facade() -> None:
+    source = _source("tools/vision_tester/modern_ui.py")
+    assert "class ColourPage" not in source
+    assert "class TemplatePage" not in source
+    assert "class SensorPage" not in source
+    assert "match_template(" not in source
+    assert "calculate_color_score(" not in source
+    assert len(source.splitlines()) < 100
+
+
+def test_modern_ui_dependency_cannot_spread() -> None:
+    directory = ROOT / "tools" / "vision_tester"
+    offenders = {
+        path.name
+        for path in directory.glob("*.py")
+        if path.name != "modern_ui.py" and "modern_ui" in path.read_text(encoding="utf-8")
+    }
+    assert offenders == set()
+
+
+def test_definition_registry_lives_with_definitions() -> None:
+    adapter = _source("tools/definition_tester/registry.py")
+    canonical = _source("definitions/registry.py")
+    assert "from definitions.registry import" in adapter
+    assert "DefinitionEntry(" not in adapter
+    assert "DEFINITIONS:" in canonical
+
+
+def test_architecture_document_names_canonical_owners() -> None:
+    architecture = _source("ARCHITECTURE.md")
+    for owner in (
+        "core/vision/template_analysis.py",
+        "core/vision/colour_analysis.py",
+        "core/mouse_actions.py",
+        "definitions/registry.py",
+        "tools/vision_tester/",
+    ):
+        assert owner in architecture
 
 
 def test_production_vision_app_has_no_runtime_installers() -> None:
@@ -123,9 +174,16 @@ def test_colour_page_never_bypasses_the_inheritance_chain() -> None:
     assert "unified_plus._" not in source
 
 
-def test_template_tester_uses_core_template_analysis() -> None:
-    source = _source("tools/vision_tester/template_plus.py")
+def test_template_page_uses_core_template_analysis() -> None:
+    source = _source("tools/vision_tester/template_page.py")
     assert "analyse_template(" in source
+    assert "match_template(" not in source
+    assert "calculate_color_score(" not in source
+
+
+def test_template_plus_adds_ui_without_reimplementing_matching() -> None:
+    source = _source("tools/vision_tester/template_plus.py")
+    assert "def _analyse(" not in source
     assert "match_template(" not in source
     assert "calculate_color_score(" not in source
 

@@ -4,11 +4,12 @@ import time
 
 from core.vision.screenshots import capture_area
 
-from . import modern_ui
+from . import ui
 from .sensor_checks import evaluate_sensor
+from .sensor_page import SensorPage
 
 
-class EnhancedSensorPage(modern_ui.SensorPage):
+class EnhancedSensorPage(SensorPage):
     """Sensor page with a compact function-aware badge for Python booleans."""
 
     def _build(self) -> None:
@@ -28,17 +29,17 @@ class EnhancedSensorPage(modern_ui.SensorPage):
 
         if result is True:
             value = "TRUE"
-            background = modern_ui.SUCCESS
+            background = ui.SUCCESS
         elif result is False:
             value = "FALSE"
-            background = modern_ui.DANGER
+            background = ui.DANGER
         else:
             value = "—"
-            background = modern_ui.BORDER
+            background = ui.BORDER
 
         self.outcome.configure(
             text=f"{function_name}    {value}",
-            text_color="white" if result is not None else modern_ui.TEXT,
+            text_color="white" if result is not None else ui.TEXT,
             fg_color=background,
             corner_radius=8,
             width=260,
@@ -80,8 +81,4 @@ class EnhancedSensorPage(modern_ui.SensorPage):
             self.status.set(f"Fout: {exc}")
 
 
-def install_sensor_boolean_badge() -> None:
-    """Compatibility no-op; use EnhancedSensorPage explicitly."""
-
-
-__all__ = ["EnhancedSensorPage", "install_sensor_boolean_badge"]
+__all__ = ["EnhancedSensorPage"]

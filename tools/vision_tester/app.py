@@ -3,8 +3,7 @@ from __future__ import annotations
 from .area_page import AreaEditorPage
 from .app_shell import VisionTesterShell
 from .colour_page import ColourPage
-from .enhanced_ui import apply_enhanced_theme
-from .preset_ui import BASIC_BG, BASIC_MUTED
+from .enhanced_ui import DARK_BG, DARK_MUTED, apply_enhanced_theme
 from .sensor_boolean_badge import EnhancedSensorPage
 from .template_plus import SearchableTemplatePage
 
@@ -17,8 +16,8 @@ class VisionTester(VisionTesterShell):
             colour_page_type=ColourPage,
             template_page_type=SearchableTemplatePage,
             sensor_page_type=EnhancedSensorPage,
-            background=BASIC_BG,
-            muted_text=BASIC_MUTED,
+            background=DARK_BG,
+            muted_text=DARK_MUTED,
             theme_setup=apply_enhanced_theme,
         )
         self.area_editor_page = self.add_page("Area Editor", AreaEditorPage)
