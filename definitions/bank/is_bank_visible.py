@@ -1,17 +1,13 @@
 from core import vision
-from definitions.bank.bank_target import (
-    BANK_AREA,
-    BANK_COLOUR,
-    BANK_MAX_PIXELS,
-    BANK_MIN_PIXELS,
-)
+from core.vision.object_presets import load_object_preset
 
 
 def is_bank_visible(bot_id: int = 1) -> bool:
+    preset = load_object_preset("bank")
     return vision.find_colour(
-        BANK_COLOUR,
-        area=BANK_AREA,
+        preset.colour,
+        area=preset.area,
         bot_id=bot_id,
-        minimum_area_px=BANK_MIN_PIXELS,
-        maximum_area_px=BANK_MAX_PIXELS,
+        minimum_area_px=preset.min_pixels,
+        maximum_area_px=preset.max_pixels,
     ) is not None
