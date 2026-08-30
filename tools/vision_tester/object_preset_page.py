@@ -104,7 +104,7 @@ class ObjectPresetPage(ctk.CTkFrame):
             detection,
             text="Draai camera/object. Min en max blijven automatisch meelopen.",
             wraplength=320,
-            foreground=modern_ui.MUTED_TEXT,
+            foreground=modern_ui.MUTED,
         ).grid(row=10, column=0, columnspan=2, sticky="w", padx=16, pady=(4, 16))
 
         preset = modern_ui._card(self)
