@@ -1,0 +1,18 @@
+{
+  "bank": {
+    "area": "Bot_Area",
+    "button": "left",
+    "colour": "cyan",
+    "edge_padding": 20,
+    "max_pixels": 800,
+    "min_pixels": 300
+  },
+  "furnace": {
+    "area": "Bot_Area",
+    "button": "left",
+    "colour": "purple",
+    "edge_padding": 20,
+    "max_pixels": 4000,
+    "min_pixels": 250
+  }
+}
