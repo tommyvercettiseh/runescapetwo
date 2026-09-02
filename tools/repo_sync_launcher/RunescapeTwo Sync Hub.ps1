@@ -7,21 +7,15 @@ $UnifiedBat = Join-Path $RepoPath 'Start Unified Vision Tester.bat'
 
 function Invoke-Git {
     param([string[]]$Args)
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = 'git'
-    $psi.WorkingDirectory = $RepoPath
-    $psi.UseShellExecute = $false
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
-    $psi.CreateNoWindow = $true
-    foreach ($arg in $Args) { [void]$psi.ArgumentList.Add($arg) }
-    $p = New-Object System.Diagnostics.Process
-    $p.StartInfo = $psi
-    [void]$p.Start()
-    $stdout = $p.StandardOutput.ReadToEnd()
-    $stderr = $p.StandardError.ReadToEnd()
-    $p.WaitForExit()
-    [pscustomobject]@{ ExitCode = $p.ExitCode; Output = ($stdout + $stderr).Trim() }
+    Push-Location $RepoPath
+    try {
+        $output = (& git @Args 2>&1 | Out-String).Trim()
+        $code = $LASTEXITCODE
+    }
+    finally {
+        Pop-Location
+    }
+    [pscustomobject]@{ ExitCode = $code; Output = $output }
 }
 
 function Get-RepoState {
