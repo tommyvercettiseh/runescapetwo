@@ -9,7 +9,7 @@ from .enhanced_ui import apply_enhanced_theme
 from .object_preset_page import ObjectPresetPage
 from .preset_ui import BASIC_BG, BASIC_MUTED
 from .sensor_boolean_badge import EnhancedSensorPage
-from .template_plus import SearchableTemplatePage
+from .template_radar import RadarTemplatePage
 
 
 class VisionTester(VisionTesterShell):
@@ -18,7 +18,7 @@ class VisionTester(VisionTesterShell):
     def __init__(self) -> None:
         super().__init__(
             colour_page_type=ColourPage,
-            template_page_type=SearchableTemplatePage,
+            template_page_type=RadarTemplatePage,
             sensor_page_type=EnhancedSensorPage,
             background=BASIC_BG,
             muted_text=BASIC_MUTED,
