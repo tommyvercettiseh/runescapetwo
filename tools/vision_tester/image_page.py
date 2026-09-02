@@ -31,6 +31,10 @@ from .common import (
 from .template_capture import TemplateCaptureOverlay
 
 
+RADAR_STEP_MS = 120
+RADAR_MAX_CANDIDATES = 6
+
+
 class ImagePage(ttk.Frame):
     """Complete live template calibration and capture workspace."""
 
@@ -51,6 +55,12 @@ class ImagePage(ttk.Frame):
         self.current_region: tuple[int, int, int, int] | None = None
         self._render_job: str | None = None
 
+        self._radar_status: dict[str, bool] = {}
+        self._radar_index = 0
+        self._radar_next_at = 0.0
+        self._radar_screenshots: dict[tuple[str, int], np.ndarray] = {}
+        self._status_icons: dict[bool, tk.PhotoImage] = {}
+
         self._build()
         self.shape_threshold.trace_add("write", self._settings_changed)
         self.colour_threshold.trace_add("write", self._settings_changed)
@@ -69,9 +79,7 @@ class ImagePage(ttk.Frame):
             text="＋ NIEUWE TEMPLATE",
             command=self._new_template,
             width=166,
-        ).pack(
-            side="left", padx=(0, 8)
-        )
+        ).pack(side="left", padx=(0, 8))
         self.live_button = LiveToggle(actions, variable=self.live, command=self._toggle)
         self.live_button.pack(side="left", padx=(0, 8))
         ModernButton(
@@ -95,7 +103,7 @@ class ImagePage(ttk.Frame):
         ).pack(anchor="w")
         ttk.Label(
             sidebar,
-            text="Zoek en selecteer één afbeelding",
+            text="Groen = gevonden · wit = niet gevonden",
             style="SurfaceMuted.TLabel",
         ).pack(anchor="w", pady=(2, 10))
         search = ttk.Entry(sidebar, textvariable=self.template_query)
@@ -104,27 +112,22 @@ class ImagePage(ttk.Frame):
 
         list_container = ttk.Frame(sidebar, style="Surface.TFrame")
         list_container.pack(fill="both", expand=True)
-        self.template_list = tk.Listbox(
+        self._status_icons = {
+            False: self._make_status_icon("#FFFFFF"),
+            True: self._make_status_icon("#22C55E"),
+        }
+        self.template_list = ttk.Treeview(
             list_container,
+            show="tree",
             selectmode="browse",
-            exportselection=False,
-            background=COLOURS["surface_raised"],
-            foreground=COLOURS["text"],
-            selectbackground=COLOURS["accent_dark"],
-            selectforeground=COLOURS["text"],
-            highlightbackground=COLOURS["border"],
-            highlightcolor=COLOURS["accent"],
-            borderwidth=0,
-            highlightthickness=1,
-            relief="flat",
-            activestyle="none",
-            font=("Segoe UI", 10),
+            height=15,
         )
+        self.template_list.column("#0", anchor="w", stretch=True, width=250)
         scroll = ttk.Scrollbar(list_container, orient="vertical", command=self.template_list.yview)
         self.template_list.configure(yscrollcommand=scroll.set)
         self.template_list.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
-        self.template_list.bind("<<ListboxSelect>>", self._template_selected)
+        self.template_list.bind("<<TreeviewSelect>>", self._template_selected)
 
         template_actions = ttk.Frame(sidebar, style="Surface.TFrame")
         template_actions.pack(fill="x", pady=(10, 0))
@@ -133,18 +136,14 @@ class ImagePage(ttk.Frame):
             text="HERNOEM",
             command=self._rename_template,
             width=116,
-        ).pack(
-            side="left", fill="x", expand=True, padx=(0, 4)
-        )
+        ).pack(side="left", fill="x", expand=True, padx=(0, 4))
         ModernButton(
             template_actions,
             text="VERWIJDER",
             command=self._delete_template,
             width=116,
             variant="danger",
-        ).pack(
-            side="left", fill="x", expand=True, padx=(4, 0)
-        )
+        ).pack(side="left", fill="x", expand=True, padx=(4, 0))
 
         thumbnail_card = ttk.Frame(sidebar, style="Raised.TFrame", padding=(9, 9))
         thumbnail_card.pack(fill="x", pady=(12, 0))
@@ -264,6 +263,20 @@ class ImagePage(ttk.Frame):
         )
         self._refresh_templates()
 
+    @staticmethod
+    def _make_status_icon(fill: str) -> tk.PhotoImage:
+        """Small black-outlined status dot that stays readable on light/dark themes."""
+        size = 14
+        center = (size - 1) / 2.0
+        image = tk.PhotoImage(width=size, height=size)
+        for y in range(size):
+            for x in range(size):
+                distance = ((x - center) ** 2 + (y - center) ** 2) ** 0.5
+                if distance <= 6.0:
+                    colour = "#111111" if distance >= 4.7 else fill
+                    image.put(colour, (x, y))
+        return image
+
     def _build_threshold(
         self,
         parent,
@@ -291,26 +304,44 @@ class ImagePage(ttk.Frame):
         ).pack(fill="x", pady=(6, 18))
 
     def _selected_template(self) -> str | None:
-        selection = self.template_list.curselection()
-        return self.template_list.get(selection[0]) if selection else None
+        selection = self.template_list.selection()
+        return str(selection[0]) if selection else None
 
     def _refresh_templates(self, preferred: str | None = None) -> None:
         current = preferred or self._selected_template()
         self.all_templates = sorted(path.name for path in Path(IMAGES_DIR).glob("*.png"))
+        self._radar_status = {
+            name: self._radar_status.get(name, False)
+            for name in self.all_templates
+        }
+        self._radar_index = 0
+        self._radar_screenshots.clear()
         self._filter_templates(preferred=current)
 
     def _filter_templates(self, preferred: str | None = None) -> None:
         current = preferred or self._selected_template()
         visible = filter_options(self.all_templates, self.template_query.get())
-        self.template_list.delete(0, "end")
+        self.template_list.delete(*self.template_list.get_children())
         for name in visible:
-            self.template_list.insert("end", name)
+            found = self._radar_status.get(name, False)
+            self.template_list.insert(
+                "",
+                "end",
+                iid=name,
+                text=name,
+                image=self._status_icons[found],
+            )
         target = current if current in visible else (visible[0] if visible else None)
         if target is not None:
-            index = visible.index(target)
-            self.template_list.selection_set(index)
-            self.template_list.see(index)
+            self.template_list.selection_set(target)
+            self.template_list.see(target)
             self._template_selected()
+
+    def _set_radar_status(self, name: str, found: bool) -> None:
+        found = bool(found)
+        self._radar_status[name] = found
+        if self.template_list.exists(name):
+            self.template_list.item(name, image=self._status_icons[found])
 
     def _template_selected(self, _event=None) -> None:
         name = self._selected_template()
@@ -340,7 +371,68 @@ class ImagePage(ttk.Frame):
     def _tick(self) -> None:
         if self.live.get():
             self._capture_and_analyse()
+
+        now = time.monotonic()
+        if now >= self._radar_next_at:
+            self._radar_step()
+            self._radar_next_at = now + (RADAR_STEP_MS / 1000.0)
+
         self.after(100, self._tick)
+
+    def _radar_step(self) -> None:
+        """Scan one template per step so the background radar stays lightweight."""
+        if not self.all_templates:
+            return
+
+        if self._radar_index >= len(self.all_templates):
+            self._radar_index = 0
+            self._radar_screenshots.clear()
+
+        name = self.all_templates[self._radar_index]
+        self._radar_index += 1
+
+        try:
+            settings = load_settings(name)
+            area = settings.area or self.source.area.get()
+            bot_id = int(self.source.bot_id.get())
+            key = (area, bot_id)
+            screenshot = self._radar_screenshots.get(key)
+            if screenshot is None:
+                screenshot, _region = capture_area(area, bot_id=bot_id)
+                self._radar_screenshots[key] = screenshot
+            found = self._radar_match(name, screenshot, settings)
+        except Exception:
+            found = False
+
+        self._set_radar_status(name, found)
+
+    @staticmethod
+    def _radar_match(
+        name: str,
+        screenshot: np.ndarray,
+        settings: TemplateSettings,
+    ) -> bool:
+        if settings.method not in available_methods():
+            return False
+
+        template_rgb, template_gray = load_template(name)
+        screenshot_gray = cv2.cvtColor(screenshot, cv2.COLOR_RGB2GRAY)
+        height, width = template_gray.shape[:2]
+        if screenshot_gray.shape[0] < height or screenshot_gray.shape[1] < width:
+            return False
+
+        scores = match_template(screenshot_gray, template_gray, settings.method)
+        for x, y, _score in iter_candidates(
+            scores,
+            settings.min_shape / 100.0,
+            width,
+            height,
+            maximum_candidates=RADAR_MAX_CANDIDATES,
+        ):
+            patch = screenshot[y : y + height, x : x + width]
+            if calculate_color_score(template_rgb, patch) >= settings.min_color:
+                return True
+        return False
 
     def _settings_changed(self, *_args) -> None:
         try:
@@ -425,6 +517,8 @@ class ImagePage(ttk.Frame):
                     values=(status, f"{shape:.1f}%", f"{colour:.1f}%", x, y),
                 )
 
+            self._set_radar_status(name, valid_hits > 0)
+
             elapsed = (time.perf_counter() - started) * 1000.0
             self.summary.set(
                 f"Beste shape   {best_score * 100.0:.1f}%\n"
@@ -454,6 +548,7 @@ class ImagePage(ttk.Frame):
                     area=self.source.area.get() or None,
                 ),
             )
+            self._radar_screenshots.clear()
             self.status.set(f"Productie-instellingen voor {name} opgeslagen.")
         except Exception as exc:
             messagebox.showerror("Template", str(exc))
@@ -491,7 +586,9 @@ class ImagePage(ttk.Frame):
         if not value:
             return
         try:
+            old_status = self._radar_status.pop(current, False)
             new_name = rename_template(current, value)
+            self._radar_status[new_name] = old_status
             self._refresh_templates(preferred=new_name)
             self.status.set(f"Template hernoemd naar {new_name}.")
         except Exception as exc:
@@ -507,6 +604,7 @@ class ImagePage(ttk.Frame):
             return
         try:
             delete_template(current)
+            self._radar_status.pop(current, None)
             self.current_screenshot = None
             self._refresh_templates()
             self.status.set(f"Template {current} verwijderd.")
