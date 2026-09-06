@@ -24,11 +24,13 @@ class LogoutState(str, Enum):
 
 def get_logout_state(bot_id: int = 1) -> LogoutState:
     """Return the current logout stage without changing anything on screen."""
-    if is_logged_out(bot_id):
-        return LogoutState.LOGGED_OUT
-
+    # Always prioritize the actual logout confirmation button. If it is visible,
+    # the player is definitely not logged out yet and this is the next action.
     if vision.image_exists(LOGOUT_CLICK_HERE_IMAGE, area=LOGOUT_AREA, bot_id=bot_id):
         return LogoutState.READY_TO_LOGOUT
+
+    if is_logged_out(bot_id):
+        return LogoutState.LOGGED_OUT
 
     selected = vision.image_exists(
         LOGOUT_DOOR_SELECTED_IMAGE,
