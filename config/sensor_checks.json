@@ -13,6 +13,13 @@
     "threshold": 1,
     "enabled": true
   },
+  "is_compass_north": {
+    "kind": "python_bool",
+    "value": "definitions.camera.compass",
+    "area": "Compass_Area",
+    "threshold": 1,
+    "enabled": true
+  },
   "is_low_hp": {
     "kind": "python_bool",
     "value": "definitions.hp.is_low_hp",
