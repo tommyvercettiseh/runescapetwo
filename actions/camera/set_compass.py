@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 import time
 
 from core import mouse_actions
@@ -20,17 +21,19 @@ def set_compass(
     direction: CompassDirection,
     *,
     bot_id: int = 1,
-    via_menu: bool = False,
 ) -> bool:
     """Set the compass to a cardinal direction.
 
-    North defaults to a normal left-click in Compass_Area because RuneScape
-    resets the compass to north that way. Set ``via_menu=True`` to use the
-    right-click menu for north too. East, south and west always use the menu.
+    North first checks whether it is already facing north. If not, it chooses
+    50/50 between a normal left-click on the compass and the right-click menu.
+    East, south and west always use the right-click menu.
     """
-    if direction == "north" and not via_menu:
+    if direction == "north":
         if is_compass_north(bot_id=bot_id):
             return True
+
+        if random.choice((False, True)):
+            return _set_via_menu(direction, bot_id=bot_id)
 
         clicked = mouse_actions.click_in_area(
             area_name=COMPASS_AREA,
@@ -43,6 +46,14 @@ def set_compass(
 
         return is_compass_north(bot_id=bot_id)
 
+    return _set_via_menu(direction, bot_id=bot_id)
+
+
+def _set_via_menu(
+    direction: CompassDirection,
+    *,
+    bot_id: int,
+) -> bool:
     opened = mouse_actions.click_in_area(
         area_name=COMPASS_AREA,
         bot_id=bot_id,
