@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from actions.camera import set_compass as set_compass_module
+import actions.camera.set_compass as set_compass_module
 from definitions.camera import compass as compass_module
 
 
