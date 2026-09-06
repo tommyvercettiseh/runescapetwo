@@ -15,7 +15,7 @@
   },
   "is_compass_north": {
     "kind": "python_bool",
-    "value": "definitions.camera.compass",
+    "value": "definitions.camera.is_compass_north",
     "area": "Compass_Area",
     "threshold": 1,
     "enabled": true
