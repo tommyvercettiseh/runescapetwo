@@ -104,6 +104,33 @@ def _click_image(context: ActionContext) -> Any:
     )
 
 
+def _click_area(context: ActionContext) -> dict[str, object]:
+    area_name = context.area_name.strip() or mouse_actions.DEFAULT_AREA_NAME
+    if context.dry_run:
+        return {
+            "action": "Click area",
+            "success": True,
+            "executed": False,
+            "area": area_name,
+            "message": "Dry run. Area click ready.",
+        }
+
+    success = bool(
+        mouse_actions.click_in_area(
+            area_name=area_name,
+            bot_id=context.bot_id,
+            button="left",
+        )
+    )
+    return {
+        "action": "Click area",
+        "success": success,
+        "executed": success,
+        "area": area_name,
+        "message": "Area clicked." if success else "Area click failed.",
+    }
+
+
 def _click_inventory_item(context: ActionContext) -> dict[str, object]:
     image_name = context.image_name.strip()
     if not image_name:
@@ -164,34 +191,15 @@ def _drop_inventory(context: ActionContext):
 
 
 ACTION_SPECS: tuple[ActionSpec, ...] = (
-    ActionSpec(
-        "Bank inventory",
-        _bank_inventory,
-        uses_inventory_options=True,
-        uses_selection=True,
-    ),
+    ActionSpec("Bank inventory", _bank_inventory, uses_inventory_options=True, uses_selection=True),
     ActionSpec("Open bank", _simple_bank_action("Open bank", open_bank)),
     ActionSpec("Close bank", _simple_bank_action("Close bank", close_bank)),
     ActionSpec("Find bank", _simple_bank_action("Find bank", find_bank)),
     ActionSpec("Click bank", _simple_bank_action("Click bank", click_bank)),
-    ActionSpec(
-        "Click image",
-        _click_image,
-        uses_image=True,
-        uses_area=True,
-    ),
-    ActionSpec(
-        "Click inventory item",
-        _click_inventory_item,
-        uses_image=True,
-        uses_selection=True,
-    ),
-    ActionSpec(
-        "Drop inventory",
-        _drop_inventory,
-        uses_inventory_options=True,
-        uses_pattern=True,
-    ),
+    ActionSpec("Click image", _click_image, uses_image=True, uses_area=True),
+    ActionSpec("Click area", _click_area, uses_area=True),
+    ActionSpec("Click inventory item", _click_inventory_item, uses_image=True, uses_selection=True),
+    ActionSpec("Drop inventory", _drop_inventory, uses_inventory_options=True, uses_pattern=True),
 )
 
 _ACTIONS_BY_NAME = {spec.name: spec for spec in ACTION_SPECS}
