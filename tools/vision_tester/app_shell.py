@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import ctypes
+from ctypes import wintypes
 import sys
+import threading
 import time
 import tkinter as tk
 from queue import Empty, SimpleQueue
@@ -12,6 +15,12 @@ from pynput.keyboard import Key as KeyboardKey
 from pynput.keyboard import Listener as KeyboardListener
 
 from . import modern_ui
+
+
+HOTKEY_ID_F2 = 1
+WM_HOTKEY = 0x0312
+WM_QUIT = 0x0012
+VK_F2 = 0x71
 
 
 class VisionTesterShell(tk.Tk):
@@ -41,6 +50,8 @@ class VisionTesterShell(tk.Tk):
         self._sensor_page_type = sensor_page_type
         self._hotkey_events: SimpleQueue[str] = SimpleQueue()
         self._hotkey_listener: KeyboardListener | None = None
+        self._hotkey_thread: threading.Thread | None = None
+        self._hotkey_thread_id: int | None = None
         self._last_f2_at = 0.0
         self._closing = False
         self.pages: list[object] = []
@@ -132,11 +143,38 @@ class VisionTesterShell(tk.Tk):
         self._activate_current_page()
 
     def _start_hotkeys(self) -> None:
-        options = {"on_press": self._global_key_pressed}
         if sys.platform == "win32":
-            options["win32_event_filter"] = self._windows_key_filter
-        self._hotkey_listener = KeyboardListener(**options)
+            self._hotkey_thread = threading.Thread(
+                target=self._windows_hotkey_loop,
+                name="vision-tester-f2-hotkey",
+                daemon=True,
+            )
+            self._hotkey_thread.start()
+            return
+
+        self._hotkey_listener = KeyboardListener(on_press=self._global_key_pressed)
         self._hotkey_listener.start()
+
+    def _windows_hotkey_loop(self) -> None:
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        self._hotkey_thread_id = int(kernel32.GetCurrentThreadId())
+
+        if not user32.RegisterHotKey(None, HOTKEY_ID_F2, 0, VK_F2):
+            self._hotkey_listener = KeyboardListener(on_press=self._global_key_pressed)
+            self._hotkey_listener.start()
+            return
+
+        message = wintypes.MSG()
+        try:
+            while not self._closing:
+                result = user32.GetMessageW(ctypes.byref(message), None, 0, 0)
+                if result <= 0:
+                    break
+                if message.message == WM_HOTKEY and int(message.wParam) == HOTKEY_ID_F2:
+                    self._queue_capture_hotkey()
+        finally:
+            user32.UnregisterHotKey(None, HOTKEY_ID_F2)
 
     def _global_key_pressed(self, key) -> None:
         if key == KeyboardKey.f2:
@@ -148,15 +186,6 @@ class VisionTesterShell(tk.Tk):
             return
         self._last_f2_at = now
         self._hotkey_events.put("capture")
-
-    def _windows_key_filter(self, message, data):
-        if int(data.vkCode) != 0x71:
-            return True
-        if int(message) in (0x0100, 0x0104):
-            self._queue_capture_hotkey()
-        if self._hotkey_listener is not None:
-            self._hotkey_listener.suppress_event()
-        return False
 
     def _poll_hotkeys(self) -> None:
         if self._closing:
@@ -175,6 +204,13 @@ class VisionTesterShell(tk.Tk):
             self.current_page.deactivate()
         if self._hotkey_listener is not None:
             self._hotkey_listener.stop()
+        if sys.platform == "win32" and self._hotkey_thread_id is not None:
+            ctypes.windll.user32.PostThreadMessageW(
+                self._hotkey_thread_id,
+                WM_QUIT,
+                0,
+                0,
+            )
         self.destroy()
 
 
