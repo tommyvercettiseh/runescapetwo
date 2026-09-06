@@ -9,9 +9,13 @@ from definitions.bank.is_bank_open import is_bank_open
 from definitions.bank.is_bank_visible import is_bank_visible
 from definitions.camera.compass import (
     is_compass_east,
+    is_compass_east_missing,
     is_compass_north,
+    is_compass_north_missing,
     is_compass_south,
+    is_compass_south_missing,
     is_compass_west,
+    is_compass_west_missing,
 )
 from definitions.hp.is_low_hp import is_low_hp
 from definitions.interface.is_screen_open import is_screen_open
@@ -41,9 +45,13 @@ DEFINITIONS: tuple[DefinitionEntry, ...] = (
     DefinitionEntry("Bank", "Bank All selected.", is_bank_all_selected, "Detects BankAllSelected."),
     DefinitionEntry("Bank", "Bank closed.", is_bank_closed, "Checks whether the bank is closed."),
     DefinitionEntry("Camera", "Compass north.", is_compass_north, "Detects Compass_North in Compass_Area."),
+    DefinitionEntry("Camera", "Compass north missing.", is_compass_north_missing, "True when Compass_North is not detected."),
     DefinitionEntry("Camera", "Compass east.", is_compass_east, "Detects Compass_East in Compass_Area."),
+    DefinitionEntry("Camera", "Compass east missing.", is_compass_east_missing, "True when Compass_East is not detected."),
     DefinitionEntry("Camera", "Compass south.", is_compass_south, "Detects Compass_South in Compass_Area."),
+    DefinitionEntry("Camera", "Compass south missing.", is_compass_south_missing, "True when Compass_South is not detected."),
     DefinitionEntry("Camera", "Compass west.", is_compass_west, "Detects Compass_West in Compass_Area."),
+    DefinitionEntry("Camera", "Compass west missing.", is_compass_west_missing, "True when Compass_West is not detected."),
     DefinitionEntry("HP", "Low HP.", is_low_hp, "Uses the HP stoplight sensor; orange/red means low HP."),
     DefinitionEntry("Interface", "Screen open.", is_screen_open, "Detects ScreenCross."),
     DefinitionEntry("Inventory", "Inventory full.", is_inventory_full, "Checks all 28 slots."),
