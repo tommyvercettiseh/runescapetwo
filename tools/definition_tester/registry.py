@@ -19,6 +19,7 @@ from definitions.inventory.is_inventory_empty import is_inventory_empty
 from definitions.inventory.is_inventory_full import is_inventory_full
 from definitions.login.is_logged_in import is_logged_in
 from definitions.login.is_logged_out import is_logged_out
+from definitions.login.is_not_logged_in import is_not_logged_in
 from definitions.prayer.is_low_prayer import is_low_prayer
 from definitions.skilling.is_skilling import is_skilling
 
@@ -48,6 +49,7 @@ DEFINITIONS: tuple[DefinitionEntry, ...] = (
     DefinitionEntry("Inventory", "Inventory full.", is_inventory_full, "Checks all 28 slots."),
     DefinitionEntry("Inventory", "Inventory empty.", is_inventory_empty, "Checks all 28 slots."),
     DefinitionEntry("Login", "Logged in.", is_logged_in, "Requires both Login_Exp and Login_Globe in Info_Area."),
+    DefinitionEntry("Login", "Not logged in.", is_not_logged_in, "True whenever the normal logged-in HUD is not detected."),
     DefinitionEntry("Login", "Logged out.", is_logged_out, "Detects Login_Disconnected or Login_World_Selection in Bot_Area."),
     DefinitionEntry("Prayer", "Low prayer.", is_low_prayer, "Uses the prayer stoplight sensor; orange/red means low prayer."),
     DefinitionEntry("Skilling", "Skilling.", is_skilling, "Green means skilling; red or no indicator means not skilling."),
