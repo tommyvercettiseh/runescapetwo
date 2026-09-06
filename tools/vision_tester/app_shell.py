@@ -12,7 +12,7 @@ from pynput.keyboard import Key as KeyboardKey
 from pynput.keyboard import Listener as KeyboardListener
 
 from . import modern_ui
-from .preferences import load_preferences, save_preferences
+from .preferences import load_window_geometry, save_window_geometry
 
 
 class VisionTesterShell(tk.Tk):
@@ -32,8 +32,7 @@ class VisionTesterShell(tk.Tk):
         super().__init__()
         self.configure(background=background)
         self.title("RuneScape Two - Unified Vision Tester")
-        preferences = load_preferences()
-        geometry = str(preferences.get("window_geometry", "1180x760"))
+        geometry = load_window_geometry()
         try:
             self.geometry(geometry)
         except tk.TclError:
@@ -189,7 +188,7 @@ class VisionTesterShell(tk.Tk):
         self._closing = True
         self._remember_geometry()
         try:
-            save_preferences({"window_geometry": self._last_normal_geometry})
+            save_window_geometry(self._last_normal_geometry)
         except OSError:
             pass
         if self.current_page is not None:
