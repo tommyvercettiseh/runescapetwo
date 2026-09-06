@@ -11,6 +11,7 @@ DEFAULT_PREFERENCES = {
     "auto_resize": True,
     "zoom_percent": 100,
     "mouse_trace": False,
+    "window_geometry": "1180x760",
 }
 
 
@@ -35,10 +36,16 @@ def load_preferences(path: Path | None = None) -> dict[str, object]:
         zoom = min(MAX_ZOOM_PERCENT, max(MIN_ZOOM_PERCENT, int(float(zoom))))
     except (TypeError, ValueError):
         zoom = DEFAULT_PREFERENCES["zoom_percent"]
+
+    geometry = str(data.get("window_geometry", DEFAULT_PREFERENCES["window_geometry"])).strip()
+    if not geometry:
+        geometry = str(DEFAULT_PREFERENCES["window_geometry"])
+
     return {
         "auto_resize": bool(data.get("auto_resize", DEFAULT_PREFERENCES["auto_resize"])),
         "zoom_percent": zoom,
         "mouse_trace": bool(data.get("mouse_trace", DEFAULT_PREFERENCES["mouse_trace"])),
+        "window_geometry": geometry,
     }
 
 
