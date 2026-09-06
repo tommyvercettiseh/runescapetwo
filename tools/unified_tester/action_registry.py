@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import time
 from typing import Any, Callable
 
 from actions.bank.bank_inventory import bank_inventory
@@ -17,6 +18,15 @@ from definitions.bank.is_bank_closed import is_bank_closed
 from definitions.bank.is_bank_open import is_bank_open
 from definitions.bank.is_bank_visible import is_bank_visible
 from definitions.inventory.get_inventory_item_slots import get_inventory_item_slots
+from definitions.login.is_logged_in import is_logged_in
+
+
+LOGIN_AREA = "Bot_Area_Full"
+LOGIN_IMAGES = (
+    "Login_Click_Here_To_Play",
+    "Login_Play_Now",
+    "Login_OK",
+)
 
 
 @dataclass(frozen=True)
@@ -64,6 +74,73 @@ def _simple_bank_action(
         return function(context.bot_id)
 
     return execute
+
+
+def _login(context: ActionContext) -> dict[str, object]:
+    if is_logged_in(context.bot_id):
+        return {
+            "action": "Login",
+            "success": True,
+            "executed": False,
+            "message": "Already logged in.",
+        }
+
+    if context.dry_run:
+        visible = next(
+            (
+                image
+                for image in LOGIN_IMAGES
+                if find_image(image, area=LOGIN_AREA, bot_id=context.bot_id) is not None
+            ),
+            None,
+        )
+        return {
+            "action": "Login",
+            "success": visible is not None,
+            "executed": False,
+            "image": visible,
+            "area": LOGIN_AREA,
+            "message": (
+                f"Dry run. Login step ready: {visible}."
+                if visible
+                else "Dry run. No known login button visible."
+            ),
+        }
+
+    clicked: list[str] = []
+    for _attempt in range(12):
+        if is_logged_in(context.bot_id):
+            return {
+                "action": "Login",
+                "success": True,
+                "executed": bool(clicked),
+                "clicked": tuple(clicked),
+                "message": "Logged in.",
+            }
+
+        did_click = False
+        for image in LOGIN_IMAGES:
+            if find_image(image, area=LOGIN_AREA, bot_id=context.bot_id) is None:
+                continue
+            if mouse_actions.click_image(
+                image_name=image,
+                area_name=LOGIN_AREA,
+                bot_id=context.bot_id,
+            ):
+                clicked.append(image)
+                did_click = True
+                break
+
+        time.sleep(0.6 if did_click else 0.35)
+
+    success = is_logged_in(context.bot_id)
+    return {
+        "action": "Login",
+        "success": success,
+        "executed": bool(clicked),
+        "clicked": tuple(clicked),
+        "message": "Logged in." if success else "Login did not reach the logged-in HUD.",
+    }
 
 
 def _click_image(context: ActionContext) -> Any:
@@ -191,6 +268,7 @@ def _drop_inventory(context: ActionContext):
 
 
 ACTION_SPECS: tuple[ActionSpec, ...] = (
+    ActionSpec("Login", _login),
     ActionSpec("Bank inventory", _bank_inventory, uses_inventory_options=True, uses_selection=True),
     ActionSpec("Open bank", _simple_bank_action("Open bank", open_bank)),
     ActionSpec("Close bank", _simple_bank_action("Close bank", close_bank)),
