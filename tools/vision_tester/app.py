@@ -5,6 +5,7 @@ import tkinter as tk
 from .area_page import AreaEditorPage
 from .app_shell import VisionTesterShell
 from .colour_page import ColourPage
+from .compass_action_page import CompassActionPage
 from .enhanced_ui import apply_enhanced_theme
 from .object_preset_page import ObjectPresetPage
 from .preset_ui import BASIC_BG, BASIC_MUTED
@@ -31,6 +32,7 @@ class VisionTester(VisionTesterShell):
         self.object_page.pack(fill="both", expand=True)
         self.pages.insert(1, self.object_page)
 
+        self.action_page = self.add_page("Actions", CompassActionPage)
         self.area_editor_page = self.add_page("Area Editor", AreaEditorPage)
 
 
