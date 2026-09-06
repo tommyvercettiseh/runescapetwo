@@ -25,7 +25,7 @@ def test_is_compass_north_uses_north_check_template(monkeypatch) -> None:
     assert calls == [("Compass_NorthCheck", "Compass_Area", 2)]
 
 
-def test_set_compass_north_uses_left_click_and_rechecks(monkeypatch) -> None:
+def test_set_compass_north_can_choose_left_click(monkeypatch) -> None:
     checks = iter((False, True))
     clicks = []
 
@@ -33,6 +33,11 @@ def test_set_compass_north_uses_left_click_and_rechecks(monkeypatch) -> None:
         set_compass_module,
         "is_compass_north",
         lambda *, bot_id: next(checks),
+    )
+    monkeypatch.setattr(
+        set_compass_module.random,
+        "choice",
+        lambda _options: False,
     )
 
     def fake_click_in_area(**kwargs):
@@ -54,6 +59,48 @@ def test_set_compass_north_uses_left_click_and_rechecks(monkeypatch) -> None:
             "area_edge_padding": 4,
         }
     ]
+
+
+def test_set_compass_north_can_choose_context_menu(monkeypatch) -> None:
+    checks = iter((False, True))
+    area_clicks = []
+    image_clicks = []
+
+    monkeypatch.setattr(
+        set_compass_module,
+        "is_compass_north",
+        lambda *, bot_id: next(checks),
+    )
+    monkeypatch.setattr(
+        set_compass_module.random,
+        "choice",
+        lambda _options: True,
+    )
+    monkeypatch.setattr(set_compass_module.time, "sleep", lambda _seconds: None)
+
+    def fake_click_in_area(**kwargs):
+        area_clicks.append(kwargs)
+        return _Result()
+
+    def fake_click_image(**kwargs):
+        image_clicks.append(kwargs)
+        return _Result()
+
+    monkeypatch.setattr(
+        set_compass_module.mouse_actions,
+        "click_in_area",
+        fake_click_in_area,
+    )
+    monkeypatch.setattr(
+        set_compass_module.mouse_actions,
+        "click_image",
+        fake_click_image,
+    )
+
+    assert set_compass_module.set_compass("north", bot_id=1) is True
+    assert area_clicks[0]["button"] == "right"
+    assert image_clicks[0]["image_name"] == "Compass_North"
+    assert image_clicks[0]["area_name"] == "Bot_Area_Full"
 
 
 def test_set_compass_south_uses_right_click_then_menu_image(monkeypatch) -> None:
@@ -86,24 +133,3 @@ def test_set_compass_south_uses_right_click_then_menu_image(monkeypatch) -> None
     assert area_clicks[0]["button"] == "right"
     assert image_clicks[0]["image_name"] == "Compass_South"
     assert image_clicks[0]["area_name"] == "Bot_Area_Full"
-
-
-def test_set_compass_north_can_use_context_menu(monkeypatch) -> None:
-    monkeypatch.setattr(set_compass_module.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(
-        set_compass_module.mouse_actions,
-        "click_in_area",
-        lambda **_kwargs: _Result(),
-    )
-    monkeypatch.setattr(
-        set_compass_module.mouse_actions,
-        "click_image",
-        lambda **kwargs: _Result(kwargs["image_name"] == "Compass_North"),
-    )
-    monkeypatch.setattr(
-        set_compass_module,
-        "is_compass_north",
-        lambda *, bot_id: True,
-    )
-
-    assert set_compass_module.set_compass("north", bot_id=1, via_menu=True) is True
