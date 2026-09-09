@@ -12,6 +12,7 @@ from pynput.keyboard import Key as KeyboardKey
 from pynput.keyboard import Listener as KeyboardListener
 
 from . import modern_ui
+from .preferences import load_window_geometry, save_window_geometry
 
 
 class VisionTesterShell(tk.Tk):
@@ -31,8 +32,14 @@ class VisionTesterShell(tk.Tk):
         super().__init__()
         self.configure(background=background)
         self.title("RuneScape Two - Unified Vision Tester")
-        self.geometry("1180x760")
+        geometry = load_window_geometry()
+        try:
+            self.geometry(geometry)
+        except tk.TclError:
+            self.geometry("1180x760")
+            geometry = "1180x760"
         self.minsize(980, 650)
+        self._last_normal_geometry = geometry
 
         self._background = background
         self._muted_text = muted_text
@@ -49,6 +56,7 @@ class VisionTesterShell(tk.Tk):
         self._configure_style()
         self._build()
         self.protocol("WM_DELETE_WINDOW", self._close)
+        self.bind("<Configure>", self._remember_geometry, add="+")
         self._start_hotkeys()
         self.after(50, self._poll_hotkeys)
         self.after(120, self._activate_current_page)
@@ -131,6 +139,13 @@ class VisionTesterShell(tk.Tk):
     def _tab_changed(self, _event=None) -> None:
         self._activate_current_page()
 
+    def _remember_geometry(self, _event=None) -> None:
+        try:
+            if self.state() == "normal":
+                self._last_normal_geometry = self.geometry()
+        except tk.TclError:
+            pass
+
     def _start_hotkeys(self) -> None:
         options = {"on_press": self._global_key_pressed}
         if sys.platform == "win32":
@@ -171,6 +186,11 @@ class VisionTesterShell(tk.Tk):
 
     def _close(self) -> None:
         self._closing = True
+        self._remember_geometry()
+        try:
+            save_window_geometry(self._last_normal_geometry)
+        except OSError:
+            pass
         if self.current_page is not None:
             self.current_page.deactivate()
         if self._hotkey_listener is not None:

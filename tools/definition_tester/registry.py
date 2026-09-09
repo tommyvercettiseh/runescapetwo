@@ -7,6 +7,7 @@ from definitions.bank.is_bank_all_selected import is_bank_all_selected
 from definitions.bank.is_bank_closed import is_bank_closed
 from definitions.bank.is_bank_open import is_bank_open
 from definitions.bank.is_bank_visible import is_bank_visible
+from definitions.camera.compass import is_compass_north
 from definitions.hp.is_low_hp import is_low_hp
 from definitions.interface.is_screen_open import is_screen_open
 from definitions.inventory.is_inventory_empty import is_inventory_empty
@@ -52,6 +53,12 @@ DEFINITIONS: tuple[DefinitionEntry, ...] = (
         name="Bank closed.",
         function=is_bank_closed,
         description="Checks whether the bank is closed.",
+    ),
+    DefinitionEntry(
+        category="Camera",
+        name="Compass north.",
+        function=is_compass_north,
+        description="Detects Compass_NorthCheck in Compass_Area.",
     ),
     DefinitionEntry(
         category="HP",
