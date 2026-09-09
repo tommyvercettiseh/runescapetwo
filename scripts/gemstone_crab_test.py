@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+import sys
 import threading
 import time
 import tkinter as tk
+from pathlib import Path
 from tkinter import ttk
+
+# Make repository root importable when this file is started directly from scripts/.
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from actions.click_object import click_object
 from core import vision
