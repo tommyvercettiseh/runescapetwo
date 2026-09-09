@@ -31,7 +31,7 @@ CAVE_OBJECT = "cave"
 MAX_ROUTINES = 5
 CAVE_WAIT_SECONDS = 20
 XP_WAIT_SECONDS = 10
-SUCCESS_SLEEP_SECONDS = 10 * 60
+MONITOR_POLL_SECONDS = 1.0
 
 
 class CrabTestUI:
@@ -130,19 +130,44 @@ class CrabTestUI:
 
         self.root.after(0, update)
 
-    def interruptible_sleep(self, seconds: int, label: str) -> bool:
-        end_time = time.monotonic() + seconds
+    def _is_strength_visible(self) -> bool:
+        return vision.image_exists(STRENGTH_IMAGE, area=STRENGTH_AREA, bot_id=BOT_ID)
 
-        while time.monotonic() < end_time:
-            if self.stop_requested:
-                return False
+    def _is_crab_visible(self) -> bool:
+        return vision.image_exists(CRAB_IMAGE, area=CRAB_AREA, bot_id=BOT_ID)
 
-            remaining = int(end_time - time.monotonic())
-            self.set_timer(f"{label}: {remaining}s")
-            time.sleep(1)
+    def monitor_until_crab_and_xp_gone(self) -> bool:
+        """Keep checking while either purple crab or Strength XP is still visible."""
+        self.set_status("MONITOR ACTIVE CRAB")
+        self.log("[MONITOR] wachten tot PAARS en Strength XP allebei weg zijn")
 
-        self.set_timer("-")
-        return True
+        started = time.monotonic()
+        last_state: tuple[bool, bool] | None = None
+
+        while not self.stop_requested:
+            crab_visible = self._is_crab_visible()
+            strength_visible = self._is_strength_visible()
+            state = (crab_visible, strength_visible)
+
+            if state != last_state:
+                self.log(
+                    f"[MONITOR] paars={'JA' if crab_visible else 'NEE'} | "
+                    f"strength={'JA' if strength_visible else 'NEE'}"
+                )
+                last_state = state
+
+            elapsed = int(time.monotonic() - started)
+            minutes, seconds = divmod(elapsed, 60)
+            self.set_timer(f"Monitor: {minutes:02d}:{seconds:02d}")
+
+            if not crab_visible and not strength_visible:
+                self.log("[READY] paars weg + Strength XP weg -> blue cave")
+                self.set_timer("-")
+                return True
+
+            time.sleep(MONITOR_POLL_SECONDS)
+
+        return False
 
     def wait_for_crab(self) -> bool:
         deadline = time.monotonic() + CAVE_WAIT_SECONDS
@@ -154,7 +179,7 @@ class CrabTestUI:
             remaining = int(deadline - time.monotonic())
             self.set_timer(f"Crab zoeken: {remaining}s")
 
-            if vision.image_exists(CRAB_IMAGE, area=CRAB_AREA, bot_id=BOT_ID):
+            if self._is_crab_visible():
                 self.log("[CRAB] Gemstone_Crab gevonden")
                 self.set_timer("-")
                 return True
@@ -163,6 +188,49 @@ class CrabTestUI:
 
         self.set_timer("-")
         return False
+
+    def click_cave_and_wait_for_crab(self) -> bool:
+        self.set_status("CLICK BLUE CAVE")
+        self.log("[CAVE] blue cave klikken")
+
+        if not click_object(CAVE_OBJECT, bot_id=BOT_ID):
+            self.log("[FAIL] cave niet gevonden")
+            return False
+
+        self.log("[CAVE] geklikt")
+        self.set_status("WAIT FOR CRAB")
+
+        if not self.wait_for_crab():
+            self.log(f"[FAIL] geen crab binnen {CAVE_WAIT_SECONDS}s")
+            return False
+
+        return True
+
+    def click_crab_and_wait_for_xp(self) -> bool:
+        self.set_status("CLICK CRAB")
+        self.log("[CLICK] gemrockcrab proberen")
+
+        if not click_object(CRAB_OBJECT, bot_id=BOT_ID):
+            self.log("[FAIL] gemrockcrab niet klikbaar")
+            return False
+
+        self.log("[CLICK] gemrockcrab geklikt")
+        self.set_status("WAIT FOR XP")
+        self.log(f"[XP] maximaal {XP_WAIT_SECONDS}s wachten")
+
+        hit = vision.wait_for_image(
+            STRENGTH_IMAGE,
+            area=STRENGTH_AREA,
+            bot_id=BOT_ID,
+            timeout_s=XP_WAIT_SECONDS,
+        )
+
+        if hit is None:
+            self.log("[FAIL] geen Strength XP")
+            return False
+
+        self.log("[SUCCESS] Strength XP gevonden")
+        return True
 
     def run_routine(self) -> None:
         try:
@@ -183,69 +251,36 @@ class CrabTestUI:
 
                 self.log("[LOGIN] ingelogd")
 
-                self.set_status("CHECK STRENGTH XP")
-                self.log("[XP] controleren")
-
-                if vision.image_exists(STRENGTH_IMAGE, area=STRENGTH_AREA, bot_id=BOT_ID):
-                    self.log("[XP] Strength XP nog zichtbaar")
-                    self.set_status("XP ACTIVE")
-
-                    if not self.interruptible_sleep(SUCCESS_SLEEP_SECONDS, "XP cooldown"):
-                        return
-
-                    continue
-
-                self.log("[XP] geen Strength XP gevonden")
-
-                self.set_status("CHECK CRAB")
-                self.log("[CRAB] afbeelding controleren")
-
-                crab_found = vision.image_exists(CRAB_IMAGE, area=CRAB_AREA, bot_id=BOT_ID)
-
-                if not crab_found:
-                    self.set_status("CLICK CAVE")
-                    self.log("[CRAB] niet zichtbaar")
-                    self.log("[CAVE] cave zoeken")
-
-                    if not click_object(CAVE_OBJECT, bot_id=BOT_ID):
-                        self.log("[FAIL] cave niet gevonden")
-                        continue
-
-                    self.log("[CAVE] geklikt")
-                    self.set_status("WAIT FOR CRAB")
-
-                    if not self.wait_for_crab():
-                        self.log(f"[FAIL] geen crab binnen {CAVE_WAIT_SECONDS}s")
-                        continue
-
-                self.set_status("CLICK CRAB")
-                self.log("[CLICK] gemrockcrab proberen")
-
-                if not click_object(CRAB_OBJECT, bot_id=BOT_ID):
-                    self.log("[FAIL] gemrockcrab niet klikbaar")
-                    continue
-
-                self.log("[CLICK] gemrockcrab geklikt")
-
-                self.set_status("WAIT FOR XP")
-                self.log(f"[XP] maximaal {XP_WAIT_SECONDS}s wachten")
-
-                hit = vision.wait_for_image(
-                    STRENGTH_IMAGE,
-                    area=STRENGTH_AREA,
-                    bot_id=BOT_ID,
-                    timeout_s=XP_WAIT_SECONDS,
+                strength_visible = self._is_strength_visible()
+                crab_visible = self._is_crab_visible()
+                self.log(
+                    f"[STATE] paars={'JA' if crab_visible else 'NEE'} | "
+                    f"strength={'JA' if strength_visible else 'NEE'}"
                 )
 
-                if hit is None:
-                    self.log("[FAIL] geen Strength XP")
+                # If combat/crab is already active, do not assume a fresh 10-minute cooldown.
+                # Keep checking live until both signals disappear, even if only 3 minutes remain.
+                if strength_visible:
+                    if not self.monitor_until_crab_and_xp_gone():
+                        return
+                    if not self.click_cave_and_wait_for_crab():
+                        continue
+
+                # No XP but the crab is already there: click it directly.
+                elif crab_visible:
+                    self.log("[CRAB] paars zichtbaar zonder Strength XP -> crab klikken")
+
+                # Neither purple nor XP is visible: go through the blue cave.
+                else:
+                    self.log("[READY] geen paars + geen Strength XP -> blue cave")
+                    if not self.click_cave_and_wait_for_crab():
+                        continue
+
+                if not self.click_crab_and_wait_for_xp():
                     continue
 
-                self.log("[SUCCESS] Strength XP gevonden")
-                self.set_status("SUCCESS")
-                self.log("[SLEEP] 10 minuten niets doen")
-
-                if not self.interruptible_sleep(SUCCESS_SLEEP_SECONDS, "Cooldown"):
+                # After a successful click, monitor live instead of sleeping a fixed 10 minutes.
+                if not self.monitor_until_crab_and_xp_gone():
                     return
 
             self.log("[STOP] maximaal aantal routines bereikt")
