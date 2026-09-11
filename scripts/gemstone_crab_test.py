@@ -18,7 +18,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from actions.click_object import click_object
-from core import mouse, mouse_actions, vision
+from core import mouse, mouse_actions, mouse_engine, vision
 from core.vision.object_presets import list_object_presets
 from tools.vision_tester.sensor_checks import evaluate_sensor, load_sensor_checks
 
@@ -741,6 +741,24 @@ class CrabTestUI:
         if not crab_object or not cave_object:
             self.log("[START] selecteer eerst Crab object en Cave object")
             return
+
+        mouse_status = mouse_engine.provider_status()
+        if not mouse_status.get("ready"):
+            error = mouse_status.get("error") or "mouse engine niet gereed"
+            self.log(f"[MOUSE ENGINE] NOT READY: {error}")
+            self.set_status("MOUSE ENGINE NOT READY")
+            self.set_pill("MODE", "BLOCKED", self.RED)
+            self.set_pill("MOUSE", "OFFLINE", self.RED)
+            self.set_pill("ACTION", "FIX MOUSE", self.RED)
+            return
+
+        manifest = mouse_status.get("manifest") or {}
+        version = manifest.get("version", "?")
+        self.log(
+            f"[MOUSE ENGINE] READY | provider={mouse_status.get('provider')} "
+            f"| version={version}"
+        )
+        self.set_pill("MOUSE", f"v{version}", self.GREEN)
 
         self.running = True
         self.paused = False
