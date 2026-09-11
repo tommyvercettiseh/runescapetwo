@@ -18,7 +18,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from actions.click_object import click_object
-from core import mouse, vision
+from core import mouse, mouse_actions, vision
 from core.vision.object_presets import list_object_presets
 from tools.vision_tester.sensor_checks import evaluate_sensor, load_sensor_checks
 
@@ -38,6 +38,10 @@ MAX_ROUTINES = 5
 CAVE_WAIT_SECONDS = 20
 XP_WAIT_SECONDS = 10
 MONITOR_POLL_SECONDS = 1.0
+
+MOVE_OUT_AREA = "Bot_Area"
+MOVE_OUT_WITHIN_AREA = "Bot_Area_Full"
+MOVE_OUT_PADDING = 12
 
 MOUSE_SAMPLE_SECONDS = 0.008
 MOUSE_LOG_DIR = ROOT / "logs" / "mouse_movements"
@@ -556,13 +560,31 @@ class CrabTestUI:
         error = None
         try:
             result = click_object(object_name, bot_id=BOT_ID)
-            return result
         except Exception as exc:
             error = str(exc)
-            raise
-        finally:
             telemetry = trace.stop(result=result, error=error)
             self._handle_mouse_telemetry(telemetry)
+            raise
+
+        telemetry = trace.stop(result=result, error=error)
+        self._handle_mouse_telemetry(telemetry)
+
+        if result:
+            move_out = mouse_actions.move_outside_area(
+                MOVE_OUT_AREA,
+                within_area_name=MOVE_OUT_WITHIN_AREA,
+                bot_id=BOT_ID,
+                area_edge_padding=MOVE_OUT_PADDING,
+            )
+            if move_out:
+                self.log(
+                    f"[MOUSE OUT] buiten {MOVE_OUT_AREA} -> "
+                    f"{move_out.position}"
+                )
+            else:
+                self.log(f"[MOUSE OUT] FAIL: {move_out.message}")
+
+        return result
 
     def _variation_label(self) -> str:
         successful = [item for item in self.mouse_history if item.get("success")]
