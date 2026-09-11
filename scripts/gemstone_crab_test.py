@@ -322,6 +322,42 @@ class CrabTestUI:
             command=self.refresh_object_presets,
         ).grid(row=3, column=1, sticky="w", pady=(10, 0))
 
+        controls = tk.Frame(outer, bg=self.BG)
+        controls.pack(fill="x", pady=(0, 14))
+
+        self.start_button = ttk.Button(
+            controls,
+            text="RUN",
+            style="Modern.TButton",
+            command=self.start,
+        )
+        self.start_button.pack(side="left")
+
+        self.pause_button = ttk.Button(
+            controls,
+            text="PAUSE",
+            style="Modern.TButton",
+            command=self.pause,
+            state="disabled",
+        )
+        self.pause_button.pack(side="left", padx=(8, 0))
+
+        self.stop_button = ttk.Button(
+            controls,
+            text="STOP",
+            style="Modern.TButton",
+            command=self.stop,
+            state="disabled",
+        )
+        self.stop_button.pack(side="left", padx=8)
+
+        ttk.Button(
+            controls,
+            text="CLEAR LOG",
+            style="Modern.TButton",
+            command=self.clear_log,
+        ).pack(side="right")
+
         middle = tk.Frame(outer, bg=self.BG)
         middle.pack(fill="both", expand=True, pady=(14, 0))
         middle.columnconfigure(0, weight=3)
@@ -382,41 +418,6 @@ class CrabTestUI:
             font=("Segoe UI", 8),
         ).grid(row=3, column=0, sticky="ew", pady=(8, 0))
 
-        controls = tk.Frame(outer, bg=self.BG)
-        controls.pack(fill="x", pady=(14, 0))
-
-        self.start_button = ttk.Button(
-            controls,
-            text="RUN",
-            style="Modern.TButton",
-            command=self.start,
-        )
-        self.start_button.pack(side="left")
-
-        self.pause_button = ttk.Button(
-            controls,
-            text="PAUSE",
-            style="Modern.TButton",
-            command=self.pause,
-            state="disabled",
-        )
-        self.pause_button.pack(side="left", padx=(8, 0))
-
-        self.stop_button = ttk.Button(
-            controls,
-            text="STOP",
-            style="Modern.TButton",
-            command=self.stop,
-            state="disabled",
-        )
-        self.stop_button.pack(side="left", padx=8)
-
-        ttk.Button(
-            controls,
-            text="CLEAR LOG",
-            style="Modern.TButton",
-            command=self.clear_log,
-        ).pack(side="right")
 
     def _card(self, parent, title: str) -> tk.Frame:
         frame = tk.Frame(
