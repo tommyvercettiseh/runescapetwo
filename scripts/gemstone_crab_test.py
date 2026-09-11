@@ -20,7 +20,7 @@ if str(ROOT) not in sys.path:
 from actions.click_object import click_object
 from core import mouse, vision
 from core.vision.object_presets import list_object_presets
-from definitions.login.is_logged_in import is_logged_in
+from tools.vision_tester.sensor_checks import evaluate_sensor, load_sensor_checks
 
 
 BOT_ID = 1
@@ -208,6 +208,7 @@ class CrabTestUI:
         self._configure_styles()
         self._build_ui()
         self.refresh_object_presets(log=False)
+        self.sensor_checks = load_sensor_checks()
 
     def _configure_styles(self) -> None:
         style = ttk.Style(self.root)
@@ -776,6 +777,19 @@ class CrabTestUI:
             self.run_event.wait(timeout=0.2)
         return not self.stop_requested
 
+    def _sensor_value(self, name: str) -> bool:
+        check = self.sensor_checks.get(name)
+        if check is None:
+            raise KeyError(f"Sensor niet gevonden: {name}")
+        if not check.enabled:
+            raise ValueError(f"Sensor uitgeschakeld: {name}")
+        return evaluate_sensor(check, bot_id=BOT_ID)
+
+    def _is_logged_in_sensor(self) -> bool:
+        value = self._sensor_value("is_logged_in")
+        self.set_pill("LOGIN", "ONLINE" if value else "OFFLINE", self.GREEN if value else self.RED)
+        return value
+
     def _is_strength_visible(self) -> bool:
         visible = vision.image_exists(
             STRENGTH_IMAGE,
@@ -940,15 +954,16 @@ class CrabTestUI:
                 self.set_pill("ACTION", "CHECK LOGIN", self.BLUE)
                 self.log("[LOGIN] controleren")
 
-                if not is_logged_in(bot_id=BOT_ID):
-                    self.log("[STOP] niet ingelogd")
+                logged_in = self._is_logged_in_sensor()
+                self.log(f"[LOGIN] sensor is_logged_in={'TRUE' if logged_in else 'FALSE'}")
+
+                if not logged_in:
+                    self.log("[STOP] is_logged_in sensor is FALSE")
                     self.set_status("NOT LOGGED IN")
-                    self.set_pill("LOGIN", "OFFLINE", self.RED)
                     self.set_pill("ACTION", "STOPPED", self.RED)
                     return
 
-                self.log("[LOGIN] ingelogd")
-                self.set_pill("LOGIN", "ONLINE", self.GREEN)
+                self.log("[LOGIN] sensor TRUE")
 
                 strength_visible = self._is_strength_visible()
                 crab_visible = self._is_crab_visible()
