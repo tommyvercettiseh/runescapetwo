@@ -136,6 +136,74 @@ def _area_bounds(
     )
 
 
+def _outside_bounds(
+    area_name: str,
+    *,
+    within_area_name: str,
+    bot_id: int,
+    area_edge_padding: int,
+) -> TargetBounds:
+    """Return the largest safe rectangle inside within_area_name but outside area_name."""
+    validate_area_edge_padding(area_edge_padding)
+
+    inner_x, inner_y, inner_w, inner_h = get_region(area_name, bot_id=bot_id)
+    outer_x, outer_y, outer_w, outer_h = get_region(within_area_name, bot_id=bot_id)
+
+    inner_left = inner_x
+    inner_top = inner_y
+    inner_right = inner_x + inner_w
+    inner_bottom = inner_y + inner_h
+
+    outer_left = outer_x
+    outer_top = outer_y
+    outer_right = outer_x + outer_w
+    outer_bottom = outer_y + outer_h
+
+    candidates: list[TargetBounds] = []
+
+    # Left strip.
+    if inner_left > outer_left:
+        candidates.append((outer_left, outer_top, inner_left, outer_bottom))
+    # Right strip.
+    if inner_right < outer_right:
+        candidates.append((inner_right, outer_top, outer_right, outer_bottom))
+    # Top strip, limited horizontally to the blocked area's span.
+    if inner_top > outer_top:
+        candidates.append((
+            max(outer_left, inner_left),
+            outer_top,
+            min(outer_right, inner_right),
+            inner_top,
+        ))
+    # Bottom strip, limited horizontally to the blocked area's span.
+    if inner_bottom < outer_bottom:
+        candidates.append((
+            max(outer_left, inner_left),
+            inner_bottom,
+            min(outer_right, inner_right),
+            outer_bottom,
+        ))
+
+    padded: list[TargetBounds] = []
+    for left, top, right, bottom in candidates:
+        left += area_edge_padding
+        top += area_edge_padding
+        right -= area_edge_padding
+        bottom -= area_edge_padding
+        if right > left and bottom > top:
+            padded.append((left, top, right, bottom))
+
+    if not padded:
+        raise ValueError(
+            f"Geen veilige ruimte buiten '{area_name}' binnen '{within_area_name}'."
+        )
+
+    return max(
+        padded,
+        key=lambda bounds: (bounds[2] - bounds[0]) * (bounds[3] - bounds[1]),
+    )
+
+
 def _center(bounds: TargetBounds) -> tuple[float, float]:
     left, top, right, bottom = bounds
     return (left + right) / 2.0, (top + bottom) / 2.0
@@ -576,6 +644,51 @@ def move_to_area(
 
 
 # Voorbeeld in scripts:
+# result = mouse_actions.move_outside_area(
+#     area_name="Bot_Area",
+#     within_area_name="Bot_Area_Full",
+#     bot_id=1,
+#     area_edge_padding=12,
+# )
+def move_outside_area(
+    area_name: str,
+    *,
+    within_area_name: str = DEFAULT_AREA_NAME,
+    bot_id: int = 1,
+    area_edge_padding: int = 8,
+    require_external_mouse: bool = True,
+) -> MouseActionResult:
+    """Move to a safe position outside area_name while staying inside within_area_name."""
+    bounds: TargetBounds | None = None
+    try:
+        bounds = _outside_bounds(
+            area_name,
+            within_area_name=within_area_name,
+            bot_id=bot_id,
+            area_edge_padding=area_edge_padding,
+        )
+        with mouse.action_guard():
+            mouse.move_to_target(
+                *bounds,
+                require_external=require_external_mouse,
+                keep_pending_click=False,
+            )
+            return _success(
+                "move_outside_area",
+                f"Muis staat buiten {area_name} binnen {within_area_name}.",
+                target_name=area_name,
+                bounds=bounds,
+            )
+    except EXPECTED_ACTION_ERRORS as error:
+        return _operational_failure(
+            "move_outside_area",
+            area_name,
+            error,
+            bounds=bounds,
+        )
+
+
+# Voorbeeld in scripts:
 # result = mouse_actions.click_in_area(
 #     area_name="Inventory_Area",
 #     bot_id=1,
@@ -684,6 +797,7 @@ __all__ = [
     "move_to_colour",
     "click_colour",
     "move_to_area",
+    "move_outside_area",
     "click_in_area",
     "click",
     "cancel_pending_click",
