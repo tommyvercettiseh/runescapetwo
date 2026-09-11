@@ -11,6 +11,7 @@ from core.vision.template_analysis import analyse_template
 from core.vision.templates import load_settings, load_template
 
 from . import modern_ui
+from .template_capture import TemplateCaptureOverlay
 from .template_plus import SearchableTemplatePage
 
 
@@ -32,6 +33,11 @@ class RadarTemplatePage(SearchableTemplatePage):
             True: self._make_dot("#22C55E"),
         }
         super().__init__(parent)
+
+    def capture_hotkey(self) -> None:
+        """F2 starts the actual template screenshot/crop flow."""
+        self.live.set(False)
+        TemplateCaptureOverlay(self, self._captured)
 
     @staticmethod
     def _make_dot(fill: str) -> ctk.CTkImage:
