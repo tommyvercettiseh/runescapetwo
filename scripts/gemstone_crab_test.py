@@ -188,7 +188,10 @@ class CrabTestUI:
         self.root.configure(bg=self.BG)
 
         self.running = False
+        self.paused = False
         self.stop_requested = False
+        self.run_event = threading.Event()
+        self.run_event.set()
         self.mouse_history: list[dict] = []
 
         self.status_var = tk.StringVar(value="IDLE")
@@ -258,6 +261,7 @@ class CrabTestUI:
 
         pills = tk.Frame(outer, bg=self.BG)
         pills.pack(fill="x", pady=(14, 12))
+        self._make_pill(pills, "MODE", "IDLE", self.MUTED)
         self._make_pill(pills, "LOGIN", "WAIT", self.MUTED)
         self._make_pill(pills, "CRAB", "WAIT", self.MUTED)
         self._make_pill(pills, "XP", "WAIT", self.MUTED)
@@ -383,11 +387,20 @@ class CrabTestUI:
 
         self.start_button = ttk.Button(
             controls,
-            text="START ROUTINE",
+            text="RUN",
             style="Modern.TButton",
             command=self.start,
         )
         self.start_button.pack(side="left")
+
+        self.pause_button = ttk.Button(
+            controls,
+            text="PAUSE",
+            style="Modern.TButton",
+            command=self.pause,
+            state="disabled",
+        )
+        self.pause_button.pack(side="left", padx=(8, 0))
 
         self.stop_button = ttk.Button(
             controls,
@@ -686,7 +699,17 @@ class CrabTestUI:
         threading.Thread(target=worker, daemon=True).start()
 
     def start(self) -> None:
+        # RUN doubles as resume after PAUSE.
         if self.running:
+            if self.paused:
+                self.paused = False
+                self.run_event.set()
+                self.set_status("RUNNING")
+                self.set_pill("MODE", "RUNNING", self.GREEN)
+                self.set_pill("ACTION", "RESUMED", self.BLUE)
+                self.log("[RUN] hervat")
+                self.start_button.configure(state="disabled")
+                self.pause_button.configure(state="normal")
             return
 
         crab_object = self.crab_object_var.get().strip()
@@ -696,33 +719,61 @@ class CrabTestUI:
             return
 
         self.running = True
+        self.paused = False
         self.stop_requested = False
+        self.run_event.set()
         self.start_button.configure(state="disabled")
+        self.pause_button.configure(state="normal")
         self.stop_button.configure(state="normal")
         self.crab_combo.configure(state="disabled")
         self.cave_combo.configure(state="disabled")
 
-        self.set_pill("ACTION", "RUNNING", self.BLUE)
-        self.log(f"[START] crab object={crab_object} | cave object={cave_object}")
+        self.set_status("RUNNING")
+        self.set_pill("MODE", "RUNNING", self.GREEN)
+        self.set_pill("ACTION", "START", self.BLUE)
+        self.log(f"[RUN] crab object={crab_object} | cave object={cave_object}")
 
         threading.Thread(target=self.run_routine, daemon=True).start()
 
+    def pause(self) -> None:
+        if not self.running or self.paused:
+            return
+        self.paused = True
+        self.run_event.clear()
+        self.set_status("PAUSED")
+        self.set_pill("MODE", "PAUSED", self.AMBER)
+        self.set_pill("ACTION", "PAUSED", self.AMBER)
+        self.log("[PAUSE] routine gepauzeerd")
+        self.start_button.configure(state="normal")
+        self.pause_button.configure(state="disabled")
+
     def stop(self) -> None:
         self.stop_requested = True
-        self.log("STOP aangevraagd")
+        self.paused = False
+        self.run_event.set()
+        self.log("[STOP] aangevraagd")
         self.set_status("STOPPING")
+        self.set_pill("MODE", "STOPPING", self.AMBER)
         self.set_pill("ACTION", "STOPPING", self.AMBER)
 
     def finish(self) -> None:
         self.running = False
+        self.paused = False
+        self.run_event.set()
 
         def update() -> None:
             self.start_button.configure(state="normal")
+            self.pause_button.configure(state="disabled")
             self.stop_button.configure(state="disabled")
             self.crab_combo.configure(state="readonly")
             self.cave_combo.configure(state="readonly")
 
         self.root.after(0, update)
+
+    def _wait_if_paused(self) -> bool:
+        while self.paused and not self.stop_requested:
+            self.run_event.wait(timeout=0.2)
+        return not self.stop_requested
 
     def _is_strength_visible(self) -> bool:
         visible = vision.image_exists(
@@ -751,6 +802,9 @@ class CrabTestUI:
         last_state: tuple[bool, bool] | None = None
 
         while not self.stop_requested:
+            if not self._wait_if_paused():
+                return False
+
             crab_visible = self._is_crab_visible()
             strength_visible = self._is_strength_visible()
             state = (crab_visible, strength_visible)
@@ -783,6 +837,8 @@ class CrabTestUI:
         while time.monotonic() < deadline:
             if self.stop_requested:
                 return False
+            if not self._wait_if_paused():
+                return False
 
             remaining = int(deadline - time.monotonic())
             self.set_timer(f"Crab zoeken {remaining}s")
@@ -798,6 +854,8 @@ class CrabTestUI:
         return False
 
     def click_cave_and_wait_for_crab(self) -> bool:
+        if not self._wait_if_paused():
+            return False
         object_name = self.cave_object_var.get().strip()
         self.set_status("CLICK CAVE")
         self.set_pill("ACTION", "CLICK CAVE", self.AMBER)
@@ -821,6 +879,8 @@ class CrabTestUI:
         return True
 
     def click_crab_and_wait_for_xp(self) -> bool:
+        if not self._wait_if_paused():
+            return False
         object_name = self.crab_object_var.get().strip()
         self.set_status("CLICK CRAB")
         self.set_pill("ACTION", "CLICK CRAB", self.PURPLE)
@@ -838,14 +898,20 @@ class CrabTestUI:
         self.set_pill("ACTION", "WAIT XP", self.BLUE)
         self.log(f"[XP] maximaal {XP_WAIT_SECONDS}s wachten")
 
-        hit = vision.wait_for_image(
-            STRENGTH_IMAGE,
-            area=STRENGTH_AREA,
-            bot_id=BOT_ID,
-            timeout_s=XP_WAIT_SECONDS,
-        )
+        deadline = time.monotonic() + XP_WAIT_SECONDS
+        hit_found = False
+        while time.monotonic() < deadline:
+            if not self._wait_if_paused():
+                return False
+            if self._is_strength_visible():
+                hit_found = True
+                break
+            remaining = max(0, int(deadline - time.monotonic()))
+            self.set_timer(f"XP zoeken {remaining}s")
+            time.sleep(0.5)
 
-        if hit is None:
+        self.set_timer("-")
+        if not hit_found:
             self.log("[FAIL] geen Strength XP")
             self.set_pill("XP", "NO HIT", self.RED)
             return False
@@ -860,6 +926,8 @@ class CrabTestUI:
             for routine in range(1, MAX_ROUTINES + 1):
                 if self.stop_requested:
                     break
+                if not self._wait_if_paused():
+                    return
 
                 self.root.after(
                     0,
@@ -914,9 +982,11 @@ class CrabTestUI:
                 if not self.monitor_until_crab_and_xp_gone():
                     return
 
-            self.log("[STOP] maximaal aantal routines bereikt")
-            self.set_status("MAX ROUTINES")
-            self.set_pill("ACTION", "DONE", self.GREEN)
+            if not self.stop_requested:
+                self.log("[STOP] maximaal aantal routines bereikt")
+                self.set_status("MAX ROUTINES")
+                self.set_pill("MODE", "DONE", self.GREEN)
+                self.set_pill("ACTION", "DONE", self.GREEN)
 
         except Exception as exc:
             self.log(f"[ERROR] {exc}")
