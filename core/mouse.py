@@ -34,6 +34,13 @@ from .profile import get_section
 _controller = Controller()
 _last_engine_error: str | None = None
 
+# Runtime execution guard. Provider plans can occasionally contain spatially
+# sparse move events; interpolate them before execution so one scheduler tick
+# can never turn into a visibly large cursor jump.
+MAX_EXECUTION_STEP_PX = 45.0
+
+
+
 
 def _between(settings: dict, minimum: str, maximum: str) -> float:
     return random.uniform(float(settings[minimum]), float(settings[maximum]))
@@ -134,6 +141,65 @@ def _timer_resolution(enable: bool) -> None:
         pass
 
 
+def _event_position(event: Mapping[str, Any]) -> tuple[float, float] | None:
+    if "x" not in event or "y" not in event:
+        return None
+    try:
+        return float(event["x"]), float(event["y"])
+    except (TypeError, ValueError):
+        return None
+
+
+def _densify_execution_events(
+    events: Sequence[Mapping[str, Any]],
+    *,
+    start_position: tuple[int, int],
+    max_step_px: float = MAX_EXECUTION_STEP_PX,
+) -> list[dict[str, Any]]:
+    """Insert timed move points so execution never makes an oversized cursor step.
+
+    Provider timing is preserved: inserted points are linearly interpolated in
+    both position and t_ms. Button events are left untouched and keep their
+    original ordering/timestamps.
+    """
+    if not math.isfinite(float(max_step_px)) or max_step_px <= 0:
+        raise ValueError("max_step_px must be a positive finite number")
+
+    dense: list[dict[str, Any]] = []
+    previous_position = (float(start_position[0]), float(start_position[1]))
+    previous_t_ms = 0.0
+
+    for raw_event in events:
+        event = dict(raw_event)
+        position = _event_position(event)
+        event_t_ms = float(event["t_ms"])
+
+        if str(event.get("type")) == "move" and position is not None:
+            dx = position[0] - previous_position[0]
+            dy = position[1] - previous_position[1]
+            distance = math.hypot(dx, dy)
+            segments = max(1, int(math.ceil(distance / max_step_px)))
+
+            for index in range(1, segments):
+                fraction = index / segments
+                dense.append(
+                    {
+                        "type": "move",
+                        "t_ms": previous_t_ms + (event_t_ms - previous_t_ms) * fraction,
+                        "x": previous_position[0] + dx * fraction,
+                        "y": previous_position[1] + dy * fraction,
+                    }
+                )
+
+        dense.append(event)
+
+        if position is not None:
+            previous_position = position
+            previous_t_ms = event_t_ms
+
+    return dense
+
+
 def _execute_events(
     events: Sequence[Mapping[str, Any]],
     started_at: float,
@@ -143,9 +209,13 @@ def _execute_events(
     selected = _selected_button(button)
     pressed = False
     _raise_if_stopped()
+    execution_events = _densify_execution_events(
+        events,
+        start_position=tuple(map(int, _controller.position)),
+    )
     _timer_resolution(True)
     try:
-        for event in events:
+        for event in execution_events:
             _wait_until(started_at + float(event["t_ms"]) / 1000.0)
             _raise_if_stopped()
             event_type = str(event["type"])
