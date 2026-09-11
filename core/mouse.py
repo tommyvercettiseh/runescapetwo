@@ -174,12 +174,15 @@ def _densify_execution_events(
         position = _event_position(event)
         event_t_ms = float(event["t_ms"])
 
-        if str(event.get("type")) == "move" and position is not None:
+        if position is not None:
             dx = position[0] - previous_position[0]
             dy = position[1] - previous_position[1]
             distance = math.hypot(dx, dy)
             segments = max(1, int(math.ceil(distance / max_step_px)))
 
+            # Interpolate before any positioned event, including button events.
+            # The original button event itself is kept untouched and therefore
+            # still happens at the provider's exact timestamp and coordinates.
             for index in range(1, segments):
                 fraction = index / segments
                 dense.append(
