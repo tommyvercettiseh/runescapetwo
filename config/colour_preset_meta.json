@@ -1,0 +1,32 @@
+{
+  "cyan": {
+    "tolerance": 35,
+    "colours": [
+      [
+        90,
+        255,
+        255
+      ]
+    ]
+  },
+  "purple": {
+    "tolerance": 35,
+    "colours": [
+      [
+        150,
+        255,
+        255
+      ]
+    ]
+  },
+  "darkblue": {
+    "tolerance": 35,
+    "colours": [
+      [
+        122,
+        255,
+        255
+      ]
+    ]
+  }
+}
