@@ -10,6 +10,8 @@ from actions.bank.find_bank import find_bank
 from actions.bank.open_bank import open_bank
 from actions.inventory.click_inventory_item import click_inventory_item
 from actions.inventory.drop_inventory import drop_inventory
+from actions.login.login import login
+from actions.login.logout import logout
 from core import mouse_actions
 from core.vision.api import find_image
 from definitions.bank.is_bank_all_selected import is_bank_all_selected
@@ -17,6 +19,8 @@ from definitions.bank.is_bank_closed import is_bank_closed
 from definitions.bank.is_bank_open import is_bank_open
 from definitions.bank.is_bank_visible import is_bank_visible
 from definitions.inventory.get_inventory_item_slots import get_inventory_item_slots
+from definitions.login.logout_state import get_logout_state
+from definitions.login.state import get_login_state
 
 
 @dataclass(frozen=True)
@@ -64,6 +68,48 @@ def _simple_bank_action(
         return function(context.bot_id)
 
     return execute
+
+
+def _login_action(context: ActionContext) -> dict[str, object]:
+    state = get_login_state(context.bot_id)
+    if context.dry_run:
+        return {
+            "action": "Login",
+            "success": True,
+            "executed": False,
+            "state": state.value,
+            "message": "Dry run. Current login state detected.",
+        }
+
+    success = login(context.bot_id)
+    return {
+        "action": "Login",
+        "success": success,
+        "executed": True,
+        "state": get_login_state(context.bot_id).value,
+        "message": "Logged in." if success else "Login timed out or could not complete.",
+    }
+
+
+def _logout_action(context: ActionContext) -> dict[str, object]:
+    state = get_logout_state(context.bot_id)
+    if context.dry_run:
+        return {
+            "action": "Logout",
+            "success": True,
+            "executed": False,
+            "state": state.value,
+            "message": "Dry run. Current logout state detected.",
+        }
+
+    success = logout(context.bot_id)
+    return {
+        "action": "Logout",
+        "success": success,
+        "executed": True,
+        "state": get_logout_state(context.bot_id).value,
+        "message": "Logged out." if success else "Logout timed out or could not complete.",
+    }
 
 
 def _click_image(context: ActionContext) -> Any:
@@ -164,6 +210,8 @@ def _drop_inventory(context: ActionContext):
 
 
 ACTION_SPECS: tuple[ActionSpec, ...] = (
+    ActionSpec("Login", _login_action),
+    ActionSpec("Logout", _logout_action),
     ActionSpec(
         "Bank inventory",
         _bank_inventory,
