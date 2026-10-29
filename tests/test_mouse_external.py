@@ -86,7 +86,12 @@ def test_move_then_click_resumes_one_external_timeline(monkeypatch):
     controller = prepare_external(monkeypatch)
 
     mouse.move_to(200, 300)
-    assert controller.positions == [(10, 20), (200, 300)]
+    assert controller.positions[0] == (10, 20)
+    assert controller.positions[-1] == (200, 300)
+    # Execution inserts intermediate moves while preserving the destination.
+    import math
+    assert all(math.dist(a, b) <= mouse.MAX_EXECUTION_STEP_PX + 1
+               for a, b in zip(controller.positions, controller.positions[1:]))
     assert controller.pressed == []
 
     mouse.click()
@@ -249,7 +254,9 @@ def test_separate_click_restarts_remaining_provider_timing(monkeypatch):
     current_time[0] = 102.0
     mouse.click(require_pending=True)
 
-    assert movement_deadlines == [100.0, 100.1]
+    assert movement_deadlines[0] == 100.0
+    assert movement_deadlines[-1] == pytest.approx(100.1)
+    assert movement_deadlines == sorted(movement_deadlines)
     assert deadlines[-2:] == pytest.approx([102.06, 102.14])
     assert len(controller.pressed) == 1
 
